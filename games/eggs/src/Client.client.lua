@@ -806,6 +806,23 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- base labels (collect / lock / locked slots) only show on my own base
+local function baseLabel(bb)
+	if not bb:IsA("BillboardGui") or bb:GetAttribute("Plot") == nil then
+		return
+	end
+	local function apply()
+		bb.Enabled = bb:GetAttribute("Plot") == player:GetAttribute("Plot") and not bb:GetAttribute("Unlocked")
+	end
+	apply()
+	bb.AttributeChanged:Connect(apply)
+	player:GetAttributeChangedSignal("Plot"):Connect(apply)
+end
+for _, d in ipairs(workspace:GetDescendants()) do
+	baseLabel(d)
+end
+workspace.DescendantAdded:Connect(baseLabel)
+
 -- show Steal on other people's eggs and Sell on mine
 local function setupPrompt(p)
 	if not p:IsA("ProximityPrompt") then

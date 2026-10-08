@@ -87,10 +87,12 @@ end
 
 local function billboard(adornee, lines, offsetY, width, height)
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(width or 200, height or 70)
+	-- sized in studs (not pixels) so labels shrink with distance instead of cluttering the screen
+	bb.Size = UDim2.fromScale((width or 200) / 26, (height or 70) / 26)
 	bb.StudsOffset = Vector3.new(0, offsetY or 4, 0)
-	bb.AlwaysOnTop = true
-	bb.MaxDistance = 120
+	bb.AlwaysOnTop = false
+	bb.LightInfluence = 0
+	bb.MaxDistance = 90
 	bb.Parent = adornee
 	local list = Instance.new("UIListLayout")
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -117,7 +119,7 @@ for i, r in ipairs(Config.Rarities) do
 	rarityIndex[r.Name] = i
 end
 
--- Stylized look: flat SmoothPlastic colors, no stock material textures, toon outlines via Highlight.
+-- Stylized look: flat SmoothPlastic colors, no stock material textures.
 local PALETTE = {
 	Grass = Color3.fromRGB(118, 214, 96),
 	Grass2 = Color3.fromRGB(98, 196, 84),
@@ -143,14 +145,7 @@ local function group(name, outlined)
 	local m = Instance.new("Model")
 	m.Name = name
 	m.Parent = world
-	if outlined then
-		local h = Instance.new("Highlight")
-		h.FillTransparency = 1
-		h.OutlineColor = PALETTE.Outline
-		h.OutlineTransparency = 0.15
-		h.DepthMode = Enum.HighlightDepthMode.Occluded
-		h.Parent = m
-	end
+	local _ = outlined -- Highlight outlines looked pixelated on big models; removed
 	return m
 end
 
@@ -418,7 +413,8 @@ for i = 1, 12 do
 		cyl(c + Vector3.new(0, 0.7, 0), 0.6, 4.6, Color3.fromRGB(196, 150, 80), model, { CanCollide = false })
 		if slot > Config.BaseSlots then
 			ped.Transparency = 0.6
-			billboard(ped, { { Text = "🔒 +4 Slots", Color = Color3.fromRGB(255, 230, 80) } }, 2, 120, 30)
+			local lbl = billboard(ped, { { Text = "🔒 +4 Slots", Color = Color3.fromRGB(255, 230, 80) } }, 2, 120, 30)
+			lbl[1].Parent:SetAttribute("Plot", i) -- only the base owner sees it (client)
 		end
 		plot.Slots[slot] = ped
 	end
@@ -429,6 +425,8 @@ for i = 1, 12 do
 	plot.LockPad = cyl(at(Vector3.new(-22, 1, 30)), 0.5, 9, Color3.fromRGB(80, 150, 255), model, { Name = "LockPad" })
 	cyl(at(Vector3.new(-22, 1, 30)), 0.4, 10.4, Color3.fromRGB(40, 90, 180), model, { CanCollide = false })
 	plot.LockLabel = billboard(plot.LockPad, { { Text = "🔒 LOCK BASE" } }, 4, 170, 34)
+	plot.CollectLabel[1].Parent:SetAttribute("Plot", i)
+	plot.LockLabel[1].Parent:SetAttribute("Plot", i)
 	-- owner sign board at the back, facing the lane
 	local boardPos = at(Vector3.new(0, 12, 73))
 	local board = part({ Size = Vector3.new(26, 7, 1), CFrame = CFrame.lookAt(boardPos, boardPos + Vector3.new(0, 0, -side)),
@@ -571,7 +569,7 @@ local function refreshSlotLocks(player)
 		ped.Transparency = unlocked and 0 or 0.6
 		local bb = ped:FindFirstChildOfClass("BillboardGui")
 		if bb then
-			bb.Enabled = not unlocked
+			bb:SetAttribute("Unlocked", unlocked)
 		end
 	end
 end
