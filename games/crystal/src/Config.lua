@@ -5,25 +5,25 @@ local Config = {}
 Config.GameName = "Grow a Crystal Garden"
 
 Config.GamePasses = {
-	{ Key = "DoubleCoins", Img = "coins", Name = "2x Coins", Icon = "💰", Desc = "Every crystal sells for double", Price = 199, Id = 0 },
-	{ Key = "FastGrow", Img = "fastgrow", Name = "Fast Growth", Icon = "⏩", Desc = "Crystals grow 50% faster", Price = 149, Id = 0 },
-	{ Key = "Lucky", Img = "lucky", Name = "Lucky Mutations", Icon = "🍀", Desc = "2x mutation chance in every event", Price = 249, Id = 0 },
-	{ Key = "SellAnywhere", Img = "sellanywhere", Name = "Sell Anywhere", Icon = "🛒", Desc = "Sell your backpack from any spot", Price = 99, Id = 0 },
-	{ Key = "VIP", Img = "vip", Name = "VIP", Icon = "👑", Desc = "+25% sell price and a gold VIP tag", Price = 299, Id = 0 },
+	{ Key = "DoubleCoins", Img = "coins", Name = "2x Coins", Icon = "💰", Desc = "Every crystal sells for double", Price = 199, Id = 2023244263 },
+	{ Key = "FastGrow", Img = "fastgrow", Name = "Fast Growth", Icon = "⏩", Desc = "Crystals grow 50% faster", Price = 149, Id = 2022116267 },
+	{ Key = "Lucky", Img = "lucky", Name = "Lucky Mutations", Icon = "🍀", Desc = "2x mutation chance in every event", Price = 249, Id = 2022494262 },
+	{ Key = "SellAnywhere", Img = "sellanywhere", Name = "Sell Anywhere", Icon = "🛒", Desc = "Sell your backpack from any spot", Price = 99, Id = 2022026273 },
+	{ Key = "VIP", Img = "vip", Name = "VIP", Icon = "👑", Desc = "+25% sell price and a gold VIP tag", Price = 299, Id = 2023280258 },
 }
 
 -- Weather products start that event for the WHOLE server right away
 Config.Products = {
-	{ Key = "Starter", Img = "starter", Name = "Starter Pack", Icon = "🎒", Desc = "3 Sapphire seeds + coins", Price = 49, Id = 0, Tab = "Boosts" },
-	{ Key = "GrowAll", Img = "growall", Name = "Grow All", Icon = "✨", Desc = "Every crystal in your garden ripens NOW", Price = 39, Id = 0, Tab = "Boosts" },
-	{ Key = "Restock", Img = "restock", Name = "Restock Seeds", Icon = "🔄", Desc = "Fresh seed stock with 3x rare luck", Price = 29, Id = 0, Tab = "Boosts" },
-	{ Key = "Frost", Img = "frost", Name = "Frost Storm", Icon = "❄️", Desc = "Start a Frost Storm for the server", Price = 49, Id = 0, Tab = "Weather", Event = "Frost" },
-	{ Key = "Thunder", Img = "thunder", Name = "Thunderstorm", Icon = "⚡", Desc = "Start a Thunderstorm for the server", Price = 79, Id = 0, Tab = "Weather", Event = "Thunder" },
-	{ Key = "Meteor", Img = "meteor", Name = "Meteor Shower", Icon = "☄️", Desc = "Start a Meteor Shower for the server", Price = 149, Id = 0, Tab = "Weather", Event = "Meteor" },
-	{ Key = "Aurora", Img = "aurora", Name = "Rainbow Aurora", Icon = "🌈", Desc = "Start a Rainbow Aurora for the server", Price = 299, Id = 0, Tab = "Weather", Event = "Aurora" },
-	{ Key = "CoinsS", Img = "coins", Name = "Pouch of Coins", Icon = "💰", Desc = "Instant coins", Price = 25, Id = 0, Tab = "Coins", Coins = 2500 },
-	{ Key = "CoinsM", Img = "chest", Name = "Chest of Coins", Icon = "🧰", Desc = "Lots of instant coins", Price = 99, Id = 0, Tab = "Coins", Coins = 15000 },
-	{ Key = "CoinsL", Img = "vault", Name = "Vault of Coins", Icon = "🏦", Desc = "A HUGE amount of coins", Price = 399, Id = 0, Tab = "Coins", Coins = 100000 },
+	{ Key = "Starter", Img = "starter", Name = "Starter Pack", Icon = "🎒", Desc = "3 Sapphire seeds + coins", Price = 49, Id = 3717316967, Tab = "Boosts" },
+	{ Key = "GrowAll", Img = "growall", Name = "Grow All", Icon = "✨", Desc = "Every crystal in your garden ripens NOW", Price = 39, Id = 3717316972, Tab = "Boosts" },
+	{ Key = "Restock", Img = "restock", Name = "Restock Seeds", Icon = "🔄", Desc = "Fresh seed stock with 3x rare luck", Price = 29, Id = 3717316976, Tab = "Boosts" },
+	{ Key = "Frost", Img = "frost", Name = "Frost Storm", Icon = "❄️", Desc = "Start a Frost Storm for the server", Price = 49, Id = 3717316978, Tab = "Weather", Event = "Frost" },
+	{ Key = "Thunder", Img = "thunder", Name = "Thunderstorm", Icon = "⚡", Desc = "Start a Thunderstorm for the server", Price = 79, Id = 3717316984, Tab = "Weather", Event = "Thunder" },
+	{ Key = "Meteor", Img = "meteor", Name = "Meteor Shower", Icon = "☄️", Desc = "Start a Meteor Shower for the server", Price = 149, Id = 3717316990, Tab = "Weather", Event = "Meteor" },
+	{ Key = "Aurora", Img = "aurora", Name = "Rainbow Aurora", Icon = "🌈", Desc = "Start a Rainbow Aurora for the server", Price = 299, Id = 3717316992, Tab = "Weather", Event = "Aurora" },
+	{ Key = "CoinsS", Img = "coins", Name = "Pouch of Coins", Icon = "💰", Desc = "Instant coins", Price = 25, Id = 3717316995, Tab = "Coins", Coins = 2500 },
+	{ Key = "CoinsM", Img = "chest", Name = "Chest of Coins", Icon = "🧰", Desc = "Lots of instant coins", Price = 99, Id = 3717316998, Tab = "Coins", Coins = 15000 },
+	{ Key = "CoinsL", Img = "vault", Name = "Vault of Coins", Icon = "🏦", Desc = "A HUGE amount of coins", Price = 399, Id = 3717317003, Tab = "Coins", Coins = 100000 },
 }
 
 Config.Offers = {
