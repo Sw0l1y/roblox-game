@@ -81,7 +81,10 @@ def rot(m, deg, cx=128, cy=128):
 
 
 def shift(m, dx, dy):
-    return ImageChops.offset(m, int(dx * U), int(dy * U))
+    """Translate without wrapping around the canvas edges."""
+    out = Image.new(m.mode, m.size, 0)
+    out.paste(m, (int(dx * U), int(dy * U)))
+    return out
 
 
 def grow(m, r):
@@ -201,16 +204,19 @@ class Icon:
             fade = soft(ell(10, 10, 246, 246), 26)
             paint(self.bg, inter(soft(rays, 1), fade), burst, 0.75)
 
-    def save(self, name):
+    def image(self):
+        """Full-resolution composite: glow/burst, drop shadow, shapes, sparkles."""
         out = self.bg.copy()
         a = self.fg.getchannel("A")
         shadow = soft(shift(a, 0, 7), 3).point(lambda v: int(v * 0.5))
         out.paste(solid((0, 0, 0)), (0, 0), shadow)
         out.alpha_composite(self.fg)
         out.alpha_composite(self.top)
-        OUT.mkdir(parents=True, exist_ok=True)
-        out.resize((OUTPUT, OUTPUT), Image.LANCZOS).save(OUT / f"{name}.png")
         return out
+
+    def save(self, name):
+        OUT.mkdir(parents=True, exist_ok=True)
+        self.image().resize((OUTPUT, OUTPUT), Image.LANCZOS).save(OUT / f"{name}.png")
 
 
 GOLD = (255, 196, 40)
