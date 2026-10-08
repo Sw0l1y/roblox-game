@@ -20,6 +20,7 @@ end
 local ClickRE = newRemote("Click")
 local UpgradeRE = newRemote("Upgrade")
 local RebirthRE = newRemote("Rebirth")
+local FxRE = newRemote("Fx") -- server -> client effects
 
 -- World
 local function newPart(props)
@@ -61,11 +62,32 @@ bbText.TextColor3 = Color3.new(1, 1, 1)
 bbText.TextStrokeTransparency = 0
 bbText.Parent = bb
 
+local sellAttach = Instance.new("Attachment")
+sellAttach.Position = Vector3.new(0, 1, 0)
+sellAttach.Parent = sellPad
+local sellBurst = Instance.new("ParticleEmitter")
+sellBurst.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+sellBurst.Color = ColorSequence.new(Color3.fromRGB(255, 220, 60), Color3.fromRGB(255, 120, 30))
+sellBurst.Size = NumberSequence.new(1.2, 0)
+sellBurst.Lifetime = NumberRange.new(0.8, 1.4)
+sellBurst.Speed = NumberRange.new(25, 45)
+sellBurst.SpreadAngle = Vector2.new(60, 60)
+sellBurst.Acceleration = Vector3.new(0, -40, 0)
+sellBurst.LightEmission = 1
+sellBurst.Rate = 0
+sellBurst.Parent = sellAttach
+local sellIdle = sellBurst:Clone()
+sellIdle.Rate = 12
+sellIdle.Speed = NumberRange.new(4, 8)
+sellIdle.Acceleration = Vector3.new(0, 4, 0)
+sellIdle.Parent = sellAttach
+
 -- Player data
 local DEFAULT = { Power = 0, Coins = 0, Level = 0, Rebirths = 0 }
 local loaded = {}
 local passes = {}
 local lastClick = {}
+local combo = {}
 
 local function setStat(player, key, value)
 	player:SetAttribute(key, value)
@@ -141,6 +163,7 @@ Players.PlayerRemoving:Connect(function(player)
 	loaded[player] = nil
 	passes[player] = nil
 	lastClick[player] = nil
+	combo[player] = nil
 end)
 
 game:BindToClose(function()
@@ -167,19 +190,33 @@ local function powerPerClick(player)
 	return p
 end
 
-local function addClick(player)
-	if loaded[player] then
-		setStat(player, "Power", get(player, "Power") + powerPerClick(player))
+local function addClick(player, comboCount)
+	if not loaded[player] then
+		return
 	end
+	local gain = powerPerClick(player) * Config.ComboMult(comboCount)
+	local crit = math.random() < Config.CritChance
+	if crit then
+		gain *= Config.CritMult
+	end
+	gain = math.floor(gain)
+	setStat(player, "Power", get(player, "Power") + gain)
+	FxRE:FireClient(player, "Click", gain, crit, comboCount)
 end
 
 ClickRE.OnServerEvent:Connect(function(player)
 	local now = os.clock()
-	if lastClick[player] and now - lastClick[player] < Config.ClickCooldown then
+	local last = lastClick[player]
+	if last and now - last < Config.ClickCooldown then
 		return
 	end
+	if last and now - last <= Config.ComboWindow then
+		combo[player] = (combo[player] or 0) + 1
+	else
+		combo[player] = 1
+	end
 	lastClick[player] = now
-	addClick(player)
+	addClick(player, combo[player])
 end)
 
 task.spawn(function()
@@ -187,7 +224,7 @@ task.spawn(function()
 		task.wait(Config.AutoClickInterval)
 		for _, player in ipairs(Players:GetPlayers()) do
 			if hasPass(player, "AutoClick") then
-				addClick(player)
+				addClick(player, 0)
 			end
 		end
 	end
@@ -205,8 +242,11 @@ sellPad.Touched:Connect(function(hit)
 	end
 	sellDebounce[player] = true
 	local mult = hasPass(player, "VIP") and 1.5 or 1
-	setStat(player, "Coins", get(player, "Coins") + math.floor(power * mult))
+	local earned = math.floor(power * mult)
+	setStat(player, "Coins", get(player, "Coins") + earned)
 	setStat(player, "Power", 0)
+	sellBurst:Emit(math.clamp(math.floor(math.log10(earned + 1) * 25), 20, 150))
+	FxRE:FireClient(player, "Sell", earned)
 	task.delay(0.3, function()
 		sellDebounce[player] = nil
 	end)
@@ -220,6 +260,7 @@ UpgradeRE.OnServerEvent:Connect(function(player)
 	if get(player, "Coins") >= cost then
 		setStat(player, "Coins", get(player, "Coins") - cost)
 		setStat(player, "Level", get(player, "Level") + 1)
+		FxRE:FireClient(player, "Upgrade", get(player, "Level"))
 	end
 end)
 
@@ -234,6 +275,7 @@ RebirthRE.OnServerEvent:Connect(function(player)
 		setStat(player, "Power", 0)
 		setStat(player, "Level", 0)
 		save(player)
+		FxRE:FireClient(player, "Rebirth", get(player, "Rebirths"))
 	end
 end)
 

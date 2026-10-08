@@ -22,5 +22,5 @@ doc = "".join([
          item("StarterPlayerScripts", "StarterPlayerScripts", item("LocalScript", "Client", source=src("Client.client.lua")))),
     "</roblox>",
 ])
-(ROOT / "ClickSim.rbxlx").write_text(doc)
+(ROOT / "ClickSim.rbxlx").write_text(doc, encoding="utf-8")
 print("built", len(doc), "bytes")
