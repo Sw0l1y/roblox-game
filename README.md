@@ -1,9 +1,10 @@
 # roblox-game
 
-ClickSim: a click/sell/upgrade/rebirth simulator.
+Games (each in `games/<name>/src`):
 
-- `src/Config.lua` → ReplicatedStorage.Config (set gamepass/product IDs here)
-- `src/GameServer.server.lua` → ServerScriptService.GameServer
-- `src/Client.client.lua` → StarterPlayerScripts.Client
+- `candy` — Candy Smash Simulator (current, live): themed click sim with zones, combos, offers.
+- `clicksim` — original ClickSim, kept for reference.
 
-Build: `python3 build.py` → `ClickSim.rbxlx`, published via the Open Cloud Place Publishing API.
+Per game: `Config.lua` → ReplicatedStorage.Config (set gamepass/product IDs here), `GameServer.server.lua` → ServerScriptService, `Client.client.lua` → StarterPlayerScripts.
+
+Build: `python3 build.py [name]` → `<name>.rbxlx` (default `candy`), published via the Open Cloud Place Publishing API.
