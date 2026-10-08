@@ -3,7 +3,7 @@
 Style: chunky dark outline, 3-stop gradient, cel shadow + rim light, glossy highlight,
 sunburst / glow behind premium items, sparkles and a soft drop shadow.
 
-Usage: python3 tools/art.py  ->  writes 512px PNGs to art/icons/ (+ art/icons_sheet.png preview)
+Usage: python3 tools/art.py  ->  writes 512px PNGs to art/icons_vector/ (+ art/icons_sheet.png preview); the live icons in art/icons/ are AI-generated
 """
 import math
 import pathlib
@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "art" / "icons"
+OUT = ROOT / "art" / "icons_vector"  # superseded by AI-generated icons in art/icons
 FONT = ROOT / "art" / "fonts" / "LuckiestGuy-Regular.ttf"
 OUTPUT = 512
 U = 4  # canvas pixels per design unit; icons are drawn on a 256-unit grid
