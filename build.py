@@ -1,9 +1,9 @@
-"""Build a place file from games/<name>/src. Usage: python3 build.py [name] (default: candy)."""
+"""Build a place file from games/<name>/src. Usage: python3 build.py [name] (default: eggs)."""
 import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).parent
-GAME = sys.argv[1] if len(sys.argv) > 1 else "candy"
+GAME = sys.argv[1] if len(sys.argv) > 1 else "eggs"
 SRC = ROOT / "games" / GAME / "src"
 ref = 0
 
