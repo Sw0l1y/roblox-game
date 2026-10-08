@@ -85,6 +85,41 @@ local function text(parent, str, props)
 	return l
 end
 
+-- Custom icon art (uploaded PNGs listed in ReplicatedStorage.Assets); falls back to an emoji until uploaded
+local okAssets, Assets = pcall(function()
+	return require(ReplicatedStorage:WaitForChild("Assets", 5))
+end)
+if not okAssets or type(Assets) ~= "table" then
+	Assets = {}
+end
+local function icon(parent, key, emoji, props)
+	local obj
+	if Assets[key] then
+		obj = Instance.new("ImageLabel")
+		obj.BackgroundTransparency = 1
+		obj.Image = Assets[key]
+		obj.ScaleType = Enum.ScaleType.Fit
+	else
+		obj = Instance.new("TextLabel")
+		obj.BackgroundTransparency = 1
+		obj.Font = FONT
+		obj.TextScaled = true
+		obj.Text = emoji
+	end
+	for k, v in pairs(props or {}) do
+		obj[k] = v
+	end
+	obj.Parent = parent
+	return obj
+end
+local function setIcon(obj, key, emoji)
+	if obj:IsA("ImageLabel") then
+		obj.Image = Assets[key] or ""
+	else
+		obj.Text = emoji
+	end
+end
+
 local function bubbleButton(parent, str, color, props)
 	local b = Instance.new("TextButton")
 	b.AutoButtonColor = false
@@ -252,10 +287,13 @@ cashBar.Parent = gui
 corner(cashBar, 28)
 stroke(cashBar, 4)
 gradient(cashBar, Color3.fromRGB(90, 230, 100), Color3.fromRGB(30, 150, 50))
-local cashIcon = text(cashBar, "💵", { Position = UDim2.fromOffset(8, 6), Size = UDim2.fromOffset(44, 44) })
+local cashIcon = icon(cashBar, "cash", "💵", { Position = UDim2.fromOffset(4, 2), Size = UDim2.fromOffset(52, 52), Rotation = -8 })
 local cashLbl = text(cashBar, "$0", { Font = TITLE, Position = UDim2.fromOffset(56, 6), Size = UDim2.new(1, -110, 0, 44) })
-local plusBtn = juicy(bubbleButton(cashBar, "+", Color3.fromRGB(255, 200, 40), {
+local plusBtn = juicy(bubbleButton(cashBar, Assets.plus and "" or "+", Color3.fromRGB(255, 200, 40), {
 	Position = UDim2.new(1, -50, 0, 6), Size = UDim2.fromOffset(44, 44) }))
+if Assets.plus then
+	icon(plusBtn, "plus", "+", { Size = UDim2.fromScale(1, 1) })
+end
 local incomeLbl = text(gui, "+$0/s", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 70),
 	Size = UDim2.fromOffset(200, 26), TextColor3 = Color3.fromRGB(150, 255, 150) })
 local _ = cashIcon
@@ -387,7 +425,7 @@ local function card(page, item, kind, color)
 	corner(c, 16)
 	stroke(c, 3)
 	gradient(c, color, shade(color, 0.6))
-	text(c, item.Icon, { Position = UDim2.new(0.5, -28, 0, 6), Size = UDim2.fromOffset(56, 52), ZIndex = 23 })
+	icon(c, item.Img, item.Icon, { Position = UDim2.new(0.5, -30, 0, 2), Size = UDim2.fromOffset(60, 60), ZIndex = 23 })
 	text(c, item.Name, { Position = UDim2.fromOffset(6, 58), Size = UDim2.new(1, -12, 0, 26), ZIndex = 23 })
 	text(c, item.Desc, { Position = UDim2.fromOffset(8, 86), Size = UDim2.new(1, -16, 0, 34), ZIndex = 23,
 		TextColor3 = Color3.fromRGB(230, 230, 240), TextWrapped = true })
@@ -534,16 +572,16 @@ menu.Parent = gui
 local menuList = Instance.new("UIListLayout")
 menuList.Padding = UDim.new(0, 12)
 menuList.Parent = menu
-local function menuButton(icon, label, color)
+local function menuButton(img, emoji, label, color)
 	local b = juicy(bubbleButton(menu, "", color, { Size = UDim2.fromOffset(80, 80) }))
-	text(b, icon, { Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 0, 46) })
+	icon(b, img, emoji, { Position = UDim2.fromOffset(8, -4), Size = UDim2.new(1, -16, 0, 52) })
 	text(b, label, { Position = UDim2.new(0, -4, 1, -26), Size = UDim2.new(1, 8, 0, 24) })
 	return b
 end
-local shopBtn = menuButton("🛒", "SHOP", Color3.fromRGB(255, 170, 40))
-local rebirthBtn = menuButton("🔄", "REBIRTH", Color3.fromRGB(190, 90, 255))
-local indexBtn = menuButton("📖", "INDEX", Color3.fromRGB(70, 150, 255))
-local dailyBtn = menuButton("📅", "DAILY", Color3.fromRGB(255, 80, 120))
+local shopBtn = menuButton("shop", "🛒", "SHOP", Color3.fromRGB(255, 170, 40))
+local rebirthBtn = menuButton("rebirth", "🔄", "REBIRTH", Color3.fromRGB(190, 90, 255))
+local indexBtn = menuButton("index", "📖", "INDEX", Color3.fromRGB(70, 150, 255))
+local dailyBtn = menuButton("daily", "📅", "DAILY", Color3.fromRGB(255, 80, 120))
 shopBtn.Activated:Connect(function()
 	openShop("Passes")
 end)
@@ -580,7 +618,7 @@ rightList.Padding = UDim.new(0, 12)
 rightList.HorizontalAlignment = Enum.HorizontalAlignment.Right
 rightList.Parent = right
 local giftBtn = juicy(bubbleButton(right, "", Color3.fromRGB(255, 90, 160), { Size = UDim2.fromOffset(100, 100) }))
-text(giftBtn, "🎁", { Size = UDim2.new(1, 0, 0, 56) })
+icon(giftBtn, "gift", "🎁", { Position = UDim2.fromOffset(10, -2), Size = UDim2.new(1, -20, 0, 62) })
 local giftLbl = text(giftBtn, "", { Position = UDim2.new(0, -4, 1, -34), Size = UDim2.new(1, 8, 0, 30) })
 giftBtn.Activated:Connect(function()
 	action("Gift")
@@ -589,7 +627,10 @@ local luckLbl = text(right, "", { Size = UDim2.fromOffset(110, 44), BackgroundTr
 	BackgroundColor3 = Color3.fromRGB(60, 200, 90), Visible = false })
 corner(luckLbl, 12)
 stroke(luckLbl, 3)
-local boostBtn = juicy(bubbleButton(right, "🍀 LUCK", Color3.fromRGB(60, 200, 90), { Size = UDim2.fromOffset(100, 50) }))
+local boostBtn = juicy(bubbleButton(right, Assets.luck and "    LUCK" or "🍀 LUCK", Color3.fromRGB(60, 200, 90), { Size = UDim2.fromOffset(100, 50) }))
+if Assets.luck then
+	icon(boostBtn, "luck", "🍀", { Position = UDim2.fromOffset(-14, -14), Size = UDim2.fromOffset(44, 44), Rotation = -12 })
+end
 boostBtn.Activated:Connect(function()
 	openShop("Boosts")
 end)
@@ -613,6 +654,8 @@ local offerPitch = text(offerBody, "", { Position = UDim2.fromOffset(0, 54), Siz
 local offerTimer = text(offerBody, "", { Position = UDim2.fromOffset(0, 114), Size = UDim2.new(1, 0, 0, 26),
 	TextColor3 = Color3.fromRGB(255, 120, 120), ZIndex = 22 })
 local offerBuy = juicy(bubbleButton(offerBody, "BUY", GREEN, { Position = UDim2.new(0.5, -140, 0, 152), Size = UDim2.fromOffset(280, 62), ZIndex = 22 }))
+local offerIcon = icon(offer, "starter", "🎒", { Position = UDim2.fromOffset(-34, -40), Size = UDim2.fromOffset(110, 110),
+	Rotation = -14, ZIndex = 30 })
 local currentOffer
 local offerEnds = 0
 local function showOffer(o)
@@ -624,7 +667,8 @@ local function showOffer(o)
 		return
 	end
 	currentOffer = o
-	offerTitle.Text = item.Icon .. " " .. o.Title .. " " .. item.Icon
+	offerTitle.Text = o.Title
+	setIcon(offerIcon, item.Img, item.Icon)
 	offerPitch.Text = o.Pitch
 	offerBuy.Text = "BUY NOW  R$ " .. item.Price
 	offerEnds = os.clock() + 300
@@ -707,6 +751,7 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 	-- offer countdown
 	if offer.Visible then
+		offerIcon.Rotation = -14 + math.sin(os.clock() * 3) * 6
 		local left = math.max(0, offerEnds - os.clock())
 		offerTimer.Text = string.format("⏰ ENDS IN %d:%02d", math.floor(left / 60), math.floor(left % 60))
 	end

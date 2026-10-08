@@ -5,19 +5,19 @@ local Config = {}
 Config.GameName = "Steal a Dragon Egg"
 
 Config.GamePasses = {
-	{ Key = "DoubleCash", Name = "2x Cash", Icon = "💵", Desc = "Double ALL egg income forever", Price = 199, Id = 0 },
-	{ Key = "VIP", Name = "VIP", Icon = "👑", Desc = "+25% income, VIP tag, gold name", Price = 299, Id = 0 },
-	{ Key = "ExtraSlots", Name = "+4 Egg Slots", Icon = "🥚", Desc = "Hold 12 eggs instead of 8", Price = 149, Id = 0 },
-	{ Key = "Speed", Name = "Speed Coil", Icon = "👟", Desc = "Run faster, steal easier", Price = 99, Id = 0 },
+	{ Key = "DoubleCash", Img = "cash", Name = "2x Cash", Icon = "💵", Desc = "Double ALL egg income forever", Price = 199, Id = 0 },
+	{ Key = "VIP", Img = "vip", Name = "VIP", Icon = "👑", Desc = "+25% income, VIP tag, gold name", Price = 299, Id = 0 },
+	{ Key = "ExtraSlots", Img = "slots", Name = "+4 Egg Slots", Icon = "🥚", Desc = "Hold 12 eggs instead of 8", Price = 149, Id = 0 },
+	{ Key = "Speed", Img = "speed", Name = "Speed Coil", Icon = "👟", Desc = "Run faster, steal easier", Price = 99, Id = 0 },
 }
 
 Config.Products = {
-	{ Key = "Starter", Name = "Starter Pack", Icon = "🎒", Desc = "Cash + 15 min Server Luck!", Price = 49, Id = 0, Tab = "Boosts" },
-	{ Key = "CashS", Name = "Pile of Cash", Icon = "💵", Desc = "Instant cash", Price = 25, Id = 0, Tab = "Cash", Cash = 2500 },
-	{ Key = "CashM", Name = "Bag of Cash", Icon = "💰", Desc = "Lots of instant cash", Price = 99, Id = 0, Tab = "Cash", Cash = 15000 },
-	{ Key = "CashL", Name = "Vault of Cash", Icon = "🏦", Desc = "A HUGE amount of cash", Price = 399, Id = 0, Tab = "Cash", Cash = 100000 },
-	{ Key = "Luck", Name = "Server Luck x3", Icon = "🍀", Desc = "Rare eggs for EVERYONE, 15 min", Price = 149, Id = 0, Tab = "Boosts" },
-	{ Key = "Lock", Name = "Instant Lock", Icon = "🔒", Desc = "Lock your base for 2 minutes", Price = 15, Id = 0, Tab = "Boosts" },
+	{ Key = "Starter", Img = "starter", Name = "Starter Pack", Icon = "🎒", Desc = "Cash + 15 min Server Luck!", Price = 49, Id = 0, Tab = "Boosts" },
+	{ Key = "CashS", Img = "cash", Name = "Pile of Cash", Icon = "💵", Desc = "Instant cash", Price = 25, Id = 0, Tab = "Cash", Cash = 2500 },
+	{ Key = "CashM", Img = "bag", Name = "Bag of Cash", Icon = "💰", Desc = "Lots of instant cash", Price = 99, Id = 0, Tab = "Cash", Cash = 15000 },
+	{ Key = "CashL", Img = "vault", Name = "Vault of Cash", Icon = "🏦", Desc = "A HUGE amount of cash", Price = 399, Id = 0, Tab = "Cash", Cash = 100000 },
+	{ Key = "Luck", Img = "luck", Name = "Server Luck x3", Icon = "🍀", Desc = "Rare eggs for EVERYONE, 15 min", Price = 149, Id = 0, Tab = "Boosts" },
+	{ Key = "Lock", Img = "lock", Name = "Instant Lock", Icon = "🔒", Desc = "Lock your base for 2 minutes", Price = 15, Id = 0, Tab = "Boosts" },
 }
 
 Config.Offers = {
