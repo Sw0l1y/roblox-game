@@ -31,6 +31,70 @@ local function action(...)
 	remotes.Action:FireServer(...)
 end
 
+-- Sound effects come from one uploaded audio sprite (Kenney CC0); each name plays a region of it.
+local okSounds, Sounds = pcall(function()
+	return require(ReplicatedStorage:WaitForChild("Sounds", 5))
+end)
+if not okSounds or type(Sounds) ~= "table" then
+	Sounds = nil
+end
+local sfxGroup = Instance.new("SoundGroup")
+sfxGroup.Name = "SFX"
+sfxGroup.Parent = SoundService
+if Sounds then
+	task.spawn(function()
+		local warm = Instance.new("Sound")
+		warm.SoundId = Sounds.Id
+		warm.Parent = SoundService
+		pcall(function()
+			game:GetService("ContentProvider"):PreloadAsync({ warm })
+		end)
+	end)
+end
+local function sfx(name, volume, pitch)
+	local s = Instance.new("Sound")
+	s.Volume = volume or 0.5
+	s.PlaybackSpeed = pitch or 1
+	s.SoundGroup = sfxGroup
+	local clip = Sounds and Sounds.Clips[name]
+	local life = 3
+	if clip then
+		s.SoundId = Sounds.Id
+		s.PlaybackRegionsEnabled = true
+		s.PlaybackRegion = NumberRange.new(clip[1], clip[1] + clip[2])
+		life = clip[2] / (pitch or 1) + 2
+	else
+		s.SoundId = "rbxasset://sounds/electronicpingshort.wav"
+	end
+	s.Parent = SoundService
+	s:Play()
+	task.delay(life, function()
+		s:Destroy()
+	end)
+end
+
+-- Background music: licensed tracks from Roblox's APM library, shuffled.
+local MUSIC = { 1842976958, 1836942830, 1840434670 } -- Arcade Weekend, Food Fight, Funky (A)
+local MUSIC_VOLUME = 0.22
+local music = Instance.new("Sound")
+music.Name = "Music"
+music.Volume = MUSIC_VOLUME
+music.Parent = SoundService
+local musicOn = true
+task.spawn(function()
+	local i = rng:NextInteger(1, #MUSIC)
+	while true do
+		music.SoundId = "rbxassetid://" .. MUSIC[i]
+		music:Play()
+		local started = os.clock()
+		task.wait(3)
+		while music.IsPlaying and os.clock() - started < 400 do
+			task.wait(1)
+		end
+		i = i % #MUSIC + 1
+	end
+end)
+
 ---------------------------------------------------------------------------
 -- UI kit (thick outlines + gradients, the standard sim look)
 ---------------------------------------------------------------------------
@@ -171,24 +235,10 @@ local function juicy(b)
 	end)
 	b.MouseButton1Down:Connect(function()
 		punch(b, -0.08)
+		sfx("pop", 0.4, rng:NextNumber(0.95, 1.1))
 	end)
 	return b
 end
-
-local function sound(id, volume, pitch)
-	local s = Instance.new("Sound")
-	s.SoundId = id
-	s.Volume = volume or 0.5
-	s.PlaybackSpeed = pitch or 1
-	s.Parent = SoundService
-	s:Play()
-	task.delay(4, function()
-		s:Destroy()
-	end)
-end
-local SND_PING = "rbxasset://sounds/electronicpingshort.wav"
-local SND_CLICK = "rbxasset://sounds/clickfast.wav"
-local SND_WHOOSH = "rbxasset://sounds/swoosh.wav"
 
 ---------------------------------------------------------------------------
 -- Effects layer: floating text, confetti, banner, shake
@@ -287,7 +337,7 @@ cashBar.Parent = gui
 corner(cashBar, 28)
 stroke(cashBar, 4)
 gradient(cashBar, Color3.fromRGB(90, 230, 100), Color3.fromRGB(30, 150, 50))
-local cashIcon = icon(cashBar, "cash", "💵", { Position = UDim2.fromOffset(4, 2), Size = UDim2.fromOffset(52, 52), Rotation = -8 })
+local cashIcon = icon(cashBar, "cash", "💵", { Position = UDim2.fromOffset(-16, -10), Size = UDim2.fromOffset(74, 74), Rotation = -8 })
 local cashLbl = text(cashBar, "$0", { Font = TITLE, Position = UDim2.fromOffset(56, 6), Size = UDim2.new(1, -110, 0, 44) })
 local plusBtn = juicy(bubbleButton(cashBar, Assets.plus and "" or "+", Color3.fromRGB(255, 200, 40), {
 	Position = UDim2.new(1, -50, 0, 6), Size = UDim2.fromOffset(44, 44) }))
@@ -392,7 +442,7 @@ local function open(name)
 	p.Visible = not was
 	if p.Visible then
 		punch(p, 0.12)
-		sound(SND_CLICK, 0.4, 1.2)
+		sfx("open", 0.45)
 	end
 end
 
@@ -425,7 +475,7 @@ local function card(page, item, kind, color)
 	corner(c, 16)
 	stroke(c, 3)
 	gradient(c, color, shade(color, 0.6))
-	icon(c, item.Img, item.Icon, { Position = UDim2.new(0.5, -30, 0, 2), Size = UDim2.fromOffset(60, 60), ZIndex = 23 })
+	icon(c, item.Img, item.Icon, { Position = UDim2.new(0.5, -36, 0, -10), Size = UDim2.fromOffset(72, 72), ZIndex = 23 })
 	text(c, item.Name, { Position = UDim2.fromOffset(6, 58), Size = UDim2.new(1, -12, 0, 26), ZIndex = 23 })
 	text(c, item.Desc, { Position = UDim2.fromOffset(8, 86), Size = UDim2.new(1, -16, 0, 34), ZIndex = 23,
 		TextColor3 = Color3.fromRGB(230, 230, 240), TextWrapped = true })
@@ -574,7 +624,7 @@ menuList.Padding = UDim.new(0, 12)
 menuList.Parent = menu
 local function menuButton(img, emoji, label, color)
 	local b = juicy(bubbleButton(menu, "", color, { Size = UDim2.fromOffset(80, 80) }))
-	icon(b, img, emoji, { Position = UDim2.fromOffset(8, -4), Size = UDim2.new(1, -16, 0, 52) })
+	icon(b, img, emoji, { Position = UDim2.fromOffset(2, -14), Size = UDim2.new(1, -4, 0, 66) })
 	text(b, label, { Position = UDim2.new(0, -4, 1, -26), Size = UDim2.new(1, 8, 0, 24) })
 	return b
 end
@@ -618,7 +668,7 @@ rightList.Padding = UDim.new(0, 12)
 rightList.HorizontalAlignment = Enum.HorizontalAlignment.Right
 rightList.Parent = right
 local giftBtn = juicy(bubbleButton(right, "", Color3.fromRGB(255, 90, 160), { Size = UDim2.fromOffset(100, 100) }))
-icon(giftBtn, "gift", "🎁", { Position = UDim2.fromOffset(10, -2), Size = UDim2.new(1, -20, 0, 62) })
+icon(giftBtn, "gift", "🎁", { Position = UDim2.fromOffset(6, -16), Size = UDim2.new(1, -12, 0, 78) })
 local giftLbl = text(giftBtn, "", { Position = UDim2.new(0, -4, 1, -34), Size = UDim2.new(1, 8, 0, 30) })
 giftBtn.Activated:Connect(function()
 	action("Gift")
@@ -629,10 +679,24 @@ corner(luckLbl, 12)
 stroke(luckLbl, 3)
 local boostBtn = juicy(bubbleButton(right, Assets.luck and "    LUCK" or "🍀 LUCK", Color3.fromRGB(60, 200, 90), { Size = UDim2.fromOffset(100, 50) }))
 if Assets.luck then
-	icon(boostBtn, "luck", "🍀", { Position = UDim2.fromOffset(-14, -14), Size = UDim2.fromOffset(44, 44), Rotation = -12 })
+	icon(boostBtn, "luck", "🍀", { Position = UDim2.fromOffset(-18, -18), Size = UDim2.fromOffset(52, 52), Rotation = -12 })
 end
 boostBtn.Activated:Connect(function()
 	openShop("Boosts")
+end)
+
+-- music on/off (bottom left)
+local musicBtn = juicy(bubbleButton(gui, Assets.music and "" or "🎵", Color3.fromRGB(80, 150, 255), {
+	AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.fromOffset(56, 56) }))
+local musicIcon = icon(musicBtn, "music", "", { Size = UDim2.fromScale(1, 1) })
+musicBtn.Activated:Connect(function()
+	musicOn = not musicOn
+	music.Volume = musicOn and MUSIC_VOLUME or 0
+	if Assets.music then
+		setIcon(musicIcon, musicOn and "music" or "mute", "")
+	else
+		musicBtn.Text = musicOn and "🎵" or "🔇"
+	end
 end)
 
 -- bottom status: lock + carrying
@@ -675,7 +739,7 @@ local function showOffer(o)
 	closeAll()
 	offer.Visible = true
 	punch(offer, 0.3)
-	sound(SND_WHOOSH, 0.8, 1.2)
+	sfx("offer", 0.6)
 end
 offerBuy.Activated:Connect(function()
 	if currentOffer then
@@ -856,47 +920,53 @@ end
 remotes:WaitForChild("Fx").OnClientEvent:Connect(function(kind, a, b)
 	if kind == "Toast" then
 		notify(a, WHITE)
-		sound(SND_CLICK, 0.4, 0.8)
+		sfx("toast", 0.4)
 	elseif kind == "Announce" then
 		notify(a, b)
-		sound(SND_PING, 0.4, 1.4)
+		sfx("bell", 0.45)
 	elseif kind == "Collect" then
 		local x, y = center()
 		floater("+$" .. Config.Format(a), Color3.fromRGB(120, 255, 120), x, y, 70)
 		punch(cashBar, 0.25)
 		confetti(math.clamp(math.floor(math.log10(a + 1) * 10), 10, 80))
+		sfx("coins", 0.7)
+		sfx("kaching", 0.35, 1.1)
 		for i = 0, 4 do
-			task.delay(i * 0.05, function()
-				sound(SND_PING, 0.35, 1.2 + i * 0.15)
+			task.delay(i * 0.06, function()
+				sfx("chip", 0.3, 1 + i * 0.12)
 			end)
 		end
 		kick(0.3)
 	elseif kind == "Bought" then
 		local r = Config.Rarity(b)
 		showBanner("GOT " .. string.upper(a) .. "!", r.Color)
-		sound(SND_WHOOSH, 0.7, 1.3)
+		sfx("buy", 0.5)
 		local _, ri = Config.Rarity(b)
 		if ri >= 4 then
+			sfx("rare", 0.7)
 			confetti(60)
 			kick(0.5)
 		end
 	elseif kind == "Broke" then
 		notify("Need $" .. Config.Format(a) .. "!", Color3.fromRGB(255, 120, 120))
 		punch(cashBar, 0.2)
+		sfx("error", 0.5)
 		brokeCount += 1
 		if brokeCount % 3 == 0 then
 			showOffer({ Kind = "Product", Key = "CashM", Title = "NEED CASH?", Pitch = "Grab a Bag of Cash and buy that egg!" })
 		end
 	elseif kind == "StealStart" then
 		showBanner("🦹 STOLEN! RUN HOME!", Color3.fromRGB(255, 80, 80))
-		sound(SND_WHOOSH, 0.9, 0.8)
+		sfx("grab", 0.6)
 		kick(0.4)
 	elseif kind == "StealSuccess" then
 		showBanner("✅ " .. a .. " IS YOURS!", Color3.fromRGB(120, 255, 120))
+		sfx("win", 0.7)
 		confetti(80)
 		kick(0.5)
 	elseif kind == "Stolen" then
 		showBanner("🚨 " .. a .. " STOLE YOUR " .. string.upper(b) .. "! 🚨", Color3.fromRGB(255, 60, 60))
+		sfx("alarm", 0.55)
 		notify("Touch them to get it back! Lock your base next time 🔒", Color3.fromRGB(255, 200, 200))
 		kick(0.8)
 		task.delay(2.5, function()
@@ -904,17 +974,21 @@ remotes:WaitForChild("Fx").OnClientEvent:Connect(function(kind, a, b)
 		end)
 	elseif kind == "Retrieved" then
 		showBanner("🛡️ GOT " .. string.upper(a) .. " BACK!", Color3.fromRGB(120, 200, 255))
+		sfx("back", 0.6)
 		confetti(30)
 	elseif kind == "Locked" then
 		notify("🔒 Base locked for " .. a .. "s", Color3.fromRGB(120, 190, 255))
+		sfx("lock", 0.7)
 	elseif kind == "Rebirth" then
 		showBanner("🔄 REBIRTH " .. a .. "!!!", Color3.fromRGB(200, 120, 255))
 		confetti(150)
 		kick(1)
-		sound(SND_WHOOSH, 1, 0.6)
+		sfx("rebirth", 0.8)
 		panels.Rebirth.Visible = false
 	elseif kind == "Thanks" then
 		showBanner("THANK YOU! 💖", Color3.fromRGB(255, 120, 200))
+		sfx("thanks", 0.7)
+		sfx("kaching", 0.5)
 		confetti(120)
 	elseif kind == "Welcome" then
 		task.delay(6, function()

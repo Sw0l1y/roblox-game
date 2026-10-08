@@ -20,7 +20,7 @@ doc = "".join([
     '<roblox xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="4">',
     item("Workspace", "Workspace"),
     item("ReplicatedStorage", "ReplicatedStorage", item("ModuleScript", "Config", source=src("Config.lua"))
-         + (item("ModuleScript", "Assets", source=src("Assets.lua")) if (SRC / "Assets.lua").exists() else "")),
+         + "".join(item("ModuleScript", m, source=src(f"{m}.lua")) for m in ("Assets", "Sounds") if (SRC / f"{m}.lua").exists())),
     item("ServerScriptService", "ServerScriptService", item("Script", "GameServer", source=src("GameServer.server.lua"))),
     item("StarterPlayer", "StarterPlayer",
          item("StarterPlayerScripts", "StarterPlayerScripts", item("LocalScript", "Client", source=src("Client.client.lua")))),
