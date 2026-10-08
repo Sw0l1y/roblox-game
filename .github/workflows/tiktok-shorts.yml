@@ -1,0 +1,30 @@
+# Daily: render a promo short and send it to TikTok drafts. Needs repo secrets
+# TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, TIKTOK_REFRESH_TOKEN (see tools/tiktok_draft.py).
+name: TikTok shorts
+on:
+  schedule:
+    - cron: "0 15 * * *" # 11am Miami (EDT)
+  workflow_dispatch:
+jobs:
+  short:
+    runs-on: ubuntu-latest
+    env:
+      TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+      TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+      TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: pip install pillow numpy
+      - name: Render
+        run: cd tools && python3 shorts.py --out ../out/shorts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shorts
+          path: out/shorts
+      - name: Send to TikTok drafts
+        if: ${{ env.TIKTOK_REFRESH_TOKEN != '' }}
+        run: python3 tools/tiktok_draft.py upload out/shorts/*.mp4
