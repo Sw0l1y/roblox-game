@@ -5,20 +5,20 @@ local Config = {}
 Config.GameName = "Escape the Lava Wave"
 
 Config.GamePasses = {
-	{ Key = "DoubleCash", Img = "doublecash", Name = "2x Cash", Icon = "💵", Desc = "Double ALL critter income forever", Price = 199, Id = 0 },
-	{ Key = "DoubleCarry", Img = "carry", Name = "2x Carry", Icon = "🎒", Desc = "Carry twice as many critters", Price = 249, Id = 0 },
-	{ Key = "Speed", Img = "speed", Name = "Speed Coil", Icon = "👟", Desc = "+30% run speed. Outrun the lava!", Price = 149, Id = 0 },
-	{ Key = "VIP", Img = "vip", Name = "VIP", Icon = "👑", Desc = "+25% income, VIP tag, 2 extra base slots", Price = 299, Id = 0 },
+	{ Key = "DoubleCash", Img = "doublecash", Name = "2x Cash", Icon = "💵", Desc = "Double ALL critter income forever", Price = 199, Id = 2022572264 },
+	{ Key = "DoubleCarry", Img = "carry", Name = "2x Carry", Icon = "🎒", Desc = "Carry twice as many critters", Price = 249, Id = 2021528268 },
+	{ Key = "Speed", Img = "speed", Name = "Speed Coil", Icon = "👟", Desc = "+30% run speed. Outrun the lava!", Price = 149, Id = 2022182275 },
+	{ Key = "VIP", Img = "vip", Name = "VIP", Icon = "👑", Desc = "+25% income, VIP tag, 2 extra base slots", Price = 299, Id = 2022344267 },
 }
 
 Config.Products = {
-	{ Key = "Starter", Img = "starter", Name = "Starter Pack", Icon = "🎒", Desc = "Cash + 2 Speed levels!", Price = 49, Id = 0, Tab = "Boosts" },
-	{ Key = "Revive", Img = "revive", Name = "Revive", Icon = "💖", Desc = "Get your lost critters back!", Price = 25, Id = 0, Tab = "Boosts" },
-	{ Key = "Freeze", Img = "freeze", Name = "Freeze Lava", Icon = "🧊", Desc = "No waves for 2 min, whole server", Price = 79, Id = 0, Tab = "Boosts" },
-	{ Key = "Luck", Img = "luck", Name = "Server Luck x3", Icon = "🍀", Desc = "Rare critters 3x more, 15 min", Price = 149, Id = 0, Tab = "Boosts" },
-	{ Key = "CashS", Img = "cash", Name = "Pile of Cash", Icon = "💵", Desc = "Instant cash", Price = 25, Id = 0, Tab = "Cash", Cash = 2500 },
-	{ Key = "CashM", Img = "bag", Name = "Bag of Cash", Icon = "💰", Desc = "Lots of instant cash", Price = 99, Id = 0, Tab = "Cash", Cash = 15000 },
-	{ Key = "CashL", Img = "vault", Name = "Vault of Cash", Icon = "🏦", Desc = "A HUGE amount of cash", Price = 399, Id = 0, Tab = "Cash", Cash = 100000 },
+	{ Key = "Starter", Img = "starter", Name = "Starter Pack", Icon = "🎒", Desc = "Cash + 2 Speed levels!", Price = 49, Id = 3717316694, Tab = "Boosts" },
+	{ Key = "Revive", Img = "revive", Name = "Revive", Icon = "💖", Desc = "Get your lost critters back!", Price = 25, Id = 3717316699, Tab = "Boosts" },
+	{ Key = "Freeze", Img = "freeze", Name = "Freeze Lava", Icon = "🧊", Desc = "No waves for 2 min, whole server", Price = 79, Id = 3717316701, Tab = "Boosts" },
+	{ Key = "Luck", Img = "luck", Name = "Server Luck x3", Icon = "🍀", Desc = "Rare critters 3x more, 15 min", Price = 149, Id = 3717316707, Tab = "Boosts" },
+	{ Key = "CashS", Img = "cash", Name = "Pile of Cash", Icon = "💵", Desc = "Instant cash", Price = 25, Id = 3717316711, Tab = "Cash", Cash = 2500 },
+	{ Key = "CashM", Img = "bag", Name = "Bag of Cash", Icon = "💰", Desc = "Lots of instant cash", Price = 99, Id = 3717316714, Tab = "Cash", Cash = 15000 },
+	{ Key = "CashL", Img = "vault", Name = "Vault of Cash", Icon = "🏦", Desc = "A HUGE amount of cash", Price = 399, Id = 3717316715, Tab = "Cash", Cash = 100000 },
 }
 
 Config.Offers = {
