@@ -31,14 +31,29 @@ end
 ---------------------------------------------------------------------------
 -- Lighting
 ---------------------------------------------------------------------------
-Lighting.ClockTime = 15
-Lighting.Brightness = 3
-Lighting.OutdoorAmbient = Color3.fromRGB(170, 170, 190)
+Lighting.ClockTime = 14
+Lighting.Brightness = 2.6
+Lighting.Ambient = Color3.fromRGB(110, 100, 130)
+Lighting.OutdoorAmbient = Color3.fromRGB(165, 160, 195)
+Lighting.EnvironmentDiffuseScale = 1
+Lighting.EnvironmentSpecularScale = 0.6
 local atmo = Instance.new("Atmosphere")
-atmo.Density = 0.25
-atmo.Color = Color3.fromRGB(200, 220, 255)
-atmo.Haze = 1
+atmo.Density = 0.3
+atmo.Offset = 0.1
+atmo.Color = Color3.fromRGB(205, 225, 255)
+atmo.Decay = Color3.fromRGB(150, 170, 230)
+atmo.Glare = 0.3
+atmo.Haze = 1.2
 atmo.Parent = Lighting
+local rays = Instance.new("SunRaysEffect")
+rays.Intensity = 0.06
+rays.Spread = 0.6
+rays.Parent = Lighting
+local clouds = Instance.new("Clouds")
+clouds.Cover = 0.55
+clouds.Density = 0.6
+clouds.Color = Color3.fromRGB(255, 255, 255)
+clouds.Parent = workspace.Terrain
 local cc = Instance.new("ColorCorrectionEffect")
 cc.Saturation = 0.25
 cc.Contrast = 0.08
@@ -102,7 +117,172 @@ for i, r in ipairs(Config.Rarities) do
 	rarityIndex[r.Name] = i
 end
 
--- Build an egg part for an egg definition
+-- Stylized look: flat SmoothPlastic colors, no stock material textures, toon outlines via Highlight.
+local PALETTE = {
+	Grass = Color3.fromRGB(118, 214, 96),
+	Grass2 = Color3.fromRGB(98, 196, 84),
+	Grass3 = Color3.fromRGB(140, 226, 110),
+	Sand = Color3.fromRGB(246, 226, 172),
+	Stone = Color3.fromRGB(196, 200, 216),
+	StoneDark = Color3.fromRGB(132, 138, 160),
+	Wood = Color3.fromRGB(176, 116, 66),
+	WoodDark = Color3.fromRGB(118, 74, 44),
+	Straw = Color3.fromRGB(240, 200, 100),
+	Belt = Color3.fromRGB(58, 56, 74),
+	Gold = Color3.fromRGB(255, 204, 64),
+	Outline = Color3.fromRGB(34, 26, 46),
+}
+local ACCENTS = {
+	Color3.fromRGB(255, 99, 132), Color3.fromRGB(255, 159, 64), Color3.fromRGB(255, 205, 86),
+	Color3.fromRGB(75, 192, 120), Color3.fromRGB(54, 162, 235), Color3.fromRGB(153, 102, 255),
+	Color3.fromRGB(255, 120, 200), Color3.fromRGB(80, 220, 220), Color3.fromRGB(240, 110, 80),
+	Color3.fromRGB(150, 220, 80), Color3.fromRGB(110, 130, 255), Color3.fromRGB(200, 90, 220),
+}
+
+local function group(name, outlined)
+	local m = Instance.new("Model")
+	m.Name = name
+	m.Parent = world
+	if outlined then
+		local h = Instance.new("Highlight")
+		h.FillTransparency = 1
+		h.OutlineColor = PALETTE.Outline
+		h.OutlineTransparency = 0.15
+		h.DepthMode = Enum.HighlightDepthMode.Occluded
+		h.Parent = m
+	end
+	return m
+end
+
+local function ellipsoid(size, cf, color, parent, props)
+	local p = part({ Size = size, CFrame = cf, Color = color, Parent = parent })
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.Sphere
+	mesh.Parent = p
+	for k, v in pairs(props or {}) do
+		p[k] = v
+	end
+	return p
+end
+
+-- upright cylinder: base sits at pos.Y
+local function cyl(pos, height, diameter, color, parent, props)
+	local p = part({ Shape = Enum.PartType.Cylinder, Size = Vector3.new(height, diameter, diameter),
+		CFrame = CFrame.new(pos + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color = color, Parent = parent })
+	for k, v in pairs(props or {}) do
+		p[k] = v
+	end
+	return p
+end
+
+local rng = Random.new(7)
+local decor = group("Decor", true)
+local groundGroup = group("Ground", false)
+
+local function tree(pos, s)
+	cyl(pos, 7 * s, 1.6 * s, PALETTE.WoodDark, decor)
+	local greens = { PALETTE.Grass2, PALETTE.Grass, Color3.fromRGB(80, 170, 70) }
+	ellipsoid(Vector3.new(9, 7, 9) * s, CFrame.new(pos + Vector3.new(0, 8 * s, 0)), greens[rng:NextInteger(1, 3)], decor)
+	ellipsoid(Vector3.new(6, 5, 6) * s, CFrame.new(pos + Vector3.new(1.5 * s, 11 * s, 0.5 * s)), greens[rng:NextInteger(1, 3)], decor)
+	ellipsoid(Vector3.new(5, 4, 5) * s, CFrame.new(pos + Vector3.new(-1.8 * s, 10 * s, -1 * s)), greens[rng:NextInteger(1, 3)], decor)
+end
+
+local function rock(pos, s)
+	ellipsoid(Vector3.new(6, 3.5, 5) * s, CFrame.new(pos + Vector3.new(0, 1 * s, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0),
+		PALETTE.StoneDark, decor)
+	ellipsoid(Vector3.new(3.5, 2.5, 3) * s, CFrame.new(pos + Vector3.new(2 * s, 0.8 * s, 1 * s)), PALETTE.Stone, decor)
+end
+
+local function bush(pos, s)
+	ellipsoid(Vector3.new(5, 3.2, 4.5) * s, CFrame.new(pos + Vector3.new(0, 1.2 * s, 0)), PALETTE.Grass2, decor)
+	for _ = 1, 3 do
+		ellipsoid(Vector3.new(0.8, 0.8, 0.8) * s,
+			CFrame.new(pos + Vector3.new(rng:NextNumber(-1.8, 1.8) * s, 2.4 * s, rng:NextNumber(-1.5, 1.5) * s)),
+			Color3.fromHSV(rng:NextNumber(), 0.55, 1), decor)
+	end
+end
+
+-- Ground + soft color patches + rolling hills around the edge
+part({ Name = "Grass", Size = Vector3.new(700, 2, 400), Position = Vector3.new(0, -1, 0), Color = PALETTE.Grass, Parent = groundGroup })
+for _ = 1, 40 do
+	local d = rng:NextNumber(14, 40)
+	cyl(Vector3.new(rng:NextNumber(-320, 320), 0, rng:NextNumber(-180, 180)), 0.05, d,
+		rng:NextNumber() < 0.5 and PALETTE.Grass2 or PALETTE.Grass3, groundGroup, { CanCollide = false })
+end
+for i = 0, 47 do
+	local a = i / 48 * math.pi * 2
+	local r = 300 + rng:NextNumber(0, 40)
+	local pos = Vector3.new(math.cos(a) * r * 1.15, -6, math.sin(a) * r * 0.62)
+	local s = rng:NextNumber(50, 90)
+	ellipsoid(Vector3.new(s, s * rng:NextNumber(0.5, 0.8), s), CFrame.new(pos),
+		(i % 2 == 0) and PALETTE.Grass2 or PALETTE.Grass3, decor)
+end
+for _ = 1, 70 do
+	local x, z = rng:NextNumber(-300, 300), rng:NextNumber(-170, 170)
+	local inPlots = math.abs(z) > 10 and math.abs(z) < 84 and math.abs(x) < 244
+	if not inPlots and math.abs(z) > 12 then
+		local r = rng:NextNumber()
+		local pos = Vector3.new(x, 0, z)
+		if r < 0.5 then
+			tree(pos, rng:NextNumber(0.9, 1.6))
+		elseif r < 0.75 then
+			bush(pos, rng:NextNumber(0.8, 1.3))
+		else
+			rock(pos, rng:NextNumber(0.7, 1.5))
+		end
+	end
+end
+
+-- Conveyor belt with moving chevrons (animated by the client), hatchery at the start, portal at the end
+local LANE_X = 250
+local conveyor = group("Conveyor", true)
+part({ Name = "Belt", Size = Vector3.new(LANE_X * 2, 0.6, 12), Position = Vector3.new(0, 0.3, 0), Color = PALETTE.Belt, Parent = conveyor })
+for _, z in ipairs({ -6.5, 6.5 }) do
+	part({ Size = Vector3.new(LANE_X * 2, 1.4, 1), Position = Vector3.new(0, 0.7, z), Color = PALETTE.Gold, Parent = conveyor })
+end
+local chevrons = Instance.new("Folder")
+chevrons.Name = "Chevrons"
+chevrons.Parent = world
+for x = -LANE_X, LANE_X - 1, 12 do
+	for _, dz in ipairs({ -1, 1 }) do
+		part({ Name = "Chevron", Size = Vector3.new(0.8, 0.1, 6), CFrame = CFrame.new(x, 0.65, dz * 2.6) * CFrame.Angles(0, math.rad(-dz * 40), 0),
+			Color = Color3.fromRGB(110, 106, 140), CanCollide = false, CanQuery = false, Parent = chevrons })
+	end
+end
+-- hatchery
+local hx = -LANE_X - 8
+part({ Size = Vector3.new(4, 18, 4), Position = Vector3.new(hx, 9, -9), Color = PALETTE.Stone, Parent = conveyor })
+part({ Size = Vector3.new(4, 18, 4), Position = Vector3.new(hx, 9, 9), Color = PALETTE.Stone, Parent = conveyor })
+part({ Size = Vector3.new(16, 6, 24), Position = Vector3.new(hx - 4, 21, 0), Color = PALETTE.Wood, Parent = conveyor })
+part({ Size = Vector3.new(18, 1.2, 26), Position = Vector3.new(hx - 4, 24.6, 0), Color = PALETTE.WoodDark, Parent = conveyor })
+part({ Size = Vector3.new(14, 18, 22), Position = Vector3.new(hx - 10, 9, 0), Color = PALETTE.Stone, Parent = conveyor })
+ellipsoid(Vector3.new(7, 9, 7), CFrame.new(hx - 4, 30, 0), Color3.fromRGB(255, 235, 200), conveyor)
+local hatchSign = part({ Size = Vector3.new(1, 1, 1), Position = Vector3.new(hx, 30, 0), Transparency = 1, CanCollide = false, Parent = conveyor })
+billboard(hatchSign, { { Text = "🥚 EGG HATCHERY 🥚", Color = PALETTE.Gold } }, 6, 320, 46)
+-- exit portal
+for i = 0, 15 do
+	local a = i / 16 * math.pi * 2
+	part({ Size = Vector3.new(1.5, 3, 3), CFrame = CFrame.new(LANE_X + 4, 9 + math.sin(a) * 8, math.cos(a) * 8) * CFrame.Angles(a, 0, 0),
+		Color = Color3.fromRGB(170, 90, 255), Material = Enum.Material.Neon, Parent = conveyor })
+end
+local portalFill = part({ Size = Vector3.new(0.4, 15, 15), Position = Vector3.new(LANE_X + 4, 9, 0), Color = Color3.fromRGB(120, 60, 220),
+	Material = Enum.Material.Neon, Transparency = 0.4, CanCollide = false, Parent = conveyor })
+local portalMesh = Instance.new("SpecialMesh")
+portalMesh.MeshType = Enum.MeshType.Sphere
+portalMesh.Parent = portalFill
+
+local spawnLoc = Instance.new("SpawnLocation")
+spawnLoc.Anchored = true
+spawnLoc.Size = Vector3.new(8, 0.4, 8)
+spawnLoc.Position = Vector3.new(0, 0.2, 0)
+spawnLoc.Transparency = 1
+spawnLoc.CanCollide = false
+spawnLoc.Duration = 0
+spawnLoc.Parent = world
+
+-- Eggs: smooth ellipsoids with spots, outlined in their own group
+local eggGroup = group("Eggs", true)
+
 local function makeEgg(def, withPrice)
 	local ri = rarityIndex[def.Rarity] or 1
 	local rarity = Config.Rarities[ri]
@@ -111,16 +291,51 @@ local function makeEgg(def, withPrice)
 	egg.Name = "Egg"
 	egg.Size = Vector3.new(3, 4, 3) * s
 	egg.Color = def.Color
-	egg.Material = ri >= 5 and Enum.Material.Neon or Enum.Material.SmoothPlastic
+	egg.Material = Enum.Material.SmoothPlastic
 	egg.Anchored = true
 	egg.CanCollide = false
 	local mesh = Instance.new("SpecialMesh")
 	mesh.MeshType = Enum.MeshType.Sphere
 	mesh.Parent = egg
+	-- spots
+	if ri >= 2 then
+		local spotColor = ri >= 6 and rarity.Color or Color3.new(def.Color.R * 0.7, def.Color.G * 0.7, def.Color.B * 0.7)
+		local srng = Random.new(#def.Name * 31)
+		for _ = 1, 3 + ri do
+			local theta = srng:NextNumber(0.5, 2.6)
+			local phi = srng:NextNumber(0, math.pi * 2)
+			local dir = Vector3.new(math.sin(theta) * math.cos(phi) * 1.5, math.cos(theta) * 2, math.sin(theta) * math.sin(phi) * 1.5) * s * 0.93
+			local d = srng:NextNumber(0.6, 1.1) * s
+			local spot = Instance.new("Part")
+			spot.Size = Vector3.new(d, d, d * 0.5)
+			spot.CFrame = CFrame.lookAt(dir, dir * 2)
+			spot.Color = spotColor
+			spot.Material = ri >= 6 and Enum.Material.Neon or Enum.Material.SmoothPlastic
+			spot.CanCollide = false
+			spot.CanQuery = false
+			spot.CanTouch = false
+			spot.Massless = true
+			local sm = Instance.new("SpecialMesh")
+			sm.MeshType = Enum.MeshType.Sphere
+			sm.Parent = spot
+			local w = Instance.new("WeldConstraint")
+			w.Part0 = egg
+			w.Part1 = spot
+			w.Parent = spot
+			spot.Parent = egg
+		end
+	end
 	if ri >= 4 then
-		local sp = Instance.new("Sparkles")
-		sp.SparkleColor = rarity.Color
-		sp.Parent = egg
+		local aura = Instance.new("ParticleEmitter")
+		aura.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+		aura.Color = ColorSequence.new(rarity.Color)
+		aura.LightEmission = 1
+		aura.Size = NumberSequence.new(0.6, 0)
+		aura.Lifetime = NumberRange.new(0.6, 1.2)
+		aura.Rate = 4 + (ri - 4) * 6
+		aura.Speed = NumberRange.new(1, 3)
+		aura.SpreadAngle = Vector2.new(180, 180)
+		aura.Parent = egg
 	end
 	if ri >= 6 then
 		local light = Instance.new("PointLight")
@@ -142,26 +357,7 @@ local function makeEgg(def, withPrice)
 	return egg
 end
 
----------------------------------------------------------------------------
--- Map: grass, conveyor lane down the middle, 12 bases on both sides
----------------------------------------------------------------------------
-part({ Name = "Ground", Size = Vector3.new(560, 2, 260), Position = Vector3.new(0, -1, 0),
-	Color = Color3.fromRGB(100, 190, 90), Material = Enum.Material.Grass })
-local LANE_X = 250
-part({ Name = "Lane", Size = Vector3.new(LANE_X * 2, 0.4, 12), Position = Vector3.new(0, 0.2, 0),
-	Color = Color3.fromRGB(200, 30, 50), Material = Enum.Material.Fabric })
-for _, z in ipairs({ -6.5, 6.5 }) do
-	part({ Size = Vector3.new(LANE_X * 2, 1, 1), Position = Vector3.new(0, 0.5, z), Color = Color3.fromRGB(255, 210, 60) })
-end
-local spawnLoc = Instance.new("SpawnLocation")
-spawnLoc.Anchored = true
-spawnLoc.Size = Vector3.new(8, 0.4, 8)
-spawnLoc.Position = Vector3.new(0, 0.2, 0)
-spawnLoc.Transparency = 1
-spawnLoc.CanCollide = false
-spawnLoc.Duration = 0
-spawnLoc.Parent = world
-
+-- Bases: raised stone platform, wood fence, corner towers in the base's accent color, nests for eggs
 local plots = {}
 local PLOT_XS = { -200, -120, -40, 40, 120, 200 }
 local function slotOffset(slot)
@@ -173,37 +369,93 @@ end
 for i = 1, 12 do
 	local side = i <= 6 and 1 or -1
 	local x = PLOT_XS[(i - 1) % 6 + 1]
-	local plot = { Index = i, X = x, Side = side, Slots = {}, EggParts = {} }
+	local accent = ACCENTS[i]
+	local model = group("Base" .. i, true)
+	local plot = { Index = i, X = x, Side = side, Slots = {}, EggParts = {}, Model = model }
 	local function at(v) -- local plot coords (z grows away from the lane) -> world
 		return Vector3.new(x + v.X, v.Y, side * v.Z)
 	end
 	plot.At = at
-	part({ Name = "Floor", Size = Vector3.new(64, 0.4, 52), Position = at(Vector3.new(0, 0.2, 46)),
-		Color = Color3.fromHSV((i * 0.083) % 1, 0.25, 0.95), Material = Enum.Material.WoodPlanks })
-	part({ Size = Vector3.new(64, 10, 2), Position = at(Vector3.new(0, 5, 72)), Color = Color3.fromRGB(240, 240, 250) })
-	for _, sx in ipairs({ -32, 32 }) do
-		part({ Size = Vector3.new(2, 10, 52), Position = at(Vector3.new(sx, 5, 46)), Color = Color3.fromRGB(240, 240, 250) })
+	part({ Name = "Platform", Size = Vector3.new(66, 1, 54), Position = at(Vector3.new(0, 0.5, 46)), Color = PALETTE.Stone, Parent = model })
+	part({ Name = "Floor", Size = Vector3.new(60, 0.2, 48), Position = at(Vector3.new(0, 1.1, 47)),
+		Color = accent:Lerp(Color3.new(1, 1, 1), 0.72), Parent = model })
+	-- path strip to the nests
+	part({ Size = Vector3.new(8, 0.25, 26), Position = at(Vector3.new(0, 1.15, 33)), Color = PALETTE.Sand, Parent = model })
+	-- fence: posts + two rails on back and sides
+	local function fenceLine(a, b, n)
+		for k = 0, n do
+			local pos = a:Lerp(b, k / n)
+			part({ Size = Vector3.new(1.2, 5, 1.2), Position = pos + Vector3.new(0, 3.5, 0), Color = PALETTE.Wood, Parent = model })
+		end
+		local mid = (a + b) / 2
+		local len = (b - a).Magnitude
+		for _, h in ipairs({ 2.6, 4.6 }) do
+			part({ Size = Vector3.new(0.6, 0.6, len), CFrame = CFrame.lookAt(mid + Vector3.new(0, h, 0), b + Vector3.new(0, h, 0)),
+				Color = PALETTE.WoodDark, Parent = model })
+		end
 	end
-	plot.Door = part({ Name = "LaserDoor", Size = Vector3.new(60, 10, 1), Position = at(Vector3.new(0, 5, 20)),
-		Color = Color3.fromRGB(255, 40, 60), Material = Enum.Material.Neon, Transparency = 1, CanCollide = false })
+	fenceLine(at(Vector3.new(-32, 1, 72)), at(Vector3.new(32, 1, 72)), 8)
+	fenceLine(at(Vector3.new(-32, 1, 22)), at(Vector3.new(-32, 1, 72)), 6)
+	fenceLine(at(Vector3.new(32, 1, 22)), at(Vector3.new(32, 1, 72)), 6)
+	-- front towers with accent roofs and flags
+	for _, tx in ipairs({ -32, 32 }) do
+		local base = at(Vector3.new(tx, 1, 21))
+		part({ Size = Vector3.new(5, 12, 5), Position = base + Vector3.new(0, 6, 0), Color = PALETTE.Stone, Parent = model })
+		part({ Size = Vector3.new(6, 1, 6), Position = base + Vector3.new(0, 12.5, 0), Color = PALETTE.StoneDark, Parent = model })
+		for k = 0, 3 do
+			cyl(base + Vector3.new(0, 13 + k * 1.4, 0), 1.4, 6 - k * 1.5, accent, model)
+		end
+		part({ Size = Vector3.new(0.4, 6, 0.4), Position = base + Vector3.new(0, 21, 0), Color = PALETTE.WoodDark, Parent = model })
+		part({ Size = Vector3.new(0.3, 2.4, 3.6), Position = base + Vector3.new(0, 22.6, 1.8), Color = accent, Parent = model })
+	end
+	plot.Door = part({ Name = "LaserDoor", Size = Vector3.new(59, 10, 0.6), Position = at(Vector3.new(0, 6, 21)),
+		Color = Color3.fromRGB(255, 50, 80), Material = Enum.Material.ForceField, Transparency = 1, CanCollide = false, Parent = model })
+	-- nests
 	for slot = 1, Config.BaseSlots + Config.ExtraSlots do
-		local ped = part({ Name = "Pedestal", Size = Vector3.new(6, 1, 6), Position = at(slotOffset(slot) + Vector3.new(0, 0.9, 0)),
-			Color = Color3.fromRGB(70, 70, 90), Material = Enum.Material.Slate })
+		local c = at(slotOffset(slot) + Vector3.new(0, 1.2, 0))
+		local ped = cyl(c, 1, 6.4, PALETTE.WoodDark, model, { Name = "Pedestal" })
+		cyl(c + Vector3.new(0, 0.6, 0), 0.6, 6.8, PALETTE.Straw, model, { CanCollide = false })
+		cyl(c + Vector3.new(0, 0.7, 0), 0.6, 4.6, Color3.fromRGB(196, 150, 80), model, { CanCollide = false })
 		if slot > Config.BaseSlots then
 			ped.Transparency = 0.6
 			billboard(ped, { { Text = "🔒 +4 Slots", Color = Color3.fromRGB(255, 230, 80) } }, 2, 120, 30)
 		end
 		plot.Slots[slot] = ped
 	end
-	plot.CollectPad = part({ Name = "CollectPad", Size = Vector3.new(8, 1, 8), Position = at(Vector3.new(22, 0.5, 28)),
-		Color = Color3.fromRGB(60, 230, 90), Material = Enum.Material.Neon })
-	plot.CollectLabel = billboard(plot.CollectPad, { { Text = "COLLECT" }, { Text = "$0", Color = Color3.fromRGB(120, 255, 120) } }, 4, 160, 60)
-	plot.LockPad = part({ Name = "LockPad", Size = Vector3.new(8, 1, 8), Position = at(Vector3.new(-22, 0.5, 28)),
-		Color = Color3.fromRGB(60, 140, 255), Material = Enum.Material.Neon })
+	-- round pads
+	plot.CollectPad = cyl(at(Vector3.new(22, 1, 30)), 0.5, 9, Color3.fromRGB(70, 220, 100), model, { Name = "CollectPad" })
+	cyl(at(Vector3.new(22, 1, 30)), 0.4, 10.4, Color3.fromRGB(40, 150, 70), model, { CanCollide = false })
+	plot.CollectLabel = billboard(plot.CollectPad, { { Text = "💰 COLLECT" }, { Text = "$0", Color = Color3.fromRGB(120, 255, 120) } }, 4, 160, 60)
+	plot.LockPad = cyl(at(Vector3.new(-22, 1, 30)), 0.5, 9, Color3.fromRGB(80, 150, 255), model, { Name = "LockPad" })
+	cyl(at(Vector3.new(-22, 1, 30)), 0.4, 10.4, Color3.fromRGB(40, 90, 180), model, { CanCollide = false })
 	plot.LockLabel = billboard(plot.LockPad, { { Text = "🔒 LOCK BASE" } }, 4, 170, 34)
-	local signPart = part({ Size = Vector3.new(1, 1, 1), Position = at(Vector3.new(0, 16, 72)), Transparency = 1, CanCollide = false })
-	plot.SignLabel = billboard(signPart, { { Text = "Empty Base", Color = Color3.fromRGB(255, 255, 255) } }, 0, 360, 50)
-	plot.SignLabel[1].Parent.MaxDistance = 400
+	-- owner sign board at the back, facing the lane
+	local boardPos = at(Vector3.new(0, 12, 73))
+	local board = part({ Size = Vector3.new(26, 7, 1), CFrame = CFrame.lookAt(boardPos, boardPos + Vector3.new(0, 0, -side)),
+		Color = PALETTE.Wood, Parent = model })
+	for _, bx in ipairs({ -11, 11 }) do
+		part({ Size = Vector3.new(1.2, 10, 1.2), CFrame = board.CFrame * CFrame.new(bx, -5, 0.8), Color = PALETTE.WoodDark, Parent = model })
+	end
+	local sg = Instance.new("SurfaceGui")
+	sg.Face = Enum.NormalId.Front
+	sg.CanvasSize = Vector2.new(520, 140)
+	sg.LightInfluence = 0.2
+	sg.Parent = board
+	local signText = Instance.new("TextLabel")
+	signText.Size = UDim2.fromScale(1, 1)
+	signText.BackgroundColor3 = accent
+	signText.Font = Enum.Font.FredokaOne
+	signText.TextScaled = true
+	signText.TextColor3 = Color3.new(1, 1, 1)
+	signText.TextStrokeTransparency = 0
+	signText.Text = "Empty Base"
+	signText.Parent = sg
+	local signStroke = Instance.new("UIStroke")
+	signStroke.Thickness = 6
+	signStroke.Color = PALETTE.WoodDark
+	signStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	signStroke.Parent = signText
+	plot.SignLabel = { signText }
 	plots[i] = plot
 end
 
@@ -275,7 +527,7 @@ local function placeEgg(player, slot, name)
 	egg:SetAttribute("Slot", slot)
 	stealPrompt(egg)
 	sellPrompt(egg, def)
-	egg.Parent = world
+	egg.Parent = eggGroup
 	plot.EggParts[slot] = egg
 	-- little spin so it looks alive
 	TweenService:Create(egg, TweenInfo.new(4, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
@@ -547,7 +799,7 @@ local function spawnConveyorEgg()
 	p.MaxActivationDistance = 12
 	p.RequiresLineOfSight = false
 	p.Parent = egg
-	egg.Parent = world
+	egg.Parent = eggGroup
 	p.Triggered:Connect(function(player)
 		local s = S[player]
 		if not s or not s.Plot or not egg.Parent then

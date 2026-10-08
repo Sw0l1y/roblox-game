@@ -14,6 +14,10 @@ local camera = workspace.CurrentCamera
 local rng = Random.new()
 
 local FONT = Enum.Font.FredokaOne
+local okFont, luckiest = pcall(function()
+	return Enum.Font.LuckiestGuy
+end)
+local TITLE = okFont and luckiest or FONT
 local BLACK = Color3.fromRGB(20, 20, 30)
 local WHITE = Color3.new(1, 1, 1)
 local GREEN = Color3.fromRGB(70, 220, 90)
@@ -162,6 +166,7 @@ fxLayer.Parent = gui
 
 local function floater(str, color, x, y, size)
 	local l = text(fxLayer, str, {
+		Font = TITLE,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromOffset(x, y),
 		Size = UDim2.fromOffset(size * 7, size),
@@ -210,6 +215,7 @@ local function kick(s)
 end
 
 local banner = text(gui, "", {
+	Font = TITLE,
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.32),
 	Size = UDim2.fromOffset(640, 80),
@@ -247,7 +253,7 @@ corner(cashBar, 28)
 stroke(cashBar, 4)
 gradient(cashBar, Color3.fromRGB(90, 230, 100), Color3.fromRGB(30, 150, 50))
 local cashIcon = text(cashBar, "💵", { Position = UDim2.fromOffset(8, 6), Size = UDim2.fromOffset(44, 44) })
-local cashLbl = text(cashBar, "$0", { Position = UDim2.fromOffset(56, 6), Size = UDim2.new(1, -110, 0, 44) })
+local cashLbl = text(cashBar, "$0", { Font = TITLE, Position = UDim2.fromOffset(56, 6), Size = UDim2.new(1, -110, 0, 44) })
 local plusBtn = juicy(bubbleButton(cashBar, "+", Color3.fromRGB(255, 200, 40), {
 	Position = UDim2.new(1, -50, 0, 6), Size = UDim2.fromOffset(44, 44) }))
 local incomeLbl = text(gui, "+$0/s", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 70),
@@ -324,7 +330,7 @@ local function makePanel(name, title, color, w, h)
 	corner(bar, 22)
 	stroke(bar, 4)
 	gradient(bar, color, shade(color, 0.65))
-	text(bar, title, { Position = UDim2.fromOffset(16, 6), Size = UDim2.new(1, -90, 0, 44), ZIndex = 22,
+	text(bar, title, { Font = TITLE, Position = UDim2.fromOffset(16, 6), Size = UDim2.new(1, -90, 0, 44), ZIndex = 22,
 		TextXAlignment = Enum.TextXAlignment.Left })
 	local x = juicy(bubbleButton(bar, "X", Color3.fromRGB(255, 70, 70), {
 		Position = UDim2.new(1, -60, 0, 4), Size = UDim2.fromOffset(48, 48), ZIndex = 22 }))
@@ -712,12 +718,14 @@ end)
 
 -- my own laser door never blocks me
 local myDoor
+local lastDoorScan = 0
 RunService.Heartbeat:Connect(function()
-	if not myDoor or myDoor:GetAttribute("OwnerId") ~= player.UserId then
+	if (not myDoor or myDoor:GetAttribute("OwnerId") ~= player.UserId) and os.clock() - lastDoorScan > 1 then
+		lastDoorScan = os.clock()
 		myDoor = nil
 		local w = workspace:FindFirstChild("World")
 		if w then
-			for _, d in ipairs(w:GetChildren()) do
+			for _, d in ipairs(w:GetDescendants()) do
 				if d.Name == "LaserDoor" and d:GetAttribute("OwnerId") == player.UserId then
 					myDoor = d
 				end
@@ -726,6 +734,30 @@ RunService.Heartbeat:Connect(function()
 	end
 	if myDoor then
 		myDoor.CanCollide = false
+	end
+end)
+
+-- moving conveyor chevrons
+local LANE = 250
+local beltSpeed = LANE * 2 / Config.ConveyorTime
+local chevronParts, chevronBase = {}, {}
+task.spawn(function()
+	local folder = workspace:WaitForChild("World"):WaitForChild("Chevrons")
+	task.wait(1)
+	for _, c in ipairs(folder:GetChildren()) do
+		chevronParts[#chevronParts + 1] = c
+		chevronBase[c] = c.CFrame
+	end
+end)
+RunService.RenderStepped:Connect(function()
+	local shift = (os.clock() * beltSpeed) % 12
+	for _, c in ipairs(chevronParts) do
+		local base = chevronBase[c]
+		local x = base.X + shift
+		if x > LANE then
+			x -= LANE * 2
+		end
+		c.CFrame = base - Vector3.new(base.X, 0, 0) + Vector3.new(x, 0, 0)
 	end
 end)
 
