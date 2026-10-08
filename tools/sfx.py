@@ -1,6 +1,8 @@
 """Pack chosen Kenney CC0 sound effects into one audio sprite (one upload, many sounds).
 
-Usage: python3 tools/sfx.py <kenney-dir>  ->  art/sfx/sprite.ogg + art/sfx/sprite.json
+Usage: python3 tools/sfx.py <kenney-dir> [game]  ->  art/sfx/sprite.ogg + art/sfx/sprite.json
+With a game name, the clip list comes from art/<game>/sfx/clips.json and output goes to art/<game>/sfx/.
+A clip file of "synth:siren" is generated here instead of loaded.
 <kenney-dir> holds the unzipped packs from kenney.nl (interface-sounds, casino-audio, impact-sounds,
 digital-audio, music-jingles, rpg-audio). All CC0.
 """
@@ -46,12 +48,26 @@ def load(path):
     return np.frombuffer(raw, np.float32).copy()
 
 
+def synth(kind):
+    if kind == "siren":  # two rising wails, like an eruption alarm
+        t = np.arange(int(SR * 1.8)) / SR
+        f = 520 + 420 * (0.5 - 0.5 * np.cos(2 * np.pi * t / 0.9))
+        ph = 2 * np.pi * np.cumsum(f) / SR
+        x = np.sin(ph) + 0.35 * np.sin(2 * ph) + 0.15 * np.sign(np.sin(3 * ph))
+        return (x * np.minimum(1, np.minimum(t / 0.05, (t[-1] - t) / 0.2))).astype(np.float32)
+    raise ValueError(kind)
+
+
 def main():
+    global OUT, CLIPS
     src = pathlib.Path(sys.argv[1])
+    if len(sys.argv) > 2:
+        OUT = ROOT / "art" / sys.argv[2] / "sfx"
+        CLIPS = {k: tuple(v) for k, v in json.loads((OUT / "clips.json").read_text()).items()}
     files = {p.name: p for p in src.rglob("*.ogg")}
     pieces, regions, t = [np.zeros(int(SR * GAP), np.float32)], {}, GAP
     for name, (fname, gain) in CLIPS.items():
-        x = load(files[fname])
+        x = synth(fname[6:]) if fname.startswith("synth:") else load(files[fname])
         x = x / max(1e-6, np.max(np.abs(x))) * 0.89 * gain
         regions[name] = [round(t, 3), round(len(x) / SR, 3)]
         pieces += [x, np.zeros(int(SR * GAP), np.float32)]

@@ -13,11 +13,12 @@ import urllib.request
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ICONS = ROOT / "art" / "icons"
-CACHE = ROOT / "art" / "uploaded.json"
 KEY = pathlib.Path(os.environ["ROBLOX_API_KEY_FILE"]).read_text().strip()
 CREATOR = sys.argv[1]
 GAME = sys.argv[2] if len(sys.argv) > 2 else "eggs"
+ART = ROOT / "art" / ("" if GAME == "eggs" else GAME)  # eggs keeps its icons in art/icons; other games in art/<game>/icons
+ICONS = ART / "icons"
+CACHE = ART / "uploaded.json"
 
 
 def request(method, url, body=None, headers=None):
