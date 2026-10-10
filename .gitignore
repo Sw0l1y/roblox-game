@@ -2,3 +2,4 @@
 node_modules/
 tools/luau/roblox.d.luau
 __pycache__/
+tools/sim/api_data.luau

@@ -62,4 +62,11 @@ function Net.allow(player: Player, key: string, seconds: number): boolean
 	return true
 end
 
+-- The kit's own remotes exist from the start, so client modules waiting on them never stall.
+if IS_SERVER then
+	for _, name in ipairs({ "Data", "Notify", "Buy", "Fx" }) do
+		get("RemoteEvent", name)
+	end
+end
+
 return Net
