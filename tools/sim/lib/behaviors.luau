@@ -1211,26 +1211,36 @@ end
 ---------------------------------------------------------------------------------------------------- GUI geometry (approximate)
 R.SCREEN = v2(1280, 720)
 R.GUI_INSET = 58
-local function guiRect(inst)
-	local s = S[inst]
-	if R.classIsA(s.ClassName, "LayerCollector") then
-		if s.ClassName == "ScreenGui" then
-			local inset = (R.rawGet(inst, "IgnoreGuiInset") or R.rawGet(inst, "ScreenInsets") == R.enumItem("ScreenInsets", "None")) and 0 or R.GUI_INSET
-			return 0, inset, R.SCREEN.X, R.SCREEN.Y - inset
+local guiRect
+local function enumIs(v, enumName, item)
+	return v == R.enumItem(enumName, item)
+end
+-- UIScale: an object's own scale, and the product of its ancestors' scales (which scales its offsets).
+local function ownScale(inst)
+	local k = 1
+	for _, c in ipairs(S[inst].children) do
+		if S[c].ClassName == "UIScale" then
+			k *= R.rawGet(c, "Scale") or 1
 		end
-		return 0, 0, 200, 60
 	end
-	local p = s.parent
-	if not p or not R.classIsA(S[p].ClassName, "GuiBase2d") then
-		return 0, 0, 0, 0
+	return k
+end
+local function ancestorScale(inst)
+	local k = 1
+	local cur = S[inst].parent
+	while cur and R.classIsA(S[cur].ClassName, "GuiBase2d") do
+		k *= ownScale(cur)
+		cur = S[cur].parent
 	end
-	local px, py, pw, ph = guiRect(p)
+	return k
+end
+-- Size of a GuiObject inside a parent box of pw x ph (Size plus aspect/size constraints and UIScale).
+local function guiSize(inst, pw, ph, k)
+	k = k or ancestorScale(inst)
 	local size = R.rawGet(inst, "Size")
-	local pos = R.rawGet(inst, "Position")
-	local ap = R.rawGet(inst, "AnchorPoint") or v2(0, 0)
-	local w = pw * size.X.Scale + size.X.Offset
-	local h = ph * size.Y.Scale + size.Y.Offset
-	for _, c in ipairs(s.children) do
+	local w = pw * size.X.Scale + size.X.Offset * k
+	local h = ph * size.Y.Scale + size.Y.Offset * k
+	for _, c in ipairs(S[inst].children) do
 		local cs = S[c]
 		if cs.ClassName == "UIAspectRatioConstraint" then
 			local ar = R.rawGet(c, "AspectRatio")
@@ -1243,12 +1253,145 @@ local function guiRect(inst)
 			end
 		elseif cs.ClassName == "UISizeConstraint" then
 			local mn, mx = R.rawGet(c, "MinSize"), R.rawGet(c, "MaxSize")
-			w = math.clamp(w, mn.X, math.max(mn.X, mx.X))
-			h = math.clamp(h, mn.Y, math.max(mn.Y, mx.Y))
+			w = math.clamp(w, mn.X * k, math.max(mn.X, mx.X) * k)
+			h = math.clamp(h, mn.Y * k, math.max(mn.Y, mx.Y) * k)
 		end
 	end
-	local x = px + pw * pos.X.Scale + pos.X.Offset - w * ap.X
-	local y = py + ph * pos.Y.Scale + pos.Y.Offset - h * ap.Y
+	local own = ownScale(inst)
+	return w * own, h * own
+end
+-- Content box of a container: its rect minus UIPadding.
+local function contentRect(p, k)
+	local px, py, pw, ph = guiRect(p)
+	for _, c in ipairs(S[p].children) do
+		if S[c].ClassName == "UIPadding" then
+			local l, r = R.rawGet(c, "PaddingLeft"), R.rawGet(c, "PaddingRight")
+			local t, b = R.rawGet(c, "PaddingTop"), R.rawGet(c, "PaddingBottom")
+			local pl, pr = pw * l.Scale + l.Offset * k, pw * r.Scale + r.Offset * k
+			local pt, pb = ph * t.Scale + t.Offset * k, ph * b.Scale + b.Offset * k
+			return px + pl, py + pt, math.max(0, pw - pl - pr), math.max(0, ph - pt - pb)
+		end
+	end
+	return px, py, pw, ph
+end
+local function layoutOf(p)
+	for _, c in ipairs(S[p].children) do
+		local cn = S[c].ClassName
+		if cn == "UIListLayout" or cn == "UIGridLayout" then
+			return c, cn
+		end
+	end
+	return nil, nil
+end
+-- Visible GuiObject children of p in layout order.
+local function layoutItems(p, layout)
+	local items = {}
+	for i, c in ipairs(S[p].children) do
+		if R.classIsA(S[c].ClassName, "GuiObject") and R.rawGet(c, "Visible") ~= false then
+			table.insert(items, { inst = c, i = i, order = R.rawGet(c, "LayoutOrder") or 0, name = S[c].props.Name or "" })
+		end
+	end
+	local byName = enumIs(R.rawGet(layout, "SortOrder"), "SortOrder", "Name")
+	table.sort(items, function(a, b)
+		if byName then
+			if a.name ~= b.name then
+				return a.name < b.name
+			end
+		elseif a.order ~= b.order then
+			return a.order < b.order
+		end
+		return a.i < b.i
+	end)
+	return items
+end
+-- Position of inst placed by its parent's UIListLayout / UIGridLayout (approximation of Roblox's layout).
+local function layoutPos(inst, p, layout, cn, cx, cy, cw, ch, w, h, k)
+	local items = layoutItems(p, layout)
+	local horizontal = enumIs(R.rawGet(layout, "FillDirection"), "FillDirection", "Horizontal")
+	local ha, va = R.rawGet(layout, "HorizontalAlignment"), R.rawGet(layout, "VerticalAlignment")
+	if cn == "UIGridLayout" then
+		local cs, cp = R.rawGet(layout, "CellSize"), R.rawGet(layout, "CellPadding")
+		local cellW, cellH = cw * cs.X.Scale + cs.X.Offset * k, ch * cs.Y.Scale + cs.Y.Offset * k
+		local padX, padY = cw * cp.X.Scale + cp.X.Offset * k, ch * cp.Y.Scale + cp.Y.Offset * k
+		local maxCells = R.rawGet(layout, "FillDirectionMaxCells") or 0
+		local per
+		if horizontal then
+			per = math.max(1, math.floor((cw + padX) / math.max(1, cellW + padX)))
+		else
+			per = math.max(1, math.floor((ch + padY) / math.max(1, cellH + padY)))
+		end
+		if maxCells > 0 then
+			per = math.min(per, maxCells)
+		end
+		local idx = 0
+		for n, it in ipairs(items) do
+			if it.inst == inst then
+				idx = n - 1
+				break
+			end
+		end
+		local col, row = idx % per, math.floor(idx / per)
+		if not horizontal then
+			col, row = row, col
+		end
+		local nCols = horizontal and math.min(per, #items) or math.ceil(#items / per)
+		local nRows = horizontal and math.ceil(#items / per) or math.min(per, #items)
+		local totalW, totalH = nCols * cellW + (nCols - 1) * padX, nRows * cellH + (nRows - 1) * padY
+		local ox = enumIs(ha, "HorizontalAlignment", "Center") and (cw - totalW) / 2 or (enumIs(ha, "HorizontalAlignment", "Right") and cw - totalW or 0)
+		local oy = enumIs(va, "VerticalAlignment", "Center") and (ch - totalH) / 2 or (enumIs(va, "VerticalAlignment", "Bottom") and ch - totalH or 0)
+		return cx + ox + col * (cellW + padX), cy + oy + row * (cellH + padY), cellW, cellH
+	end
+	local pad = R.rawGet(layout, "Padding")
+	local gap = (horizontal and cw or ch) * pad.Scale + pad.Offset * k
+	local cursor, mine, total = 0, 0, 0
+	for n, it in ipairs(items) do
+		local iw, ih
+		if it.inst == inst then
+			iw, ih = w, h
+			mine = cursor
+		else
+			iw, ih = guiSize(it.inst, cw, ch, k)
+		end
+		local len = horizontal and iw or ih
+		cursor += len + (n < #items and gap or 0)
+		total += len + (n < #items and gap or 0)
+	end
+	local x, y
+	if horizontal then
+		local start = enumIs(ha, "HorizontalAlignment", "Center") and (cw - total) / 2 or (enumIs(ha, "HorizontalAlignment", "Right") and cw - total or 0)
+		x = cx + start + mine
+		y = cy + (enumIs(va, "VerticalAlignment", "Center") and (ch - h) / 2 or (enumIs(va, "VerticalAlignment", "Bottom") and ch - h or 0))
+	else
+		local start = enumIs(va, "VerticalAlignment", "Center") and (ch - total) / 2 or (enumIs(va, "VerticalAlignment", "Bottom") and ch - total or 0)
+		y = cy + start + mine
+		x = cx + (enumIs(ha, "HorizontalAlignment", "Center") and (cw - w) / 2 or (enumIs(ha, "HorizontalAlignment", "Right") and cw - w or 0))
+	end
+	return x, y, w, h
+end
+function guiRect(inst)
+	local s = S[inst]
+	if R.classIsA(s.ClassName, "LayerCollector") then
+		if s.ClassName == "ScreenGui" then
+			local inset = (R.rawGet(inst, "IgnoreGuiInset") or R.rawGet(inst, "ScreenInsets") == R.enumItem("ScreenInsets", "None")) and 0 or R.GUI_INSET
+			return 0, inset, R.SCREEN.X, R.SCREEN.Y - inset
+		end
+		return 0, 0, 200, 60
+	end
+	local p = s.parent
+	if not p or not R.classIsA(S[p].ClassName, "GuiBase2d") then
+		return 0, 0, 0, 0
+	end
+	local k = ancestorScale(inst)
+	local px, py, pw, ph = contentRect(p, k)
+	local w, h = guiSize(inst, pw, ph, k)
+	local layout, cn = layoutOf(p)
+	if layout and R.classIsA(s.ClassName, "GuiObject") then
+		return layoutPos(inst, p, layout, cn, px, py, pw, ph, w, h, k)
+	end
+	local pos = R.rawGet(inst, "Position")
+	local ap = R.rawGet(inst, "AnchorPoint") or v2(0, 0)
+	local x = px + pw * pos.X.Scale + pos.X.Offset * k - w * ap.X
+	local y = py + ph * pos.Y.Scale + pos.Y.Offset * k - h * ap.Y
 	return x, y, w, h
 end
 R.guiRect = guiRect
@@ -1283,21 +1426,17 @@ B("UIGridStyleLayout").get.AbsoluteContentSize = function(inst)
 	if not p then
 		return v2(0, 0)
 	end
-	local tw, th = 0, 0
-	local horizontal = R.rawGet(inst, "FillDirection") == R.enumItem("FillDirection", "Horizontal")
+	local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
 	for _, c in ipairs(S[p].children) do
 		if R.classIsA(S[c].ClassName, "GuiObject") and R.rawGet(c, "Visible") then
-			local _, _, w, h = guiRect(c)
-			if horizontal then
-				tw += w
-				th = math.max(th, h)
-			else
-				th += h
-				tw = math.max(tw, w)
-			end
+			local x, y, w, h = guiRect(c)
+			x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x + w), math.max(y1, y + h)
 		end
 	end
-	return v2(tw, th)
+	if x0 == math.huge then
+		return v2(0, 0)
+	end
+	return v2(x1 - x0, y1 - y0)
 end
 B("ScrollingFrame").get.AbsoluteCanvasSize = function(inst)
 	local _, _, w, h = guiRect(inst)

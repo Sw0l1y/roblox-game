@@ -182,7 +182,8 @@ function R.warn(text, key)
 		w.count += 1
 		return
 	end
-	R.warnings[key] = { msg = text, count = 1, ctx = R.CUR and R.CUR.name or "-", t = R.now }
+	-- where in the game's scripts it happened (first occurrence only)
+	R.warnings[key] = { msg = text, count = 1, ctx = R.CUR and R.CUR.name or "-", t = R.now, trace = debug.traceback("", 2) }
 	table.insert(R.warnOrder, key)
 	R.addLog("WARN", text)
 end

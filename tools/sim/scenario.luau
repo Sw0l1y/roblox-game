@@ -5,14 +5,26 @@ local R = Sim.R
 local S = R.STATE
 local opts = R.jsonDecode(OPTS)
 R.MOBILE = opts.mobile
+if R.MOBILE then
+	R.SCREEN = R.v2(844, 390) -- phone, landscape
+end
 local phases = {}
-local out = { phases = phases }
+local out = { phases = phases, uiIssues = {} }
 
 local function errCount()
 	return #R.errorOrder
 end
 
 local function phase(name, player, info, withUi)
+	if withUi and player then
+		local issues = Sim.uiIssues(player)
+		if #issues > 0 then
+			info = (info or "") .. "\nUI issues:\n  " .. table.concat(issues, "\n  ")
+			for _, i in ipairs(issues) do
+				out.uiIssues[i] = (out.uiIssues[i] or 0) + 1
+			end
+		end
+	end
 	table.insert(phases, {
 		name = name,
 		t = R.now,
@@ -55,6 +67,7 @@ Sim.run(2)
 phase("joined (2s)", tester, "", true)
 Sim.run(10)
 phase("FTUE (12s)", tester, "", true)
+Sim.markJoinCamera(tester)
 
 -- act like a new player: press everything on screen
 local clicked = Sim.monkey(tester, { rounds = 2, closeAfter = true, seed = 1 })

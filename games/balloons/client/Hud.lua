@@ -44,7 +44,7 @@ local function column(side: string): Frame
 		Name = side .. "Menu",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(side == "Left" and 0 or 1, 0.5),
-		Position = side == "Left" and UDim2.new(0, 14, 0.47, 0) or UDim2.new(1, -14, 0.47, 0),
+		Position = side == "Left" and UDim2.new(0, 14, 0.47, 0) or UDim2.new(1, -14, 0.44, 0),
 		Size = UDim2.fromOffset(84, 500),
 	})
 	UI.list(f, 14)
@@ -137,10 +137,12 @@ function Hud.pillPunch()
 	UI.punch(pill, 0.18)
 end
 
--- Server-wide MEGA BALLOON HP bar.
+-- Server-wide MEGA BALLOON HP bar. MegaView calls this every frame: only re-tween when the numbers change.
+local shownHp, shownMax = -1, -1
 function Hud.setMegaHp(visible: boolean, hp: number?, maxHp: number?, title: string?)
 	hpHolder.Visible = visible
-	if visible and hp and maxHp then
+	if visible and hp and maxHp and (hp ~= shownHp or maxHp ~= shownMax) then
+		shownHp, shownMax = hp, maxHp
 		hpBar.set(hp / math.max(1, maxHp), "❤️ " .. Fmt.commas(math.max(0, math.ceil(hp))) .. " / " .. Fmt.commas(maxHp))
 	end
 	if title then
@@ -257,7 +259,7 @@ local function tick()
 	if not d then
 		return
 	end
-	local now = os.time()
+	local now = math.floor(workspace:GetServerTimeNow()) -- the server's clock; a phone's own clock can be off
 	local last = d.daily and tonumber(d.daily.last) or 0
 	local left = Config.Daily.cooldown - (now - (last or 0))
 	local db = Hud.buttons.Daily

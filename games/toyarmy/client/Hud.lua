@@ -66,7 +66,7 @@ local left = UI.frame(UI.root, {
 	Name = "Left",
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, 14, 0.5, 0),
+	Position = UDim2.new(0, 14, 0.5, 24),
 	Size = UDim2.fromOffset(84, 540),
 })
 UI.list(left, 10)

@@ -173,6 +173,63 @@ function Sim.buttons(p)
 	return out
 end
 
+-- Layout problems a player would hit: buttons off screen, sibling buttons on top of each other, buttons
+-- under Roblox's own top-left menu, and (mobile) buttons under the touch jump button.
+function Sim.uiIssues(p)
+	local out = {}
+	local W, H = R.SCREEN.X, R.SCREEN.Y
+	local rects = {}
+	for _, b in ipairs(Sim.buttons(p)) do
+		local layer = layerOf(b)
+		local x, y, w, h = R.guiRect(b)
+		-- clip to scrolling frames / clipping ancestors: content scrolled out of view is fine
+		local cur = S[b].parent
+		while cur and cur ~= layer do
+			local cs = S[cur]
+			if cs.ClassName == "ScrollingFrame" or R.rawGet(cur, "ClipsDescendants") then
+				local cx, cy, cw, chh = R.guiRect(cur)
+				local nx, ny = math.max(x, cx), math.max(y, cy)
+				w, h = math.min(x + w, cx + cw) - nx, math.min(y + h, cy + chh) - ny
+				x, y = nx, ny
+			end
+			cur = cs.parent
+		end
+		if layer and S[layer].ClassName == "ScreenGui" and w > 2 and h > 2 then
+			local name = R.fullName(b):gsub("^Players%.%w+%.PlayerGui%.", "")
+			table.insert(rects, { b = b, x = x, y = y, w = w, h = h, name = name })
+			if x < -4 or y < -4 or x + w > W + 4 or y + h > H + 4 then
+				table.insert(out, string.format("off screen: %s @%d,%d %dx%d", name, x, y, w, h))
+			end
+			if x < 110 and y < 50 and R.rawGet(layer, "IgnoreGuiInset") then
+				table.insert(out, string.format("under Roblox menu buttons (top-left): %s @%d,%d", name, x, y))
+			end
+			if R.MOBILE then
+				local small = math.min(W, H) <= 500
+				local js = small and 70 or 120
+				local jx, jy = W - (small and 95 or 170), H - (small and 90 or 210)
+				local ix = math.min(x + w, jx + js) - math.max(x, jx)
+				local iy = math.min(y + h, jy + js) - math.max(y, jy)
+				if ix > 8 and iy > 8 then
+					table.insert(out, string.format("covers the mobile jump button: %s @%d,%d %dx%d", name, x, y, w, h))
+				end
+			end
+		end
+	end
+	for i = 1, #rects do
+		for j = i + 1, #rects do
+			local a, b = rects[i], rects[j]
+			if S[a.b].parent == S[b.b].parent then
+				local ix = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
+				local iy = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
+				if ix > 0 and iy > 0 and ix * iy > 0.3 * math.min(a.w * a.h, b.w * b.h) then
+					table.insert(out, string.format("overlapping buttons: %s and %s", a.name, b.name))
+				end
+			end
+		end
+	end
+	return out
+end
+
 function Sim.click(btn)
 	local s = S[btn]
 	if s.destroyed then
@@ -488,6 +545,15 @@ function Sim.worldStats()
 end
 
 -- Parts for the offline renderer: {cls, shape, cf(12), size(3), color(3), transparency, material}
+-- Remember where the tester stands after the first seconds (the renderer's "spawn" view).
+function Sim.markJoinCamera(p)
+	local ch = S[p].props.Character
+	local hrp = ch and R.rawGetChild(ch, "HumanoidRootPart")
+	if hrp then
+		Sim.joinCamera = { R.partCF(hrp):GetComponents() }
+	end
+end
+
 function Sim.exportWorld()
 	local out = {}
 	for part in pairs(R.WSPARTS) do
@@ -518,9 +584,9 @@ function Sim.exportWorld()
 			table.insert(out, { s.ClassName, shape, { c:GetComponents() }, { sz.X, sz.Y, sz.Z }, { col.R, col.G, col.B }, tr, mat, variant, R.fullName(part) })
 		end
 	end
-	local cams = {}
+	local cams = { join = Sim.joinCamera }
 	for part in pairs(R.WSPARTS) do
-		if S[part].ClassName == "SpawnLocation" then
+		if S[part].ClassName == "SpawnLocation" and R.rawGet(part, "Enabled") ~= false then
 			cams.spawn = { R.partCF(part):GetComponents() }
 			break
 		end
@@ -568,7 +634,7 @@ function Sim.report()
 	local warns = {}
 	for _, k in ipairs(R.warnOrder) do
 		local w = R.warnings[k]
-		table.insert(warns, { msg = w.msg, count = w.count, ctx = w.ctx, t = w.t })
+		table.insert(warns, { msg = w.msg, count = w.count, ctx = w.ctx, t = w.t, trace = w.trace })
 	end
 	local notes = {}
 	for n in pairs(R.notes) do

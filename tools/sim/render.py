@@ -232,16 +232,23 @@ def main():
     if not parts:
         print("no parts")
         return
+    cams = world.get("cams", {})
+    base = cams.get("join") or cams.get("spawn") or cams.get("char")
+    # frame the top views on the area around the player (places with several far-apart worlds)
+    framed = parts
+    if base:
+        bx, bz = base[0], base[2]
+        near = [p for p in parts if abs(p[2][0] - bx) < 450 and abs(p[2][2] - bz) < 450 and max(p[3]) < 900]
+        if len(near) > 10:
+            framed = near
     mins = np.array([1e9, 1e9, 1e9])
     maxs = -mins
-    for p in parts:
+    for p in framed:
         pos = np.array(p[2][:3])
         mins = np.minimum(mins, pos)
         maxs = np.maximum(maxs, pos)
     center = (mins + maxs) / 2
     extent = float(np.max(maxs - mins))
-    cams = world.get("cams", {})
-    base = cams.get("char") or cams.get("spawn")
     if base:
         R, p = cf_matrix(base)
         look = -R[:, 2]

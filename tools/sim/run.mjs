@@ -117,7 +117,7 @@ async function newVM() {
 }
 
 const man = manifest();
-const scenario = fs.readFileSync(path.join(SIM, 'scenario.luau'), 'utf8');
+const scenario = fs.readFileSync(process.env.SIM_SCENARIO || path.join(SIM, 'scenario.luau'), 'utf8'); // SIM_SCENARIO: custom script for debugging
 
 async function runScenario(kind, dataJson) {
   const lua = await newVM();
@@ -156,13 +156,20 @@ const fileOf = (msg) => {
 };
 lines.push(`# Sim playtest: ${game}`);
 lines.push(`smoke run: ${rep.now.toFixed(0)} s simulated in ${(first.ms / 1000).toFixed(1)} s, rejoin run: ${(second.ms / 1000).toFixed(1)} s`);
-lines.push(`errors: ${rep.errors.length} (+${rep2.errors.length} on rejoin), warnings: ${rep.warnings.length}`);
+lines.push(`errors: ${rep.errors.length} (+${rep2.errors.length} on rejoin), warnings: ${rep.warnings.length}, UI issues: ${Object.keys(first.out.uiIssues || {}).length}`);
 for (const e of [...rep.errors, ...rep2.errors]) {
   lines.push(`\nERROR x${e.count} [${e.ctx} t=${Number(e.t).toFixed(1)}] ${e.msg}${fileOf(e.msg)}`);
   const tb = String(e.trace).split('\n').filter((l) => !l.includes('sim/') && l.trim()).slice(1, 7);
   for (const l of tb) lines.push('    ' + l.trim() + fileOf(l.trim()));
 }
-for (const w of rep.warnings) lines.push(`WARN x${w.count} [${w.ctx} t=${Number(w.t).toFixed(1)}] ${String(w.msg).slice(0, 400)}`);
+for (const w of rep.warnings) {
+  lines.push(`WARN x${w.count} [${w.ctx} t=${Number(w.t).toFixed(1)}] ${String(w.msg).slice(0, 400)}`);
+  const tb = String(w.trace || '').split('\n').filter((l) => l.trim() && !l.includes('sim/') && !l.includes('[C]') && !l.startsWith('stack')).slice(0, 4);
+  for (const l of tb) lines.push('    ' + l.trim() + fileOf(l.trim()));
+}
+const issues = Object.entries(first.out.uiIssues || {});
+lines.push(`\n## UI issues (${mobile ? 'phone 844x390' : 'desktop 1280x720'}): ${issues.length}`);
+for (const [msg, n] of issues) lines.push(`- ${msg}${n > 1 ? ` (seen ${n}x)` : ''}`);
 lines.push('\n## Phases');
 for (const ph of first.out.phases) {
   lines.push(`\n### ${ph.name} (t=${ph.t.toFixed(1)})`);

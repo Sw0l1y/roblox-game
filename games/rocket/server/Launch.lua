@@ -44,13 +44,23 @@ local function landingCF(k: number, n: number): CFrame
 end
 Launch.landingCF = landingCF
 
+-- The top hauler still in the server (the board keeps players who left), nil if nobody hauled.
+-- nil, not -1: Studio test players have negative UserIds.
+local function mvpUid(top: { Crew.Entry }): number?
+	for _, e in ipairs(top) do
+		if Players:GetPlayerByUserId(e.uid) then
+			return e.uid
+		end
+	end
+	return nil
+end
+
 local function seatEveryone()
 	local layout = Rocket.layout
 	if not layout then
 		return
 	end
-	local top = Crew.top()
-	local mvp = top[1] and top[1].uid or -1
+	local mvp = mvpUid(Crew.top())
 	local si, vi = 0, 0
 	for _, p in ipairs(Players:GetPlayers()) do
 		local seat: CFrame
@@ -78,7 +88,7 @@ end
 
 local function rewardEveryone(fromPlanet: number, toPlanet: number)
 	local top = Crew.top()
-	local mvp = top[1] and top[1].uid or -1
+	local mvp = mvpUid(top)
 	local fromCoins = Config.planet(fromPlanet).coins * Config.missionMult(Mission.mission)
 	for _, p in ipairs(Players:GetPlayers()) do
 		local d = Data.get(p)

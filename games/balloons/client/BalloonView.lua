@@ -912,7 +912,9 @@ local function step(dt: number)
 				local off = v.base - camPos
 				local dist = off.Magnitude
 				if dist > HIDE_DIST then
-					if v.shown then
+					if v.leavingAt then
+						finalize(v) -- floated away out of sight: animate() never runs for it, so drop it here
+					elseif v.shown then
 						v.shown = false
 						v.model.Parent = nil
 					end

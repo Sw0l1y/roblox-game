@@ -467,6 +467,18 @@ local function auraStep()
 	end
 end
 
+local function flush()
+	if #outSpawn == 0 and next(outHp) == nil and #outPop == 0 and #outGone == 0 then
+		return
+	end
+	local hp = {}
+	for id, v in pairs(outHp) do
+		table.insert(hp, { id, v })
+	end
+	remote:FireAllClients({ s = outSpawn, h = hp, p = outPop, g = outGone })
+	outSpawn, outHp, outPop, outGone = {}, {}, {}, {}
+end
+
 -- FTUE: easy balloons around a brand-new player, and a seeded rare near them at ~45 s.
 local function ftueStep()
 	for _, p in ipairs(Players:GetPlayers()) do
@@ -497,6 +509,7 @@ local function ftueStep()
 				local key = Config.ZoneTypes[zone][n == 0 and 3 or 4]
 				local b = Balloons.spawnNear(p, key, 11, { quiet = true, reserved = p })
 				if b then
+					flush() -- the spawn must reach the client before "rareNear" names its id
 					Progress.ui(p, "rareNear", b.id, key)
 				end
 			end
@@ -515,18 +528,6 @@ local function expireStep()
 	for _, b in ipairs(gone) do
 		Balloons.despawn(b)
 	end
-end
-
-local function flush()
-	if #outSpawn == 0 and next(outHp) == nil and #outPop == 0 and #outGone == 0 then
-		return
-	end
-	local hp = {}
-	for id, v in pairs(outHp) do
-		table.insert(hp, { id, v })
-	end
-	remote:FireAllClients({ s = outSpawn, h = hp, p = outPop, g = outGone })
-	outSpawn, outHp, outPop, outGone = {}, {}, {}, {}
 end
 
 function Balloons.init()

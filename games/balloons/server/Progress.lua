@@ -154,7 +154,7 @@ function Progress.reward(player: Player, key: string, o: RewardOpts)
 		Progress.ui(player, "set", def.zone, bonus)
 		Shop.notifyAll("📖 " .. player.DisplayName .. " completed the " .. z.name .. " Index!", "purple")
 	end
-	if ti >= 6 then
+	if ti >= 6 and o.share >= 1 then -- only the popper, not once per helper
 		local t = Tiers.get(def.tier)
 		Progress.uiAll("announce", player.DisplayName .. " popped a " .. t.name .. " " .. def.name .. "!", def.tier)
 	end
@@ -238,7 +238,7 @@ Progress.actions.teleport = function(player: Player, zone: any)
 		return
 	end
 	zone = math.floor(zone)
-	if zone < 1 or zone > (d.zones or 1) then
+	if zone ~= zone or zone < 1 or zone > (d.zones or 1) then
 		return
 	end
 	Progress.teleport(player, zone)

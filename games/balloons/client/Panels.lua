@@ -439,7 +439,7 @@ local function buildDaily()
 		actionRemote:FireServer("daily")
 	end)
 	refreshers.Daily = function(d: PData)
-		local now = os.time()
+		local now = math.floor(workspace:GetServerTimeNow()) -- server clock (the device clock can be off)
 		local last = d.daily and tonumber(d.daily.last) or 0
 		local streak = d.daily and tonumber(d.daily.streak) or 0
 		local left = Config.Daily.cooldown - (now - (last or 0))

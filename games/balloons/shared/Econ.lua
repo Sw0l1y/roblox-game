@@ -185,7 +185,8 @@ function Econ.typeValue(key: string): number
 	return Config.TierStats[def.tier].value * Config.Zones[def.zone].valueMult
 end
 
--- Coins this player gets for popping `key`. Shower (event) balloons pay at least the player's best zone rate x2.
+-- Coins this player gets for popping `key`. Shower (event) balloons pay the player's best zone rate x2
+-- (the shower mixes in types from the best zone on the server, which a new player must not be paid for).
 function Econ.popValue(key: string, d: Data?, shower: boolean?): number
 	local def = Config.Balloons[key]
 	if not def then
@@ -193,7 +194,7 @@ function Econ.popValue(key: string, d: Data?, shower: boolean?): number
 	end
 	local zm = Config.Zones[def.zone].valueMult
 	if shower then
-		zm = math.max(zm, Econ.zoneMult(d)) * 2
+		zm = Econ.zoneMult(d) * 2
 	end
 	return math.max(1, math.floor(Config.TierStats[def.tier].value * zm * Econ.coinMult(d)))
 end

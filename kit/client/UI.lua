@@ -63,7 +63,9 @@ local rootScale = Instance.new("UIScale")
 rootScale.Parent = root
 local function rescale()
 	local vp = camera.ViewportSize
-	local s = math.clamp(math.min(vp.X / 1280, vp.Y / 760), 0.5, 1.1)
+	-- phones get 10% bigger UI so buttons stay thumb-sized (~44 px instead of ~40 px)
+	local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	local s = math.clamp(math.min(vp.X / 1280, vp.Y / 760) * (touch and 1.1 or 1), 0.5, 1.1)
 	rootScale.Scale = s
 	-- keep the root covering the screen after scaling
 	root.Size = UDim2.fromOffset(vp.X / s, vp.Y / s)

@@ -533,8 +533,9 @@ local function step(dt: number)
 						l.pos = Vector3.new(nextPos.X, area.origin.Y, nextPos.Z)
 					end
 				end
-				-- leash: holders who wander off let go
-				local leash = 9 + half * 0.9
+				-- leash: holders who wander off let go (never tighter than the lift reach, or a lift from the
+				-- edge of the LIFT prompt's range is dropped again on the very next frame)
+				local leash = T.liftRange + half + 2
 				for i = #l.holders, 1, -1 do
 					local p = l.holders[i]
 					local r = Crew.root(p)

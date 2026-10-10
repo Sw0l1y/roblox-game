@@ -217,6 +217,12 @@ local right = UI.frame(UI.root, {
 local rightList = UI.list(right, 9)
 rightList.VerticalAlignment = Enum.VerticalAlignment.Top
 rightList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+if UI.isMobile then
+	-- phones: no room for the mini board (the Crew panel has the full board); the column moves up so it
+	-- stays above the touch jump button
+	board.Visible = false
+	right.Position = UDim2.new(1, -16, 0, 120)
+end
 
 local dailyBtn = menuButton(right, "Daily", I.daily, "DAILY", "pink", 1, 70)
 local fuelBtn = menuButton(right, "Fuel", I.fuel, "FUEL!", "orange", 2, 70)
@@ -786,7 +792,7 @@ local function boardEntries(): { BoardEntry }
 	local out: { BoardEntry } = {}
 	local raw = Hub.str("Board", "")
 	for chunk in string.gmatch(raw, "[^;]+") do
-		local uid, name, w = string.match(chunk, "^(%d+)|([^|]*)|(%d+)$")
+		local uid, name, w = string.match(chunk, "^(%-?%d+)|([^|]*)|(%-?%d+)$")
 		if uid and name and w then
 			table.insert(out, { uid = tonumber(uid) or 0, name = name, weight = tonumber(w) or 0 })
 		end

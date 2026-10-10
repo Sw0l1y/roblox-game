@@ -226,7 +226,8 @@ Mega.actions.coin = function(player: Player, idxs: any)
 		if type(i) == "number" and r.pos[i] and not taken[i] then
 			local c = r.pos[i]
 			local dx, dz = c.X - hrp.Position.X, c.Z - hrp.Position.Z
-			if dx * dx + dz * dz < 16 * 16 and math.abs(c.Y - hrp.Position.Y) < 20 then
+			-- client picks up at 11 studs and batches every 0.2 s while running: allow for that and for lag
+			if dx * dx + dz * dz < 24 * 24 and math.abs(c.Y - hrp.Position.Y) < 20 then
 				taken[i] = true
 				got += value
 			end
@@ -278,10 +279,8 @@ local function step()
 			summoner = nil
 			state:SetAttribute("Summoner", "")
 			setPhase("idle")
+			-- a paid summon still runs for the server when its buyer has left
 			local nextBy = table.remove(queue, 1)
-			while nextBy and not nextBy.Parent do
-				nextBy = table.remove(queue, 1)
-			end
 			if nextBy then
 				summoner = nextBy
 				state:SetAttribute("Summoner", nextBy.DisplayName)

@@ -113,9 +113,15 @@ function Events.fuel(player: Player)
 	Crew.invalidate(nil)
 	Mission.announce(string.format("%s %s FUELED THE SERVER! 2X for everyone!", Config.Icons.fuel, player.DisplayName), "orange", "cheer")
 	Mission.fireAll("fuel", { by = player.DisplayName, uid = player.UserId, until_ = Mission.boostUntil })
+	local by = player.DisplayName
 	for k = 1, T.fuelBolts do
 		task.delay(0.8 + k * 0.7, function()
-			Haul.autoBolt(player.DisplayName, "fuel")
+			-- bought mid-launch or with no free slot: the paid drones wait for the next open slot
+			local tries = 0
+			while not Haul.autoBolt(by, "fuel") and tries < 120 do
+				tries += 1
+				task.wait(1)
+			end
 		end)
 	end
 end
