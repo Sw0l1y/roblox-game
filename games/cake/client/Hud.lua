@@ -32,6 +32,9 @@ local buttons: { [string]: UI.IconButton } = {}
 local pulsing: { [GuiObject]: boolean } = {}
 local lastBeep = -1
 local data: { [string]: any }? = nil
+local goalTab = "Toppings"
+local pillColor = ""
+local eventColor = ""
 
 Hud.coinTarget = nil :: GuiObject?
 
@@ -87,7 +90,7 @@ function Hud.init(c: Own.Ctx)
 	goalBtn.Parent = goalCard
 	goalBtn.MouseButton1Click:Connect(function()
 		Sfx.play("click", 0.4)
-		ctx.openShop("Toppings")
+		ctx.openShop(goalTab)
 	end)
 
 	-- phase pill
@@ -102,7 +105,8 @@ function Hud.init(c: Own.Ctx)
 	eventLabel = UI.text(eventCard, "", { Font = UI.BODY, Size = UDim2.new(1, -16, 0.78, 0), Position = UDim2.new(0, 8, 0.11, 0) })
 
 	-- left icon menu
-	local left = UI.frame(root, { Name = "LeftMenu", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 14, 0.52, 0), Size = UDim2.fromOffset(90, 400) })
+	-- top-anchored below the goal chip (centred, it slid under the chip on short phone screens)
+	local left = UI.frame(root, { Name = "LeftMenu", BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 196), Size = UDim2.fromOffset(90, 400) })
 	UI.list(left, 14)
 	local function leftBtn(name: string, glyph: string, label: string, color: string, order: number, fn: () -> ())
 		local b = UI.iconButton(left, glyph, label, color, { Name = name, LayoutOrder = order, Size = UDim2.fromOffset(80, 80) })
@@ -153,8 +157,9 @@ function Hud.update(d: { [string]: any })
 	coins.set(d.coins or 0)
 	local need = Config.xpFor(d.level or 1)
 	levelBar.set((d.xp or 0) / need, string.format("Lv %d · %s", d.level or 1, Config.title(d.level or 1)))
-	local goal, price = Own.nextGoal(d)
+	local goal, price, tab = Own.nextGoal(d)
 	if goal and price then
+		goalTab = tab or "Toppings"
 		goalCard.Visible = true
 		local have = math.min(d.coins or 0, price)
 		goalLabel.Text = string.format("🎯 %s  %s/%s", goal, Fmt.num(have), Fmt.num(price))
@@ -221,15 +226,23 @@ function Hud.tick(state: Instance, now: number)
 			UI.punch(pill, 0.1)
 		end
 	end
-	UI.recolor(pill, if celeb then "gold" else "pink")
+	-- recolour only on change (UI.recolor builds a new ColorSequence each call)
+	local pc = if celeb then "gold" else "pink"
+	if pc ~= pillColor then
+		pillColor = pc
+		UI.recolor(pill, pc)
+	end
 
 	local eventAt = tonumber(state:GetAttribute("EventAt")) or 0
 	local untilEvent = eventAt - now
+	local ec = if celeb and phase ~= "Lobby" and phase ~= "Waiting" then "gold" else "purple"
+	if ec ~= eventColor then
+		eventColor = ec
+		UI.recolor(eventCard, ec)
+	end
 	if celeb and phase ~= "Lobby" and phase ~= "Waiting" then
 		eventLabel.Text = "🌟 CELEBRITY JUDGE ROUND · 2x REWARDS!"
-		UI.recolor(eventCard, "gold")
 	elseif eventAt > 0 then
-		UI.recolor(eventCard, "purple")
 		if untilEvent <= 0 then
 			eventLabel.Text = "🌟 Celebrity Judge: NEXT ROUND!"
 		else

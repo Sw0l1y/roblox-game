@@ -464,9 +464,13 @@ function Rounds.init(b: Plaza.Built)
 	state:SetAttribute("ShowOwnerId", 0)
 	state:SetAttribute("Overtime", "")
 
-	voteRemote.OnServerEvent:Connect(function(player: Player, stars: any)
+	voteRemote.OnServerEvent:Connect(function(player: Player, stars: any, idx: any)
 		local e = current
 		if phase ~= "Vote" or not e or type(stars) ~= "number" or stars ~= stars then
+			return
+		end
+		-- a late vote for the previous cake must not land on the one now showing
+		if idx ~= state:GetAttribute("ShowIndex") then
 			return
 		end
 		if e.owner == player or not Net.allow(player, "vote", 0.2) then

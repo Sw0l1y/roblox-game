@@ -226,8 +226,11 @@ local function act(player: Player, action: string, a: any, b: any): any
 	return nil
 end
 
+-- known actions only: Net.allow keys on the action name, so unknown strings must not reach it
+local ACTS = { unlock = true, box = true, daily = true, pickTheme = true, tp = true, tut = true, mute = true, offerShown = true }
+
 actFunc.OnServerInvoke = function(player: Player, action: any, a: any, b: any): any
-	if type(action) ~= "string" then
+	if type(action) ~= "string" or not ACTS[action] then
 		return nil
 	end
 	if not Net.allow(player, "act_" .. action, 0.12) then

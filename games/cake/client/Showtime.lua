@@ -39,6 +39,7 @@ local showStart = 0
 local showEnds = 0
 local showSlot = 6
 local showOwn = false
+local showIdx = 0
 local myVote = 0
 local giant: Model? = nil
 local giantStart = 0
@@ -265,6 +266,7 @@ local function onShow(p: D)
 	showSlot = tonumber(p.slot) or 6
 	showEnds = tonumber(p.ends) or (now() + showSlot)
 	showOwn = p.ownerId == player.UserId
+	showIdx = tonumber(p.idx) or 0
 	myVote = 0
 	setStars(0)
 	local name = tostring(p.name or "?")
@@ -550,7 +552,7 @@ local function buildUI()
 			end
 			myVote = i
 			setStars(i)
-			voteRemote:FireServer(i)
+			voteRemote:FireServer(i, showIdx)
 			Sfx.play("pop", 0.5, 0.8 + i * 0.1)
 			UI.punch(b, 0.3)
 			if i == 5 then
@@ -619,6 +621,9 @@ function Showtime.camera(): CFrame?
 end
 
 function Showtime.tip(): string?
+	if themeCard.Visible then
+		return "" -- hides the tip pill: on short phone screens it sits under the theme reveal card
+	end
 	local d = ctx.data()
 	if phase() == "Vote" and voteCard.Visible and not showOwn and myVote == 0 and d and (d.tut or 0) < 4 then
 		return "⭐ Tap the stars to rate this cake: you earn 🪙 for voting!"
@@ -645,7 +650,8 @@ function Showtime.tick(dt: number)
 		end
 	end
 	if voteCard.Visible then
-		voteBar.set(math.clamp((showEnds - now()) / math.max(showSlot, 1), 0, 1))
+		-- set directly: voteBar.set starts a new tween, which every frame would pile up Tween objects
+		voteBar.fill.Size = UDim2.fromScale(math.clamp((showEnds - now()) / math.max(showSlot, 1), 0, 1), 1)
 	end
 	local gr = giantRig
 	if giant and gr then

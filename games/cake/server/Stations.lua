@@ -216,9 +216,13 @@ function Stations.place(st: Station, id: string, pos: Vector3, normal: Vector3, 
 	if (pos - st.root.Position).Magnitude > 16 then
 		return false, "far"
 	end
+	-- a zero/NaN normal (bot raycast or a ray starting inside an overlapping body part) would make a NaN CFrame
+	if not (normal.Magnitude > 0.5) then
+		return false, "miss"
+	end
 	local n = normal.Unit
 	local hit = workspace:Raycast(pos + n * 1.5, -n * 3, bodyParams(st))
-	if not hit then
+	if not hit or not (hit.Normal.Magnitude > 0.5) then
 		return false, "miss"
 	end
 	local def = Config.ToppingById[id]
@@ -385,6 +389,9 @@ local function num(x: any, default: number): number
 	return n
 end
 
+-- known actions only: Net.allow keys on the action name, so unknown strings must not reach it
+local ACTIONS = { shape = true, tiers = true, frost = true, drip = true, piping = true, place = true, undo = true, clear = true }
+
 local function near(player: Player, st: Station): boolean
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -400,13 +407,13 @@ function Stations.handle(player: Player, action: any, a: any, b: any, c: any, d4
 		return
 	end
 	if action == "ready" then
-		if Stations.buildOpen then
+		if Stations.buildOpen and Net.allow(player, "build_ready", 0.2) then
 			st.ready = a == true
 			Stations.publish(st)
 		end
 		return
 	end
-	if not Stations.buildOpen then
+	if not Stations.buildOpen or not ACTIONS[action] then
 		return
 	end
 	if not Net.allow(player, "build_" .. action, if action == "place" then 0.08 else 0.12) then

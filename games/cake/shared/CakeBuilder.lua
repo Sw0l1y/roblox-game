@@ -93,8 +93,9 @@ end
 -- Orientation for a topping on the cake surface: up = surface normal, front faces the cake's front on top
 -- surfaces and the sky on side surfaces, then `rot` eighth-turns about the normal.
 function CakeBuilder.surfaceCF(root: CFrame, pos: Vector3, normal: Vector3, rot: number): CFrame
-	local up = normal.Unit
 	local rootUp = root.UpVector
+	-- a degenerate normal would turn every part of the topping into a NaN CFrame
+	local up = if normal.Magnitude > 1e-3 then normal.Unit else rootUp
 	local ref = if math.abs(up:Dot(rootUp)) > 0.7 then root.LookVector else rootUp
 	local f = ref - up * ref:Dot(up)
 	if f.Magnitude < 1e-3 then

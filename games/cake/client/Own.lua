@@ -84,31 +84,31 @@ function Own.indexCount(d: D?): number
 	return n
 end
 
--- The cheapest thing still locked, for the "next goal" chip: (label, price) or nil.
-function Own.nextGoal(d: D?): (string?, number?)
+-- The cheapest thing still locked, for the "next goal" chip: (label, price, shop tab) or nil.
+function Own.nextGoal(d: D?): (string?, number?, string?)
 	if not d then
-		return nil, nil
+		return nil, nil, nil
 	end
-	local best: string?, bestPrice: number? = nil, nil
-	local function consider(label: string, price: number)
+	local best: string?, bestPrice: number?, bestTab: string? = nil, nil, nil
+	local function consider(label: string, price: number, tab: string)
 		if price > 0 and (bestPrice == nil or price < (bestPrice :: number)) then
-			best, bestPrice = label, price
+			best, bestPrice, bestTab = label, price, tab
 		end
 	end
 	for _, t in ipairs(Config.Toppings) do
 		if t.source == "shop" and not Own.topping(d, t.id) then
-			consider(t.glyph .. " " .. t.name, t.price)
+			consider(t.glyph .. " " .. t.name, t.price, "Toppings")
 		end
 	end
 	for _, s in ipairs(Config.Shapes) do
 		if not Own.shape(d, s.key) then
-			consider(s.glyph .. " " .. s.name .. " cakes", s.price)
+			consider(s.glyph .. " " .. s.name .. " cakes", s.price, "Upgrades")
 		end
 	end
 	if not d.tier4 then
-		consider("🎂 4-tier cakes", Config.Cake.tier4Price)
+		consider("🎂 4-tier cakes", Config.Cake.tier4Price, "Upgrades")
 	end
-	return best, bestPrice
+	return best, bestPrice, bestTab
 end
 
 return Own
