@@ -1623,9 +1623,19 @@ local function stepCharacters(dt)
 				end
 				if not anchored and not hs.seated then
 					-- stand on whatever is below (ignoring the character itself)
+					-- (non-collidable parts are passed through, like Roblox physics)
 					local params = G.RaycastParams.new()
-					params.FilterDescendantsInstances = { ch }
+					local skip = { ch }
+					params.FilterDescendantsInstances = skip
 					local hit = R.raycast(pos + v3(0, 2, 0), v3(0, -60, 0), params)
+					for _ = 1, 8 do
+						if not hit or R.rawGet(hit.Instance, "CanCollide") ~= false then
+							break
+						end
+						table.insert(skip, hit.Instance)
+						params.FilterDescendantsInstances = skip
+						hit = R.raycast(pos + v3(0, 2, 0), v3(0, -60, 0), params)
+					end
 					local hipY = 3
 					if hit and R.rawGet(hit.Instance, "CanCollide") ~= false then
 						local gy = hit.Position.Y + hipY

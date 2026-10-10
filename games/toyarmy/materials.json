@@ -1,0 +1,6 @@
+{
+  "_note": "Toy Army bedroom surfaces. Generate in Studio (generate_material), fill in the ids. ToyFloorWood is used white; ToyRugCarpet and ToyBlanket are near-white on purpose because Room.lua tints them (rug rings blue/white/light blue, blanket teal) and Part.Color multiplies the texture. Until the ids exist World.texture keeps the flat palette colours and Room.lua draws plank seams from thin parts, so the room already reads right flat.",
+  "ToyFloorWood": {"base": "WoodPlanks", "studsPerTile": 40, "pattern": "Regular", "prompt": "almost flat warm honey wood floor planks #E2B276, long wide boards, very soft faint lighter and darker bands between boards, smooth satin finish, no knots, no cracks, no nails, no strong grain lines", "color": null},
+  "ToyRugCarpet": {"base": "Carpet", "studsPerTile": 24, "pattern": "Organic", "prompt": "almost flat very light off-white soft carpet #F4F4F6 with very soft large faintly lighter and darker blotches, smooth low pile, no fibers, no strokes, no lines, no pattern", "color": null},
+  "ToyBlanket": {"base": "Fabric", "studsPerTile": 26, "pattern": "Organic", "prompt": "almost flat very light off-white soft cotton fabric #F6F6F4 with very soft large gentle wrinkles as faint lighter and darker blotches, no weave, no stitches, no strokes, no lines", "color": null}
+}

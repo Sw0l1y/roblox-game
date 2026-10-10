@@ -222,7 +222,9 @@ def main():
     if "--size" in sys.argv:
         w, h = map(int, sys.argv[sys.argv.index("--size") + 1].split("x"))
     world = json.load(open(src))
-    parts = world["parts"]
+    # parts with broken (NaN) transforms export as null: skip them instead of failing the render
+    parts = [p for p in world["parts"] if all(isinstance(v, (int, float)) and math.isfinite(v) for v in list(p[2]) + list(p[3]))]
+    world["parts"] = parts
     if not parts:
         print("no parts")
         return
@@ -246,11 +248,16 @@ def main():
         eye = p + np.array([0, 4.5, 0]) - look * 13
         target = p + look * 20 + np.array([0, 1.5, 0])
         Image.fromarray(render(world, eye, target, w, h)).save(prefix + "-spawn.png")
+    # Cutaway for the views from above: big slabs well above the player (ceilings, roofs) would hide indoor maps.
+    above = world
+    if base:
+        cut = cf_matrix(base)[1][1] + 35
+        above = dict(world, parts=[p for p in parts if not (p[2][1] > cut and p[3][0] * p[3][2] > 400)])
     eye = center + np.array([0.0, 0.6, 0.75]) * max(extent, 60) * 0.85
-    Image.fromarray(render(world, eye, center, w, h, fov=60)).save(prefix + "-overview.png")
+    Image.fromarray(render(above, eye, center, w, h, fov=60)).save(prefix + "-overview.png")
     eye = center + np.array([0.0, 500.0, 0.001])
     scale = min(w, h) / max(extent * 1.05, 20)
-    Image.fromarray(render(world, eye, center, w, h, ortho=scale)).save(prefix + "-map.png")
+    Image.fromarray(render(above, eye, center, w, h, ortho=scale)).save(prefix + "-map.png")
     print("rendered", prefix + "-{spawn,overview,map}.png", len(parts), "parts")
 
 

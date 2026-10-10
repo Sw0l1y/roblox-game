@@ -360,6 +360,30 @@ local function inverse(a)
 end
 R.cfMul, R.cfPoint, R.cfVec, R.cfInv = mul, point, vec, inverse
 
+-- Re-square the rotation (Gram-Schmidt on the columns), as Roblox does when a part's CFrame is stored,
+-- so float error from repeated multiplies can't grow into skew.
+function R.cfOrtho(a)
+	local ax, ay, az = a.R00, a.R10, a.R20
+	local m = sqrt(ax * ax + ay * ay + az * az)
+	if m < 1e-9 or m ~= m then
+		return a
+	end
+	ax, ay, az = ax / m, ay / m, az / m
+	local bx, by, bz = a.R01, a.R11, a.R21
+	local d = ax * bx + ay * by + az * bz
+	bx, by, bz = bx - d * ax, by - d * ay, bz - d * az
+	m = sqrt(bx * bx + by * by + bz * bz)
+	if m < 1e-9 then
+		return a
+	end
+	bx, by, bz = bx / m, by / m, bz / m
+	local cx, cy, cz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+	if math.abs(ax - a.R00) + math.abs(by - a.R11) + math.abs(cz - a.R22) + math.abs(bx - a.R01) + math.abs(cx - a.R02) + math.abs(cy - a.R12) < 1e-12 then
+		return a
+	end
+	return cf(a.X, a.Y, a.Z, ax, bx, cx, ay, by, cy, az, bz, cz)
+end
+
 local function fromQuat(x, y, z, qx, qy, qz, qw)
 	local m = sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
 	if m == 0 then

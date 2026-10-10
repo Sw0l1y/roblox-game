@@ -689,6 +689,7 @@ end
 local function setPartCFRaw(p, value)
 	local s = S[p]
 	local old = s.props.CFrame
+	value = R.cfOrtho(value)
 	s.props.CFrame = value
 	if old ~= value then
 		R.firePropChanged(p, s, "CFrame", value)
@@ -1046,7 +1047,8 @@ end
 
 function R.modelPivotTo(model, target)
 	local s = S[model]
-	local piv = R.modelPivot(model)
+	local piv = R.cfOrtho(R.modelPivot(model))
+	target = R.cfOrtho(target)
 	local delta = R.cfMul(target, R.cfInv(piv))
 	for _, p in ipairs(modelParts(model)) do
 		setPartCFRaw(p, R.cfMul(delta, partCF(p)))
