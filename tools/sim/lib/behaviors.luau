@@ -120,6 +120,12 @@ local function tagSigs(tag)
 end
 R.tagSigs = tagSigs
 
+-- Parts whose position or size changed since the spatial grid (services.luau) last filed them.
+R.gridDirty = {}
+function R.gridMark(p)
+	R.gridDirty[p] = true
+end
+
 local function onReparent(inst, wasInGame, wasInWS)
 	local nowInWS = R.inWorkspace(inst)
 	local nowInGame = R.inGame(inst)
@@ -129,6 +135,7 @@ local function onReparent(inst, wasInGame, wasInWS)
 			local xs = S[x]
 			if wasInWS ~= nowInWS and R.classIsA(xs.ClassName, "BasePart") then
 				R.WSPARTS[x] = nowInWS or nil
+				R.gridMark(x)
 			end
 			if wasInGame ~= nowInGame then
 				for tag in pairs(xs.tags) do
@@ -690,6 +697,9 @@ local function setPartCFRaw(p, value)
 	local s = S[p]
 	local old = s.props.CFrame
 	value = R.cfOrtho(value)
+	if R.WSPARTS[p] then
+		R.gridMark(p)
+	end
 	s.props.CFrame = value
 	if old ~= value then
 		R.firePropChanged(p, s, "CFrame", value)
@@ -844,6 +854,7 @@ BP.set.Size = function(inst, s, v)
 		R.warn("NaN Size assigned to " .. fullName(inst))
 	end
 	R.rawSet(inst, "Size", v)
+	R.gridMark(inst)
 end
 BP.get.BrickColor = function(inst, s)
 	return R.nearestBrick(R.rawGet(inst, "Color"))
@@ -1134,6 +1145,7 @@ M.m.ScaleTo = function(self, scale)
 		setPartCFRaw(p, R.cfMul(piv, scaled))
 		local sz = R.rawGet(p, "Size")
 		R.rawSet(p, "Size", sz * f)
+		R.gridMark(p)
 	end
 	s.extra.scale = scale
 end

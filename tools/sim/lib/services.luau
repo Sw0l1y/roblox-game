@@ -732,10 +732,99 @@ local function rayPart(p, o, d)
 	return tmin, R.cfVec(c, n)
 end
 
+-- Spatial grid (XZ cells) over workspace parts so queries don't scan every part. Parts are re-filed lazily:
+-- moves, resizes and reparents only mark them dirty (R.gridMark), the next query re-files them.
+local CELL = 24
+local cells = {} -- cell key -> { [part] = true }
+local partKeys = {} -- part -> { keys } or BIG
+local bigParts = {} -- parts spanning too many cells, checked by every query
+local BIG = {}
+local function cellKey(ix, iz)
+	return ix * 131072 + iz
+end
+local function gridRemove(p)
+	local keys = partKeys[p]
+	if keys == BIG then
+		bigParts[p] = nil
+	elseif keys then
+		for _, k in ipairs(keys) do
+			local c = cells[k]
+			if c then
+				c[p] = nil
+			end
+		end
+	end
+	partKeys[p] = nil
+end
+local function gridFlush()
+	local dirty = R.gridDirty
+	if next(dirty) == nil then
+		return
+	end
+	R.gridDirty = {}
+	for p in pairs(dirty) do
+		gridRemove(p)
+		if R.WSPARTS[p] and not S[p].destroyed then
+			local a, _, c, d, _, f = R.aabb(p)
+			if a ~= a or c ~= c or d ~= d or f ~= f then
+				bigParts[p] = true
+				partKeys[p] = BIG
+			else
+				local ix0, iz0, ix1, iz1 = math.floor(a / CELL), math.floor(c / CELL), math.floor(d / CELL), math.floor(f / CELL)
+				if (ix1 - ix0 + 1) * (iz1 - iz0 + 1) > 48 then
+					bigParts[p] = true
+					partKeys[p] = BIG
+				else
+					local keys = {}
+					for ix = ix0, ix1 do
+						for iz = iz0, iz1 do
+							local k = cellKey(ix, iz)
+							local cl = cells[k]
+							if not cl then
+								cl = {}
+								cells[k] = cl
+							end
+							cl[p] = true
+							table.insert(keys, k)
+						end
+					end
+					partKeys[p] = keys
+				end
+			end
+		end
+	end
+end
+-- Parts whose XZ bounds may overlap [x0,x1]x[z0,z1]; nil means "too large an area, scan everything".
+local function gridCandidates(x0, z0, x1, z1)
+	gridFlush()
+	local ix0, iz0, ix1, iz1 = math.floor(x0 / CELL), math.floor(z0 / CELL), math.floor(x1 / CELL), math.floor(z1 / CELL)
+	if (ix1 - ix0 + 1) * (iz1 - iz0 + 1) > 64 or ix0 ~= ix0 or iz0 ~= iz0 then
+		return nil
+	end
+	local out = {}
+	for p in pairs(bigParts) do
+		out[p] = true
+	end
+	for ix = ix0, ix1 do
+		for iz = iz0, iz1 do
+			local cl = cells[cellKey(ix, iz)]
+			if cl then
+				for p in pairs(cl) do
+					out[p] = true
+				end
+			end
+		end
+	end
+	return out
+end
+R.gridCandidates = gridCandidates
+
 function R.raycast(origin, dir, params)
 	local best, bt, bn
 	local respectCollide = params and params.RespectCanCollide
-	for p in pairs(R.WSPARTS) do
+	local ex = origin + dir
+	local set = gridCandidates(math.min(origin.X, ex.X), math.min(origin.Z, ex.Z), math.max(origin.X, ex.X), math.max(origin.Z, ex.Z)) or R.WSPARTS
+	for p in pairs(set) do
 		if R.rawGet(p, "CanQuery") ~= false and (not respectCollide or R.rawGet(p, "CanCollide")) and filterOk(p, params) then
 			local t, n = rayPart(p, origin, dir)
 			if t and (not bt or t < bt) then
@@ -755,7 +844,7 @@ end
 function R.partsInBox(x0, y0, z0, x1, y1, z1, params, except)
 	local out = {}
 	local max = params and params.MaxParts or 0
-	for p in pairs(R.WSPARTS) do
+	for p in pairs(gridCandidates(x0, z0, x1, z1) or R.WSPARTS) do
 		if p ~= except and R.rawGet(p, "CanQuery") ~= false and filterOk(p, params) then
 			local a, b, c, d, e, f = R.aabb(p)
 			if aabbOverlap(a, b, c, d, e, f, x0, y0, z0, x1, y1, z1) then
@@ -1689,7 +1778,16 @@ local function stepTouches()
 			end
 		end
 	end
-	for part in pairs(R.WSPARTS) do
+	local near = {}
+	for part in pairs(R.touching) do
+		near[part] = true
+	end
+	for _, info in ipairs(chars) do
+		for part in pairs(gridCandidates(info.x0, info.z0, info.x1, info.z1) or R.WSPARTS) do
+			near[part] = true
+		end
+	end
+	for part in pairs(near) do
 		local ps = S[part]
 		local sig = ps.sigs.Touched
 		local sigEnd = ps.sigs.TouchEnded
