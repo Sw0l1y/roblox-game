@@ -42,7 +42,6 @@ local favRemote = Net.event("Favorite")
 local gpRemote = Net.event("GP")
 local teaseRemote = Net.event("Tease")
 local offlineRemote = Net.event("Offline")
-local podiumRemote = Net.event("Podium")
 local announceRemote = Net.event("Announce")
 Net.event("Open")
 Net.event("Fx")
@@ -99,7 +98,7 @@ end)
 
 -- Server state -----------------------------------------------------------------------------------------------
 type Offer = { marbles: { { [string]: any } }, cards: { string }, slots: number, hint: string, raceNo: number }
-type Pick = { key: string, cards: { string } }
+type Pick = { key: string, cards: { string }, ready: boolean }
 
 local S = {
 	phase = "idle",
@@ -236,10 +235,10 @@ local function defaultPick(offer: Offer): Pick
 			end
 		end
 	end
-	return { key = offer.marbles[1].key, cards = cards }
+	return { key = offer.marbles[1].key, cards = cards, ready = false }
 end
 
-pickRemote.OnServerEvent:Connect(function(player, key, cards)
+pickRemote.OnServerEvent:Connect(function(player, key, cards, ready)
 	if not Net.allow(player, "pick", 0.25) or type(key) ~= "string" then
 		return
 	end
@@ -267,11 +266,12 @@ pickRemote.OnServerEvent:Connect(function(player, key, cards)
 	if #chosen == 0 then
 		chosen = { offer.hint }
 	end
-	S.picks[player] = { key = key, cards = chosen }
-	-- everyone locked in: start sooner
+	S.picks[player] = { key = key, cards = chosen, ready = ready == true }
+	-- everyone locked in (tapped READY; the picker sends every change, so a pick alone is not ready): start sooner
 	local all = true
 	for p in pairs(S.offers) do
-		if p.Parent and not S.picks[p] then
+		local pk = S.picks[p]
+		if p.Parent and not (pk and pk.ready) then
 			all = false
 		end
 	end
@@ -409,8 +409,7 @@ local function handleResults(race: Race.RaceT)
 			table.insert(top, row)
 		end
 		S.podium = top
-		Lobby.setPodium(top)
-		podiumRemote:FireAllClients(top)
+		Lobby.setPodium(top) -- the lobby podium replicates; no client listens for a Podium event
 		League.bump()
 	end
 end
@@ -466,7 +465,8 @@ startPractice = function()
 	local rookie = false
 	for _, p in ipairs(forming.players) do
 		local d = Data.get(p)
-		if p.Parent and d and not Race.isRacing(p.UserId) then
+		-- skip anyone already dealt into the main race's pick (it starts before this heat could finish)
+		if p.Parent and d and not Race.isRacing(p.UserId) and not (S.phase == "pick" and S.offers[p]) then
 			local sp = playerSpec(p, d, nil)
 			if sp then
 				if d.races == 0 then
@@ -487,6 +487,13 @@ startPractice = function()
 	S.practice = race
 	race.onDone = function(r)
 		handleResults(r)
+		-- heat over while the main race is still picking: deal this player in
+		for _, sp in ipairs(r.specs) do
+			local p = not sp.bot and Players:GetPlayerByUserId(sp.userId) or nil
+			if p and S.phase == "pick" and S.endsAt - now() >= 2.5 and not S.offers[p] then
+				sendOffer(p)
+			end
+		end
 		task.wait(6)
 		Race.remove(r)
 		if S.practice == r then
@@ -584,7 +591,8 @@ local function mainLoop()
 			announceRemote:FireAllClients("🏁 GRAND PRIX: " .. th.name .. "! 2x coins & points!", "GP", nil)
 		end
 		for _, p in ipairs(Players:GetPlayers()) do
-			if Data.get(p) then
+			-- players still in a warm-up heat get their offer when it ends (startPractice onDone)
+			if Data.get(p) and not Race.isRacing(p.UserId, "practice") then
 				sendOffer(p)
 			end
 		end
@@ -596,7 +604,8 @@ local function mainLoop()
 		local tease = false
 		for _, p in ipairs(Players:GetPlayers()) do
 			local d = Data.get(p)
-			if d then
+			-- one race at a time: someone still rolling in a warm-up heat watches this one
+			if d and not Race.isRacing(p.UserId, "practice") then
 				local offer = S.offers[p]
 				local pick = S.picks[p] or (offer and defaultPick(offer)) or nil
 				local sp = playerSpec(p, d, pick)

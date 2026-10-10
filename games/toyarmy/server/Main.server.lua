@@ -481,6 +481,11 @@ Army.on("rank", function(player)
 	retag(player)
 end)
 
+-- The character usually spawns before the save has loaded (tag shows Recruit): redo the tag once the rank is known.
+Data.onLoaded(function(player)
+	retag(player)
+end)
+
 -- Players ----------------------------------------------------------------------------------------------------------
 local function onPlayerAdded(player: Player)
 	if sessions[player] then

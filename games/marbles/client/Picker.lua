@@ -111,7 +111,7 @@ local function send()
 		return
 	end
 	lastSent = os.clock()
-	pickRemote:FireServer(chosenKey, chosenCards)
+	pickRemote:FireServer(chosenKey, chosenCards, locked)
 end
 
 local function refresh()

@@ -166,6 +166,14 @@ if boostGloss then
 	boostGloss.Size = UDim2.new(0.7, 0, 0.3, 0)
 	boostGloss.Position = UDim2.new(0.15, 0, 0.08, 0)
 end
+-- recolor only on change (the race UI updates every frame; a new ColorSequence each frame is waste)
+local boostCol = ""
+local function boostColor(c: string)
+	if c ~= boostCol then
+		boostCol = c
+		UI.recolor(boostBtn, c)
+	end
+end
 local boostHint = UI.text(boostBtn, "⚡", { Font = Enum.Font.GothamBold, Size = UDim2.fromScale(0.36, 0.3), Position = UDim2.fromScale(0.32, -0.02), ZIndex = 10 })
 local meter = UI.frame(raceUi, {
 	Name = "Meter",
@@ -695,7 +703,7 @@ local function feedback(q: string)
 	elseif q == "miss" then
 		UI.floater("TOO EARLY!", "grey", at, 40)
 		Sfx.play("error", 0.35, 0.9)
-		UI.recolor(boostBtn, "red")
+		boostColor("red")
 	end
 end
 
@@ -916,12 +924,17 @@ end
 
 -- Race lifecycle -----------------------------------------------------------------------------------------------------
 local function myRace(): Rec?
+	-- a finished heat lingers a few seconds before removal: prefer the one still running (BOOST goes there)
+	local fallback: Rec? = nil
 	for _, r in pairs(races) do
 		if r.myIdx and not r.removed then
-			return r
+			if not r.done then
+				return r
+			end
+			fallback = fallback or r
 		end
 	end
-	return nil
+	return fallback
 end
 
 local function setFocus(rec: Rec?)
@@ -1233,11 +1246,24 @@ local function updateGlow(rec: Rec, mb: MB, t: number)
 	end
 end
 
+-- Hud's right column (Daily/GP/Luck/2x/Music) sits under the BOOST meter on phone-height screens: hide it while racing.
+local sideCol: GuiObject? = nil
+local function showSide(on: boolean)
+	if not sideCol then
+		sideCol = root:FindFirstChild("Side") :: GuiObject?
+	end
+	local sc = sideCol
+	if sc and sc.Visible ~= on then
+		sc.Visible = on
+	end
+end
+
 local function updateRaceUi(rec: Rec?)
 	if not rec then
 		raceUi.Visible = false
 		camBtn.button.Visible = false
 		bindKeys(false)
+		showSide(true)
 		return
 	end
 	raceUi.Visible = true
@@ -1281,20 +1307,21 @@ local function updateRaceUi(rec: Rec?)
 	boostBtn.Visible = racing
 	meter.Visible = racing
 	bindKeys(racing)
+	showSide(not racing)
 	if racing then
 		local me = rec.marbles[rec.myIdx :: number]
 		local glowing = me and hasFlag(me.f, 1)
 		if glowing and rec.glowStart then
 			local k = (rec.renderSim - (rec.glowStart :: number)) / RC.glowDur
 			needle.Position = UDim2.fromScale(math.clamp(k, 0, 1), 0.5)
-			UI.recolor(boostBtn, (k >= PERF_A and k <= PERF_B) and "gold" or "yellow")
+			boostColor((k >= PERF_A and k <= PERF_B) and "gold" or "yellow")
 			boostBtn.Text = "TAP!"
 			boostHint.Text = "⚡"
 			meter.BackgroundTransparency = 0
 		else
 			needle.Position = UDim2.fromScale(0, 0.5)
 			if os.clock() - lastTap > 0.6 then
-				UI.recolor(boostBtn, inGrid and "grey" or "blue")
+				boostColor(inGrid and "grey" or "blue")
 			end
 			boostBtn.Text = "BOOST"
 			meter.BackgroundTransparency = 0.3

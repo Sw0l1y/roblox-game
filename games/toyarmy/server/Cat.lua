@@ -22,7 +22,7 @@ local rng = Random.new()
 
 type Call = { by: Player?, team: string? }
 local active = false
-local queued: Call? = nil
+local queued: { Call } = {} -- paid calls waiting for the cat (each one runs; none is dropped)
 local nextAt = 0 -- server time of the next natural visit
 local warned = false
 local pickupFolder: Folder? = nil
@@ -246,7 +246,7 @@ end
 function Cat.call(player: Player)
 	local call: Call = { by = player, team = player:GetAttribute("Side") :: string? }
 	if active then
-		queued = call
+		table.insert(queued, call)
 		catRemote:FireClient(player, "queued")
 	else
 		run(call)
@@ -285,9 +285,8 @@ function Cat.init(parent: Instance)
 		while true do
 			task.wait(0.5)
 			if not active then
-				local q = queued
+				local q = table.remove(queued, 1)
 				if q then
-					queued = nil
 					if q.by and (q.by :: Player).Parent then
 						run(q)
 					end

@@ -987,7 +987,7 @@ end
 
 RunService.RenderStepped:Connect(function()
 	local t = arrowTarget
-	if t and t.Visible and t.AbsoluteSize.X > 0 and not pMarbles.isOpen() then
+	if t and t.Visible and t.AbsoluteSize.X > 0 and not pMarbles.isOpen() and (rightCol.Visible or not t:IsDescendantOf(rightCol)) then
 		local s = UI.scale()
 		local bob = math.sin(os.clock() * 6) * 8
 		local p = (t.AbsolutePosition - root.AbsolutePosition) / s

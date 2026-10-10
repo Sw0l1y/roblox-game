@@ -77,7 +77,8 @@ function League.refresh()
 	local s = store()
 	-- write our players' points (only when changed)
 	if s then
-		for p, d in pairs(Data.all()) do
+		-- snapshot: SetAsync yields, and players joining/leaving meanwhile would break a live pairs()
+		for p, d in pairs(table.clone(Data.all())) do
 			local pts = (d.league and d.league.day == today()) and math.floor(d.league.pts) or 0
 			if pts > 0 and written[p.UserId] ~= pts then
 				local ok = pcall(function()
@@ -86,8 +87,7 @@ function League.refresh()
 				if ok then
 					written[p.UserId] = pts
 				else
-					storeOk = false
-					break
+					break -- throttled or down: retry next refresh (only store() latches "no DataStores here")
 				end
 			end
 		end
@@ -109,8 +109,6 @@ function League.refresh()
 				end
 				got = true
 			end
-		else
-			storeOk = false
 		end
 	end
 	if not got then

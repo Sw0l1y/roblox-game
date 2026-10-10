@@ -172,23 +172,22 @@ end
 
 -- Pose the whole cat: base CFrame plus joint angles.
 type Pose = { legs: { number }, tail: number, head: number, tuck: number }
+-- reused every frame (no per-frame tables): `parts` is in the same order as `items`
+local poseG: { [string]: CFrame } = { body = CFrame.identity }
+local poseCFs: { CFrame } = {}
 local function apply(base: CFrame, pose: Pose)
-	local g: { [string]: CFrame } = {
-		body = CFrame.identity,
-		legFL = jointCF("legFL", pose.legs[1] + pose.tuck),
-		legFR = jointCF("legFR", pose.legs[2] + pose.tuck),
-		legBL = jointCF("legBL", pose.legs[3] - pose.tuck),
-		legBR = jointCF("legBR", pose.legs[4] - pose.tuck),
-		tail = jointCF("tail", pose.tail, "y"),
-		head = jointCF("head", pose.head),
-	}
-	local cfs: { CFrame } = {}
-	local ps: { BasePart } = {}
+	local g = poseG
+	g.legFL = jointCF("legFL", pose.legs[1] + pose.tuck)
+	g.legFR = jointCF("legFR", pose.legs[2] + pose.tuck)
+	g.legBL = jointCF("legBL", pose.legs[3] - pose.tuck)
+	g.legBR = jointCF("legBR", pose.legs[4] - pose.tuck)
+	g.tail = jointCF("tail", pose.tail, "y")
+	g.head = jointCF("head", pose.head)
+	local cfs = poseCFs
 	for i, it in ipairs(items) do
-		ps[i] = it.part
 		cfs[i] = base * (g[it.group] or CFrame.identity) * it.rel
 	end
-	workspace:BulkMoveTo(ps, cfs, Enum.BulkMoveMode.FireCFrameChanged)
+	workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
 local function now(): number

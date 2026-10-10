@@ -476,8 +476,10 @@ local function startFight(zs: ZoneState, attTeam: string, squad: { Unit }, playe
 		markTanks(f, player, squad)
 	end
 	zs.fight = f
-	Zones.publish(zs)
+	-- "start" goes out before the zone snapshot so clients hand the standing garrison models to the fight
+	-- (a fight=true snapshot with no known fight makes them fade the garrison out instead)
 	send(f, "start", f.key, { zone = zs.def.id, att = Battle.pack(f.att), def = Battle.pack(f.def), attTeam = attTeam, defTeam = f.defTeam })
+	Zones.publish(zs)
 	task.spawn(run, f)
 end
 
@@ -645,10 +647,11 @@ function Zones.swat(zoneId: string): number
 		zs.fight = nil
 		for _, list in ipairs({ f.att, f.def }) do
 			for _, u in ipairs(list) do
-				if u.kind == "P" and u.owner and not u.gone and u.hp > 0 then
+				-- every player unit comes home (already knocked-over ones too: resolve() will never run for them)
+				if u.kind == "P" and u.owner and not u.gone then
 					Army.release(u.owner, u.stack, true)
 					local d = Data.get(u.owner)
-					if d then
+					if d and u.hp > 0 then
 						d.stats.swats = (d.stats.swats or 0) + 1
 					end
 				end

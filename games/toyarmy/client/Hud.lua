@@ -96,9 +96,20 @@ local right = UI.frame(UI.root, {
 	Position = UDim2.new(1, -14, 0.5, 20),
 	Size = UDim2.fromOffset(78, 600),
 })
-UI.list(right, 8)
+local rightList = UI.list(right, 8)
+local SIDE = 70
+if UI.isMobile then
+	-- phones: start the column under the top bar and keep it compact, so its bottom buttons stay clear of
+	-- Roblox's touch jump button (bottom right) instead of covering it and eating jump taps
+	SIDE = 62
+	rightList.Padding = UDim.new(0, 4)
+	rightList.VerticalAlignment = Enum.VerticalAlignment.Top
+	right.AnchorPoint = Vector2.new(1, 0)
+	right.Position = UDim2.new(1, -14, 0, 80)
+	right.Size = UDim2.fromOffset(78, 7 * SIDE + 6 * 4)
+end
 local function side(order: number, glyph: string, label: string, color: any): UI.IconButton
-	local b = UI.iconButton(right, glyph, label, color, { LayoutOrder = order, Size = UDim2.fromOffset(70, 70) })
+	local b = UI.iconButton(right, glyph, label, color, { LayoutOrder = order, Size = UDim2.fromOffset(SIDE, SIDE) })
 	return b
 end
 local dailyB = side(1, I.daily, "DAILY", "gold")
