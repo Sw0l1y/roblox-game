@@ -132,7 +132,14 @@ const first = await runScenario('smoke');
 const second = await runScenario('rejoin', first.out.data);
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify({ smoke: first.out.report, rejoin: second.out.report }, null, 1));
-fs.writeFileSync(path.join(outDir, 'world.json'), first.out.world);
+// texture preview colours (materials.json "preview") so the renderer can draw textured parts in their real colour
+const world = JSON.parse(first.out.world);
+world.variants = {};
+for (const f of [path.join(ROOT, 'kit', 'materials.json'), path.join(ROOT, 'games', game, 'materials.json')]) {
+  if (!fs.existsSync(f)) continue;
+  for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(f, 'utf8')))) if (v && v.preview) world.variants[k] = v.preview.map((c) => c / 255);
+}
+fs.writeFileSync(path.join(outDir, 'world.json'), JSON.stringify(world));
 
 // Human summary
 const lines = [];

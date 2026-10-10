@@ -1,8 +1,8 @@
 {
-  "_note": "House MaterialVariants: our own AI-generated textures (Studio generate_material, owned by the experience owner, ids from playbook look tests v4/v5). Use on big flat surfaces only, with Part.Color white.",
-  "HouseGrass": {"base": "Grass", "studsPerTile": 28, "pattern": "Organic", "color": 98705007069936, "normal": 84535823227663, "roughness": 113321042451694, "metalness": 114375676751672},
-  "HouseGrassDark": {"base": "Grass", "studsPerTile": 28, "pattern": "Organic", "color": 104354087722232, "normal": 83373065399806, "roughness": 76084271859356, "metalness": 127265367349762},
-  "HouseSand": {"base": "Sand", "studsPerTile": 28, "pattern": "Organic", "color": 96965486804900, "normal": 90829563493988, "roughness": 104631579517725, "metalness": 74957955670998},
-  "HouseSlabs": {"base": "Concrete", "studsPerTile": 24, "pattern": "Regular", "color": 88682881474266, "normal": 80632621636648, "roughness": 137274034910607, "metalness": 92232586882168},
-  "HousePanels": {"base": "SmoothPlastic", "studsPerTile": 30, "pattern": "Regular", "color": 102075292009024, "normal": 105805225959670, "roughness": 86700791706295, "metalness": 133068631241873}
+  "_note": "House MaterialVariants: our own AI-generated textures (Studio generate_material, owned by the experience owner, ids from playbook look tests v4/v5). Use on big flat surfaces only, with Part.Color white. \"preview\" is the texture's average colour, used only by tools/sim/render.py.",
+  "HouseGrass": {"base": "Grass", "studsPerTile": 28, "pattern": "Organic", "color": 98705007069936, "normal": 84535823227663, "roughness": 113321042451694, "metalness": 114375676751672, "preview": [112, 198, 74]},
+  "HouseGrassDark": {"base": "Grass", "studsPerTile": 28, "pattern": "Organic", "color": 104354087722232, "normal": 83373065399806, "roughness": 76084271859356, "metalness": 127265367349762, "preview": [78, 160, 58]},
+  "HouseSand": {"base": "Sand", "studsPerTile": 28, "pattern": "Organic", "color": 96965486804900, "normal": 90829563493988, "roughness": 104631579517725, "metalness": 74957955670998, "preview": [240, 226, 186]},
+  "HouseSlabs": {"base": "Concrete", "studsPerTile": 24, "pattern": "Regular", "color": 88682881474266, "normal": 80632621636648, "roughness": 137274034910607, "metalness": 92232586882168, "preview": [192, 200, 206]},
+  "HousePanels": {"base": "SmoothPlastic", "studsPerTile": 30, "pattern": "Regular", "color": 102075292009024, "normal": 105805225959670, "roughness": 86700791706295, "metalness": 133068631241873, "preview": [232, 234, 238]}
 }

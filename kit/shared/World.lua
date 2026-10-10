@@ -265,10 +265,12 @@ function World.cloud(parent: Instance, pos: Vector3, scale: number, rng: Random,
 		World.part({
 			Name = "Puff",
 			Shape = Enum.PartType.Ball,
-			Size = V(d, d * 0.75, d),
-			CFrame = CF(pos + off),
+			Size = V(d, d, d), -- Roblox always draws a Ball as a sphere
+			CFrame = CF(pos + off - V(0, d * 0.15, 0)),
 			Color = col,
 			CanCollide = false,
+			CanQuery = false,
+			CanTouch = false,
 			CastShadow = false,
 			Parent = m,
 		})

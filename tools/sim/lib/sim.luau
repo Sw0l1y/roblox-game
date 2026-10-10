@@ -500,6 +500,21 @@ function Sim.exportWorld()
 			local shape = s.ClassName == "Part" and R.rawGet(part, "Shape").Name or (s.ClassName == "WedgePart" and "Wedge" or (s.ClassName == "CornerWedgePart" and "CornerWedge" or (s.ClassName == "MeshPart" and "Mesh" or "Block")))
 			local mat = R.rawGet(part, "Material").Name
 			local variant = R.rawGet(part, "MaterialVariant")
+			-- SpecialMesh primitives change the drawn shape and size
+			for _, ch in ipairs(s.children) do
+				if S[ch].ClassName == "SpecialMesh" then
+					local mt = R.rawGet(ch, "MeshType").Name
+					local sc = R.rawGet(ch, "Scale")
+					local off = R.rawGet(ch, "Offset")
+					local map = { Sphere = "Ellipsoid", Head = "Ellipsoid", Cylinder = "Cylinder", Brick = "Block", Wedge = "Wedge" }
+					if map[mt] then
+						shape = map[mt]
+						sz = v3(sz.X * sc.X, sz.Y * sc.Y, sz.Z * sc.Z)
+						c = R.cfMul(c, R.cf(off.X, off.Y, off.Z, 1, 0, 0, 0, 1, 0, 0, 0, 1))
+					end
+					break
+				end
+			end
 			table.insert(out, { s.ClassName, shape, { c:GetComponents() }, { sz.X, sz.Y, sz.Z }, { col.R, col.G, col.B }, tr, mat, variant, R.fullName(part) })
 		end
 	end

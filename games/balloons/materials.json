@@ -1,0 +1,6 @@
+{
+  "_note": "Pop All The Balloons! game surfaces. Generate in Studio (generate_material), fill in the ids, keep Part.Color white on these parts. Until then Map.lua falls back to the flat palette colour.",
+  "CandyFrosting": {"base": "Plastic", "studsPerTile": 26, "pattern": "Organic", "prompt": "almost flat soft pastel pink frosting surface #FFB3D9 with very soft large lighter and darker pink blotches, smooth, no sprinkles, no strokes, no lines, no swirls", "color": null},
+  "CloudFluff": {"base": "Snow", "studsPerTile": 30, "pattern": "Organic", "prompt": "almost flat bright white cloud surface #F4FAFF with very soft large pale blue shading blotches, smooth, no texture detail, no strokes, no lines", "color": null},
+  "StarDust": {"base": "Slate", "studsPerTile": 28, "pattern": "Organic", "prompt": "almost flat soft violet purple ground #5B3FA8 with very soft large lighter lilac blotches and a few tiny faint pale specks, smooth, no cracks, no strokes, no lines", "color": null}
+}

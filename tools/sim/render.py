@@ -3,7 +3,8 @@
 Usage: python3 tools/sim/render.py <world.json> <out_prefix> [--size 960x540]
 Writes <out_prefix>-spawn.png (player camera at spawn), -overview.png (45 degrees from above) and -map.png (top down).
 Flat-shaded parts with sun + ambient light, sky gradient and distance haze from the game's Lighting. It is a
-blockout-level preview (no textures, meshes drawn as boxes), good for composition, scale and colour checks.
+blockout-level preview (textures drawn as their materials.json "preview" colour, SpecialMesh primitives
+as their shape, MeshParts as boxes), good for composition, scale and colour checks.
 """
 import json
 import math
@@ -78,7 +79,7 @@ def cylinder_mesh(segs=16):
     return np.array(verts, dtype=np.float64), np.array(tris)
 
 
-MESHES = {"Block": box_mesh(), "Wedge": wedge_mesh(), "Ball": sphere_mesh(), "Cylinder": cylinder_mesh(), "CornerWedge": box_mesh(), "Mesh": box_mesh()}
+MESHES = {"Block": box_mesh(), "Wedge": wedge_mesh(), "Ball": sphere_mesh(), "Ellipsoid": sphere_mesh(), "Cylinder": cylinder_mesh(), "CornerWedge": box_mesh(), "Mesh": box_mesh()}
 
 
 def sky_color(light, t):
@@ -121,6 +122,7 @@ def render(world, cam_pos, cam_target, w, h, fov=70.0, ortho=None):
     depth = np.full((h, w), np.inf)
     near = 0.3
 
+    variants = world.get("variants", {})
     for part in world["parts"]:
         cls, shape, c, size, color, transp, mat = part[0], part[1], part[2], part[3], part[4], part[5], part[6]
         if transp > 0.6:
@@ -146,6 +148,8 @@ def render(world, cam_pos, cam_target, w, h, fov=70.0, ortho=None):
             cx = rel @ right
             cy = rel @ up
         base = np.array(color, dtype=np.float64)
+        if len(part) > 7 and part[7] in variants:
+            base = base * np.array(variants[part[7]])  # Part.Color multiplies the texture
         neon = mat == "Neon"
         for tri in tris:
             a, b, cc = wv[tri[0]], wv[tri[1]], wv[tri[2]]

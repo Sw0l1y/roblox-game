@@ -2,6 +2,7 @@
 -- Catalog lives in the game's shared Config (Config.Passes / Config.Products, keyed by name) so the client
 -- can draw the shop; this module grants them. An id of 0 means "not created yet": in Studio the purchase is
 -- simulated so every perk can be play-tested, in a live server the player sees "Coming soon".
+-- A product with `once = true` (starter packs) can be bought once per player; the server refuses later prompts.
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,7 +13,7 @@ local Data = require(script.Parent:WaitForChild("Data"))
 
 local Shop = {}
 
-type Catalog = { [string]: { id: number, name: string, price: number } }
+type Catalog = { [string]: { id: number, name: string, price: number, once: boolean? } }
 local passes: Catalog = {}
 local products: Catalog = {}
 local grants: { [string]: (Player, { [string]: any }) -> boolean } = {}
@@ -51,6 +52,10 @@ local function grantProduct(player: Player, key: string): boolean
 	end
 	if res ~= false then
 		d.spent = (d.spent or 0) + (products[key] and products[key].price or 0)
+		if products[key] and products[key].once then
+			d.bought = d.bought or {}
+			d.bought[key] = true
+		end
 		Data.dirty(player)
 		return true
 	end
@@ -80,7 +85,8 @@ function Shop.init(opts: { passes: Catalog, products: Catalog, grants: { [string
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		local d = Data.wait(player, 10)
-		if not d then
+		-- a save that failed to load is never written back, so a grant there would be lost: Roblox retries later
+		if not d or (Data.isTemp(player) and not RunService:IsStudio()) then
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 		d.receipts = d.receipts or {}
@@ -157,6 +163,14 @@ function Shop.prompt(player: Player, kind: string, key: string)
 		notifyRemote:FireClient(player, "You already own " .. item.name .. "!", "green")
 		return
 	end
+	if kind ~= "pass" and item.once and Shop.boughtOnce(player, key) then
+		notifyRemote:FireClient(player, "You already got the " .. item.name .. "!", "green")
+		return
+	end
+	if Data.isTemp(player) and not RunService:IsStudio() then
+		notifyRemote:FireClient(player, "Your save didn't load, so the shop is paused. Rejoin to fix it!", "orange")
+		return
+	end
 	if item.id == 0 then
 		if RunService:IsStudio() then
 			notifyRemote:FireClient(player, "Studio test purchase: " .. item.name, "purple")
@@ -184,6 +198,12 @@ function Shop.owns(player: Player, key: string): boolean
 	end
 	local d = Data.get(player) :: any
 	return d ~= nil and d.passes ~= nil and d.passes[key] == true
+end
+
+-- True when a `once` product was already bought by this player.
+function Shop.boughtOnce(player: Player, key: string): boolean
+	local d = Data.get(player) :: any
+	return d ~= nil and d.bought ~= nil and d.bought[key] == true
 end
 
 -- cb(player, passKey) runs when a pass is bought and on join for every pass the player owns.

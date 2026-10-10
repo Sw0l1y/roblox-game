@@ -450,7 +450,7 @@ Config.Passes = {
 	LuckyCharm = { id = 0, name = "Lucky Charm", price = 299, glyph = "🍀", desc = "+25% pack luck, forever." },
 }
 Config.Products = {
-	StarterPack = { id = 0, name = "Starter Pack", price = 49, glyph = "🎒", desc = "2,000 coins + a Mega Pack. Once per player." },
+	StarterPack = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎒", desc = "2,000 coins + a Mega Pack. Once per player." },
 	CoinsS = { id = 0, name = "1,500 Coins", price = 29, glyph = "🪙", desc = "A pocket of coins." },
 	CoinsM = { id = 0, name = "8,000 Coins", price = 99, glyph = "💰", desc = "A bag of coins." },
 	CoinsL = { id = 0, name = "50,000 Coins", price = 449, glyph = "🏦", desc = "A vault of coins." },

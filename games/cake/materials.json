@@ -1,0 +1,6 @@
+{
+  "_note": "Cake Off! surfaces. Generate in Studio (generate_material), fill in the ids, keep Part.Color white on these parts. Until then Plaza.lua falls back to flat palette colours (checker tiles drawn from parts, honey wood, cream street), so the game already looks right flat.",
+  "CakeTile": {"base": "SmoothPlastic", "studsPerTile": 20, "pattern": "Regular", "prompt": "almost flat bakery floor of large square tiles in a 2 by 2 checker, soft cream #FFF6E8 and pale pink #FFDCE6 squares, very thin soft cream grout, smooth glossy, no cracks, no texture detail, no strokes, no patterns inside the tiles", "color": null},
+  "CakeWood": {"base": "Wood", "studsPerTile": 16, "pattern": "Regular", "prompt": "almost flat warm honey wood planks #E8BA80, wide boards with very soft faint lighter and darker bands, smooth satin finish, no knots, no cracks, no nails, no strong grain lines", "color": null},
+  "CakeStreet": {"base": "Concrete", "studsPerTile": 30, "pattern": "Organic", "prompt": "almost flat soft cream paving #F2E2C8 with very soft large lighter and slightly peach blotches, smooth, no bricks, no cracks, no strokes, no lines", "color": null}
+}

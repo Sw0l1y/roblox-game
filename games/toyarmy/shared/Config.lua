@@ -402,7 +402,7 @@ Config.Products = {
 	skip = { id = 0, name = "Skip Merge Timers", price = 19, glyph = "⏩", desc = "Finish every merge in your mold press now." },
 	plasticS = { id = 0, name = "Handful of Plastic", price = 25, glyph = "🧱", desc = "1,500 plastic (grows with your rank)." },
 	luck = { id = 0, name = "Lucky Bags (15 min)", price = 39, glyph = "🍀", desc = "x2 bag luck and x2 mutation odds for 15 minutes." },
-	starter = { id = 0, name = "Starter Pack", price = 49, glyph = "🎒", desc = "1,000 plastic, a Medic and 3 Heavy Duffels." },
+	starter = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎒", desc = "1,000 plastic, a Medic and 3 Heavy Duffels." },
 	bags10 = { id = 0, name = "10 Bags of Soldiers", price = 69, glyph = "🎒", desc = "Ten free Bags of Soldiers." },
 	callcat = { id = 0, name = "Call the Cat!", price = 79, glyph = "🐱", desc = "The cat comes NOW and swats the enemy army. Whole server sees it!" },
 	plasticM = { id = 0, name = "Bucket of Plastic", price = 99, glyph = "🪣", desc = "7,500 plastic (grows with your rank)." },
