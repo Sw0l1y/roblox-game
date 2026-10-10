@@ -56,7 +56,10 @@ def material_variants(doc, game_dir):
         if f.exists():
             mats.update({k: v for k, v in json.loads(f.read_text()).items() if not k.startswith("_")})
     out = ""
-    for name, m in mats.items():
+    for name, m in list(mats.items()):
+        if not m.get("color"):  # still waiting for its generated maps: World.texture falls back to flat colour
+            del mats[name]
+            continue
         props = f'<token name="BaseMaterial">{MATERIAL[m["base"]]}</token>'
         for key, prop in (("color", "ColorMap"), ("normal", "NormalMap"), ("roughness", "RoughnessMap"), ("metalness", "MetalnessMap")):
             if m.get(key):
