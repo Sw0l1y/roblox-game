@@ -1,0 +1,25 @@
+# Marble Mayhem 🔮 — "Race the Marbles!"
+
+**Core verb:** pick (a marble + a power-up), then watch and BOOST. **Server size:** 12. **Maturity target:** Minimal.
+
+| | |
+|---|---|
+| **Session loop (30-45 s)** | Pick 1 of 3 marbles (live 3D cards with stats) + 1 power-up card (🚀 Turbo, 🧲 Magnet, 🍯 Sticky, 🏀 Bounce; the one that suits this track is marked) → 3-2-1 lights, the gate drops → ~40 s race down a **brand-new procedural track** (ramps, banked turns, jumps through neon hoops, a candy funnel, stairs, a split with a boost lane and a bumper lane, boost pads) → tap BOOST when your marble glows (PERFECT window in the middle) → podium + coins, marble XP, league points. |
+| **Progress loop (1 day)** | Level marbles (XP → stat points into Speed / Grip / Weight, coin tune-ups), open packs (numeric odds), Shine Machine mutations, daily League tiers (Bronze → Diamond) with a global top 10, 7-day login streak. |
+| **Meta loop (28 days)** | 68 marbles over 7 tiers (Common → SECRET), 3 mutation layers (Gold x1.5, Rainbow x2, Cosmic x3 coins) = 200+ index entries with milestone rewards, weekly Grand Prix theme with a limited GP marble, Diamond Marble flex, trails. Trading is planned for a later update (see TEST.md). |
+| **Public display** | Every player's marble in the same race with name tags; the winners' podium on the lobby deck shows the last top 3 marbles; the daily league board on the deck; server announcements for Legendary+ pulls and GP wins; mutated marbles glow and carry a mutation label in races. |
+| **Social hook** | Everyone races everyone (bots fill to 8); shared photo-finish moments; league board; Start-a-Grand-Prix product affects the whole server. |
+| **Clip moment** | Photo finish: when two leaders are neck and neck near the line, the camera cuts to a side shot at 0.26x speed, flash + "📸 PHOTO FINISH (0.04s)". Also marbles flying through jump hoops (your big air gets slow-mo) and the funnel traffic jam. `clip` debug command forces a staged photo finish with huge jumps. |
+| **FTUE** | 0-10 s: a warm-up heat on the practice track forms 3 s after you load (rookie bots, Turbo card) and starts ~7 s in. ~30 s: podium + coins (practice pays half). 45-60 s: FREE Welcome Pack (guaranteed Rare+) with arrow + beam to the Pack Machine. ~2-3 min: a COSMIC bot marble races you, then "Your first Shine is FREE (guaranteed Gold)". Next goal always on screen (top-left pill + pointing arrow + world beam). No purchase popups before 150 s. |
+| **Economy** | Coins from races (place table, perfect boosts, mutation multiplier, 2x pass, VIP +10%, GP x2), offline practice earnings (3/min + 0.4/marble/min, max 8 h). Sinks: packs 150 / 750 / 3,000 / 12,000, Shine 2,000, tune-ups 250. Tiers: Common, Uncommon, Rare, Epic, Legendary, Mythic, Secret. Mutations from packs (4% / 1% / 0.25%) and the Shine Machine. No rebirth: depth is levels (25) + mutations + index. |
+| **Money ladder** | Trails 15 / 35 / 49 · Coins 29 / 99 / 449 · Luck Boost 15 min 39 · Starter Pack 49 (once) · Galaxy Pack 99 · Start a Grand Prix 99 · Extra Power-Up Slot 149 · Triple Open 199 · 2x Coins 249 · Lucky Charm 299 · VIP (gold trail, +10%) 399 · Diamond Marble 1,299 (flex). |
+| **Live-ops** | Grand Prix every 5 min (first at 4 min): longer themed track, 2x coins + points, winner takes the week's GP marble. 6 Saturdays: Candy Land, Volcano Run, Ice Palace, Space Loop, Haunted Halls (themes + GP marbles ready in Config), then trading. |
+| **Twist vs proof game** | Ball VS Ball's pick-1-of-3 collectible auto-battle becomes a race on a new procedurally generated track every round, with a timing BOOST so watching is never idle. |
+
+## Art bible
+- **Palette:** ground (tabletop) `#F2D3A2`, structure (rails) `#FFFFFF`, accent `#FF5AA8`, rare glow `#FFD23F`, UI ink `#2A2D4A` (+ track floors `#42C2FF #7BE05A #FFC93C #A774FF #FF8A3D #4FE3C1`).
+- **Lighting:** preset A (bright cartoon day) with Atmosphere haze `#CDE6FF`, clouds, CC +0.09 brightness / 0.22 saturation, re-applied by the server.
+- **World:** a giant warm tabletop (playroom rug far below), a tower of giant books whose top book is the lobby deck, chunky desk props (lamp, pencil cup, block towers, crayon box, dice, apple, mug, pencils) round the edges, a giant golden trophy at the far end of the table as the landmark seen from spawn.
+- **Tracks:** our own procedural pieces from SmoothPlastic palette parts (one colour per piece, white rails, candy-striped rails on turns, neon chevrons, hoops, candy pinwheel funnel with a glass drop tube, checkered finish). Never textures on tracks.
+- **Hero assets:** marbles = Glass shell + Neon/SmoothPlastic core with a per-marble pattern built from parts (cat's-eye vanes, swirl, stripes, dots, candy, eye, planet ring, galaxy specks, flame, gem, rainbow); `Config.Meshes.Marble` is the AI sphere slot and every marble has its own `texture` slot so new marbles can come from images alone. `Config.Meshes.Trophy` for the landmark (primitive trophy until generated).
+- **Materials (materials.json):** MarbleTableTop (Wood), MarbleFeltMat (Fabric). Both look right flat until generated.

@@ -1,0 +1,5 @@
+{
+  "_note": "Marble Mayhem surfaces. Generate in Studio (generate_material), fill in the ids, keep Part.Color white on these parts. Until then Lobby.lua falls back to flat palette colours (warm maple tabletop, green felt play mat), so the world already looks right flat. Tracks stay flat SmoothPlastic on purpose.",
+  "MarbleTableTop": {"base": "Wood", "studsPerTile": 30, "pattern": "Organic", "prompt": "almost flat warm light maple tabletop #F2D3A2 with very soft wide lighter and darker bands, smooth satin finish, no knots, no cracks, no planks, no strong grain lines, no strokes", "color": null},
+  "MarbleFeltMat": {"base": "Fabric", "studsPerTile": 24, "pattern": "Organic", "prompt": "almost flat soft felt play mat, plain colour with very soft faint large lighter blotches, smooth, no weave pattern, no fibres, no stitches, no lines", "color": null}
+}
