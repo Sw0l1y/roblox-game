@@ -1,0 +1,6 @@
+{
+  "_note": "Build the Rocket! planet grounds. Generated later in Studio (generate_material), ids go in color/normal/roughness/metalness. The ground parts are tinted with each planet's ground colour (Part.Color multiplies the map), so every map must be a near-white, almost flat neutral surface. Until generated, the grounds stay flat palette colour.",
+  "MoonDust": {"base": "Sand", "studsPerTile": 28, "pattern": "Organic", "prompt": "almost flat very light grey powder surface with very soft large slightly lighter and darker blotches, no craters, no rocks, no pebbles, no strokes, no lines", "color": null},
+  "MarsSoil": {"base": "Sand", "studsPerTile": 28, "pattern": "Organic", "prompt": "almost flat very light warm off-white dusty ground with very soft large slightly darker blotches, no rocks, no cracks, no pebbles, no strokes, no lines", "color": null},
+  "EuropaIce": {"base": "Glacier", "studsPerTile": 30, "pattern": "Organic", "prompt": "almost flat very light white ice with very soft large pale blue-white blotches and a few very faint thin long cracks, no bubbles, no snow texture, no dark lines", "color": null}
+}
