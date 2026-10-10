@@ -1,0 +1,8 @@
+{
+  "name": "rbx-luau-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@luau-rs/luau": "0.739.0"
+  }
+}

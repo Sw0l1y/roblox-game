@@ -1,1 +1,4 @@
 *.rbxlx
+node_modules/
+tools/luau/roblox.d.luau
+__pycache__/
