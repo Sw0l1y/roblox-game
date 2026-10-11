@@ -513,7 +513,7 @@ local function onPlayerAdded(player: Player)
 	if player.Character then
 		task.spawn(tag, player, player.Character)
 	end
-	Army.feed("🪖 " .. player.DisplayName .. " joined the " .. Config.Team[team].name .. "!", team == "Green" and "green" or "orange")
+	Army.feed("💂 " .. player.DisplayName .. " joined the " .. Config.Team[team].name .. "!", team == "Green" and "green" or "orange")
 	task.delay(4, Cat.replay, player) -- the cat may already be out
 end
 

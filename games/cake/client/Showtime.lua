@@ -391,7 +391,7 @@ function Showtime.onReward(r: D)
 	local medals = { "🥇 1ST PLACE!", "🥈 2ND PLACE!", "🥉 3RD PLACE!" }
 	resultTitle.Text = medals[place] or string.format("#%d of %d", place, tonumber(r.of) or place)
 	resultScore.Text = string.format("⭐ %.1f   %s", tonumber(r.score) or 0, starsText(tonumber(r.score) or 0))
-	resultReward.Text = string.format("+%s 🪙    +%s XP", Fmt.commas(tonumber(r.coins) or 0), Fmt.commas(tonumber(r.xp) or 0))
+	resultReward.Text = string.format("+%s 💰    +%s XP", Fmt.commas(tonumber(r.coins) or 0), Fmt.commas(tonumber(r.xp) or 0))
 	local extras = {}
 	if r.celebrity then
 		table.insert(extras, "🌟 Celebrity 2x!")
@@ -626,7 +626,7 @@ function Showtime.tip(): string?
 	end
 	local d = ctx.data()
 	if phase() == "Vote" and voteCard.Visible and not showOwn and myVote == 0 and d and (d.tut or 0) < 4 then
-		return "⭐ Tap the stars to rate this cake: you earn 🪙 for voting!"
+		return "⭐ Tap the stars to rate this cake: you earn 💰 for voting!"
 	end
 	return nil
 end

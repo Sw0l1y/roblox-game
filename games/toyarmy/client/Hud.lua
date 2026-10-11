@@ -279,7 +279,7 @@ local function refresh()
 	local ready = Game.readyTotal(d)
 	local target = player:GetAttribute("Target") :: string?
 	if ready > 0 then
-		deployBtn.Text = "⚔️ DEPLOY ▸ " .. zoneName(target)
+		deployBtn.Text = "⚔️ DEPLOY → " .. zoneName(target)
 		UI.recolor(deployBtn, "red")
 	else
 		deployBtn.Text = Game.count(d) > 0 and "⚔️ ALL DEPLOYED" or "⚔️ NO SOLDIERS"

@@ -132,7 +132,7 @@ local function render(s: Spot)
 	s.balloon.CFrame = CFrame.new(s.top + Vector3.new(0, size * 0.55, 0))
 	s.balloon.Color = s.color
 	s.nameLabel.Text = owner.DisplayName .. "'s Pump"
-	s.coinLabel.Text = "🪙 " .. Fmt.num(stored)
+	s.coinLabel.Text = "💰 " .. Fmt.num(stored)
 end
 
 function Pump.spotOf(player: Player): number?

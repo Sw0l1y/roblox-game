@@ -171,9 +171,9 @@ Config.Toppings = {
 	-- Uncommon
 	{ id = "Strawberry", name = "Strawberry", tier = "Uncommon", glyph = "🍓", price = 120, source = "shop", mesh = "Strawberry" },
 	{ id = "Candy", name = "Wrapped Candy", tier = "Uncommon", glyph = "🍬", price = 150, source = "shop", tint = C(255, 120, 190) },
-	{ id = "Blueberry", name = "Blueberries", tier = "Uncommon", glyph = "🫐", price = 160, source = "shop" },
+	{ id = "Blueberry", name = "Blueberries", tier = "Uncommon", glyph = "🍇", price = 160, source = "shop" },
 	{ id = "HeartCandy", name = "Candy Heart", tier = "Uncommon", glyph = "💗", price = 200, source = "shop", tint = C(255, 110, 160) },
-	{ id = "Bubbles", name = "Sugar Bubbles", tier = "Uncommon", glyph = "🫧", price = 220, source = "shop" },
+	{ id = "Bubbles", name = "Sugar Bubbles", tier = "Uncommon", glyph = "💧", price = 220, source = "shop" },
 	{ id = "Lollipop", name = "Lollipop", tier = "Uncommon", glyph = "🍭", price = 240, source = "shop", tint = C(255, 90, 170), topOnly = true },
 	-- Rare
 	{ id = "Cookie", name = "Cookie", tier = "Rare", glyph = "🍪", price = 380, source = "shop" },
@@ -330,14 +330,14 @@ Config.Passes = {
 	GoldenOven = { id = 0, name = "Golden Oven", price = 1299, glyph = "🏆", desc = "Golden station + sparkle aura + golden tag, +25% XP", order = 7 },
 } :: { [string]: ProductDef }
 Config.Products = {
-	Coins1 = { id = 0, name = "1,000 Coins", price = 25, glyph = "🪙", desc = "A handful of coins", order = 1 },
+	Coins1 = { id = 0, name = "1,000 Coins", price = 25, glyph = "💰", desc = "A handful of coins", order = 1 },
 	Box1 = { id = 0, name = "Mystery Sprinkle Box", price = 29, glyph = "🎁", desc = "1 box, odds shown in the Box menu", order = 2 },
 	Luck = { id = 0, name = "Lucky Sprinkles", price = 39, glyph = "🍀", desc = "2.5x luck on boxes for 15 minutes", order = 3 },
 	PickTheme = { id = 0, name = "Pick Next Theme", price = 49, glyph = "🎡", desc = "Choose the next round's theme for the server", order = 4 },
 	Starter = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🧁", desc = "2,000 coins + 3 Mystery Boxes (once)", order = 5 },
-	Coins2 = { id = 0, name = "6,000 Coins", price = 99, glyph = "🪙", desc = "A bag of coins", order = 6 },
+	Coins2 = { id = 0, name = "6,000 Coins", price = 99, glyph = "💰", desc = "A bag of coins", order = 6 },
 	Box5 = { id = 0, name = "5 Mystery Boxes", price = 119, glyph = "🎁", desc = "5 boxes, odds shown in the Box menu", order = 7 },
-	Coins3 = { id = 0, name = "18,000 Coins", price = 249, glyph = "🪙", desc = "A vault of coins", order = 8 },
+	Coins3 = { id = 0, name = "18,000 Coins", price = 249, glyph = "💰", desc = "A vault of coins", order = 8 },
 } :: { [string]: ProductDef }
 Config.OfferAfter = 300 -- seconds of play before the one-time starter offer may show (never before minute 2)
 
@@ -355,7 +355,7 @@ Config.Meshes = {
 
 -- UI glyphs (swap for our own icon ids later) ------------------------------------------------------------
 Config.Icons = {
-	coin = "🪙",
+	coin = "💰",
 	xp = "⭐",
 	star = "⭐",
 	shop = "🛒",

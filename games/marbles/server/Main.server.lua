@@ -76,7 +76,7 @@ Data.init({
 	defaults = Economy.defaults(),
 	leaderstats = {
 		{
-			name = "🪙 Coins",
+			name = "💰 Coins",
 			get = function(d)
 				return Fmt.num(d.coins)
 			end,

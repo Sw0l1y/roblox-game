@@ -282,7 +282,7 @@ local function locked(kind: string, key: string)
 			ctx.buy("pass", def.pass)
 			return
 		end
-		UI.toast(string.format("Unlock %s in the Shop for 🪙 %s", if def then def.name else key, Fmt.num(if def then def.price else 0)), "orange")
+		UI.toast(string.format("Unlock %s in the Shop for 💰 %s", if def then def.name else key, Fmt.num(if def then def.price else 0)), "orange")
 		ctx.openShop("Colours")
 	elseif kind == "shape" or kind == "tier" then
 		ctx.openShop("Upgrades")
@@ -638,7 +638,7 @@ local function buildTray()
 		chip.button.Font = Enum.Font.GothamBold
 		chip.button.MouseButton1Click:Connect(function()
 			if not Own.shape(data, s.key) then
-				UI.toast(string.format("%s %s cakes unlock in the Shop for 🪙 %s", s.glyph, s.name, Fmt.num(s.price)), "orange")
+				UI.toast(string.format("%s %s cakes unlock in the Shop for 💰 %s", s.glyph, s.name, Fmt.num(s.price)), "orange")
 				locked("shape", s.key)
 				return
 			end
@@ -654,7 +654,7 @@ local function buildTray()
 		chip.button.Name = "Tiers" .. i
 		chip.button.MouseButton1Click:Connect(function()
 			if i > Own.maxTiers(data) then
-				UI.toast("🎂 4-tier cakes unlock in the Shop for 🪙 " .. Fmt.num(Config.Cake.tier4Price), "orange")
+				UI.toast("🎂 4-tier cakes unlock in the Shop for 💰 " .. Fmt.num(Config.Cake.tier4Price), "orange")
 				locked("tier", "4")
 				return
 			end

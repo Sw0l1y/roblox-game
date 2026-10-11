@@ -296,7 +296,7 @@ local function drawDetail()
 		Size = UDim2.new(1, 0, 0, 22),
 		Position = UDim2.fromOffset(0, 330),
 	})
-	local tune = UI.button(detail, string.format("TUNE-UP %d🪙", Config.TuneUp.cost), "blue", { Size = UDim2.new(0.5, -4, 0, 44), Position = UDim2.fromOffset(0, 358) })
+	local tune = UI.button(detail, string.format("TUNE-UP %d💰", Config.TuneUp.cost), "blue", { Size = UDim2.new(0.5, -4, 0, 44), Position = UDim2.fromOffset(0, 358) })
 	tune.MouseButton1Click:Connect(function()
 		tuneRemote:FireServer(selectedKey)
 	end)
@@ -483,7 +483,7 @@ local function drawPacks()
 				UI.text(row, tc.name, { Size = UDim2.new(0.6, -6, 0.86, 0), Position = UDim2.new(0, 6, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = tc.color })
 				UI.text(row, Tiers.odds(pack.odds, o), { Size = UDim2.new(0.4, -6, 0.86, 0), Position = UDim2.new(0.6, 0, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Right })
 			end
-			local label = free > 0 and string.format("OPEN FREE (%d)", free) or ("OPEN  " .. Fmt.num(pack.price) .. "🪙")
+			local label = free > 0 and string.format("OPEN FREE (%d)", free) or ("OPEN  " .. Fmt.num(pack.price) .. "💰")
 			local openB = UI.button(c, label, free > 0 and "orange" or "green", { Size = UDim2.new(1, -20, 0, 46), Position = UDim2.new(0, 10, 1, -102) })
 			openB.MouseButton1Click:Connect(function()
 				openPack(pack.key, 1)
@@ -615,7 +615,7 @@ drawShine = function()
 	else
 		body(shineSide, "Mutated marbles keep their level and earn more coins.", { Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 292), TextWrapped = true })
 	end
-	local b = UI.button(shineSide, free and "SHINE FREE!" or ("SHINE  " .. Fmt.num(Config.Shine.cost) .. "🪙"), free and "orange" or "gold", {
+	local b = UI.button(shineSide, free and "SHINE FREE!" or ("SHINE  " .. Fmt.num(Config.Shine.cost) .. "💰"), free and "orange" or "gold", {
 		Size = UDim2.new(1, 0, 0, 60),
 		Position = UDim2.new(0, 0, 1, -64),
 	})
@@ -852,7 +852,7 @@ welcomeBtn.MouseButton1Click:Connect(function()
 end)
 
 function Hud.offline(c: number, mins: number)
-	welcomeText.Text = string.format("Your marbles kept practicing for %s while you were away and earned\n%s 🪙 coins!", Fmt.time(mins * 60), Fmt.commas(c))
+	welcomeText.Text = string.format("Your marbles kept practicing for %s while you were away and earned\n%s 💰 coins!", Fmt.time(mins * 60), Fmt.commas(c))
 	pWelcome.open()
 end
 

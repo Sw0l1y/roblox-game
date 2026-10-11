@@ -111,7 +111,7 @@ Net.event("Reward").OnClientEvent:Connect(function(r: any)
 	if r.kind == "round" then
 		Showtime.onReward(r)
 	elseif r.kind == "vote" then
-		UI.floater("+" .. tostring(r.coins) .. " 🪙", "gold", UI.center() + Vector2.new(0, 120), 34)
+		UI.floater("+" .. tostring(r.coins) .. " 💰", "gold", UI.center() + Vector2.new(0, 120), 34)
 		Sfx.play("coin", 0.3)
 	elseif r.kind == "level" then
 		task.delay(1.5, function()

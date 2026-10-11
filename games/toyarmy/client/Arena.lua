@@ -304,7 +304,7 @@ local function setMore(zv: ZoneView, extra: number)
 	end
 	local l = zv.more
 	if l then
-		l.Text = extra > 0 and ("+" .. extra .. " 🪖") or ""
+		l.Text = extra > 0 and ("+" .. extra .. " 💂") or ""
 	end
 end
 

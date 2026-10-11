@@ -244,7 +244,7 @@ local function refreshLabel(zs: ZoneState)
 			status.Text = "⚔️ BATTLE! ⚔️"
 			status.TextColor3 = Config.C.orange
 		elseif zs.owner then
-			status.Text = Config.Team[zs.owner].short .. " · 💪 " .. Fmt.num(Battle.power(zs.garrison)) .. " · " .. n .. " 🪖"
+			status.Text = Config.Team[zs.owner].short .. " · 💪 " .. Fmt.num(Battle.power(zs.garrison)) .. " · " .. n .. " 💂"
 			status.TextColor3 = color
 		elseif n > 0 then
 			status.Text = "WIND-UP TOYS · 💪 " .. Fmt.num(Battle.power(zs.garrison))

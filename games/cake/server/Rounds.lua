@@ -291,7 +291,7 @@ local function playRound()
 		end
 	end
 	if #entries == 0 then
-		announce:FireAllClients("Nobody baked this round... 🥲", "orange", false)
+		announce:FireAllClients("Nobody baked this round... 😅", "orange", false)
 		return
 	end
 	rng:Shuffle(entries)

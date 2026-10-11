@@ -109,7 +109,7 @@ local function buildShop()
 		refresh(function()
 			local d = data()
 			local owned = Own.topping(d, t.id)
-			btn.Text = if owned then "OWNED ✔" else "🪙 " .. Fmt.num(t.price)
+			btn.Text = if owned then "OWNED ✔" else "💰 " .. Fmt.num(t.price)
 			UI.recolor(btn, if owned then "grey" elseif d and (d.coins or 0) >= t.price then "green" else "orange")
 		end)
 	end
@@ -145,7 +145,7 @@ local function buildShop()
 					btn.Text = "R$ " .. Config.Passes[def.pass].price
 					UI.recolor(btn, "purple")
 				else
-					btn.Text = "🪙 " .. Fmt.num(def.price)
+					btn.Text = "💰 " .. Fmt.num(def.price)
 					UI.recolor(btn, if d and (d.coins or 0) >= def.price then "green" else "orange")
 				end
 			end)
@@ -173,7 +173,7 @@ local function buildShop()
 			return "OWNED ✔", "grey"
 		end
 		local d = data()
-		return "🪙 " .. Fmt.num(price), if d and (d.coins or 0) >= price then "green" else "orange"
+		return "💰 " .. Fmt.num(price), if d and (d.coins or 0) >= price then "green" else "orange"
 	end
 	for i, s in ipairs(Config.Shapes) do
 		if s.price > 0 then
@@ -311,7 +311,7 @@ local function buildIndex()
 			if owned then
 				card.foot.Text = "✔ " .. Tiers.get(t.tier).name
 			elseif t.source == "shop" then
-				card.foot.Text = "🪙 " .. Fmt.num(t.price)
+				card.foot.Text = "💰 " .. Fmt.num(t.price)
 			elseif t.source == "box" then
 				card.foot.Text = "🎁 Box only"
 			else
@@ -401,7 +401,7 @@ local function buildBox()
 			return
 		end
 		if (d.boxes or 0) <= 0 and (d.coins or 0) < Config.Box.price then
-			UI.toast("Need 🪙 " .. Config.Box.price .. " or a free box. Win rounds to earn more!", "orange")
+			UI.toast("Need 💰 " .. Config.Box.price .. " or a free box. Win rounds to earn more!", "orange")
 			Sfx.play("error", 0.5)
 			UI.punch(b1, 0.2)
 			return
@@ -448,7 +448,7 @@ local function buildBox()
 		end
 		UI.recolor(over, tier.dark)
 		if r.dup then
-			rNote.Text = "Already collected · +" .. tostring(r.refund or 0) .. " 🪙"
+			rNote.Text = "Already collected · +" .. tostring(r.refund or 0) .. " 💰"
 			Sfx.play("coin", 0.6)
 		else
 			rNote.Text = "NEW! Added to your tray 🎉"
@@ -471,7 +471,7 @@ local function buildBox()
 		local d = data()
 		local n: number = if d then d.boxes or 0 else 0
 		count.Text = if n > 0 then string.format("You have %d box%s!", n, if n == 1 then "" else "es") else "No free boxes · win rounds for more"
-		openBtn.Text = if n > 0 then "OPEN FREE BOX!" else "OPEN · 🪙 " .. Config.Box.price
+		openBtn.Text = if n > 0 then "OPEN FREE BOX!" else "OPEN · 💰 " .. Config.Box.price
 		UI.recolor(openBtn, if n > 0 or (d and (d.coins or 0) >= Config.Box.price) then "green" else "grey")
 		glyph.Rotation = if n > 0 then 6 else 0
 		local left2 = if d then (d.luckUntil or 0) - os.time() else 0
@@ -507,7 +507,7 @@ local function buildDaily()
 	for i, coins in ipairs(Config.Daily) do
 		local c = UI.card(row, "white", { Name = "Day" .. i, LayoutOrder = i, Size = UDim2.fromOffset(88, 128) })
 		dark(UI.text(c, "Day " .. i, { Size = UDim2.new(1, -8, 0, 26), Position = UDim2.fromOffset(4, 6) }))
-		UI.text(c, if i == #Config.Daily then "🎁" else "🪙", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0.5, -23, 0, 34) })
+		UI.text(c, if i == #Config.Daily then "🎁" else "💰", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0.5, -23, 0, 34) })
 		dark(UI.text(c, Fmt.num(coins), { Font = UI.BODY, Size = UDim2.new(1, -8, 0, 26), Position = UDim2.fromOffset(4, 84) }))
 		local tick = UI.text(c, "✔", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -30, 0, -10), Visible = false, TextColor3 = UI.colors.green })
 		cells[i] = { card = c, tick = tick }
@@ -531,7 +531,7 @@ local function buildDaily()
 			c.tick.Visible = i < day
 			UI.recolor(c.card, if i == day then (if can then "gold" else "sky") else "white")
 		end
-		claim.Text = if can then "CLAIM 🪙 " .. Config.Daily[day] else "⏳ " .. Fmt.time(wait)
+		claim.Text = if can then "CLAIM 💰 " .. Config.Daily[day] else "⏳ " .. Fmt.time(wait)
 		UI.recolor(claim, if can then "green" else "grey")
 	end)
 	daily.onOpen = function()

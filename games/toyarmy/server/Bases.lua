@@ -159,7 +159,7 @@ local function refresh(b: Base)
 	end
 	local info = b.info
 	if info then
-		info.Text = string.format("🪖 %d soldiers · 💪 %s", Army.count(d), Fmt.num(Army.armyPower(b.player, d)))
+		info.Text = string.format("💂 %d soldiers · 💪 %s", Army.count(d), Fmt.num(Army.armyPower(b.player, d)))
 	end
 	local press = b.press
 	if press then
@@ -227,7 +227,7 @@ function Bases.assign(player: Player, team: string): Vector3?
 	info.Font = Enum.Font.FredokaOne
 	info.TextScaled = true
 	info.TextColor3 = Color3.new(1, 1, 1)
-	info.Text = "🪖 0 soldiers"
+	info.Text = "💂 0 soldiers"
 	local s2 = Instance.new("UIStroke")
 	s2.Thickness = 2.5
 	s2.Color = Config.C.ink

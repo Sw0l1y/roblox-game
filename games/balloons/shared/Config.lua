@@ -500,7 +500,7 @@ Config.Products = {
 	LuckBoost = { id = 0, name = "Lucky Boost 15m", price = 49, glyph = "🍀", desc = "x2 luck for 15 minutes (stacks)", color = "green", order = 2 },
 	SummonMega = { id = 0, name = "Summon MEGA Balloon!", price = 99, glyph = "📣", desc = "Starts the MEGA BALLOON for the whole server now. You get 2x its reward!", color = "pink", order = 3 },
 	Starter = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎉", desc = "Coins + 15 Mega Darts + 30 min Lucky Boost (once)", color = "teal", order = 4, base = 2000 },
-	Coins1 = { id = 0, name = "Pile of Coins", price = 49, glyph = "🪙", desc = "A pile of coins for your zone", color = "gold", order = 5, base = 1500 },
+	Coins1 = { id = 0, name = "Pile of Coins", price = 49, glyph = "💰", desc = "A pile of coins for your zone", color = "gold", order = 5, base = 1500 },
 	Coins2 = { id = 0, name = "Bag of Coins", price = 149, glyph = "💰", desc = "A bag of coins for your zone", color = "gold", order = 6, base = 6000 },
 	Coins3 = { id = 0, name = "Chest of Coins", price = 399, glyph = "👑", desc = "A whole chest of coins for your zone", color = "gold", order = 7, base = 20000 },
 } :: { [string]: CatalogItem }
@@ -532,7 +532,7 @@ Config.Defaults = {
 ---------------------------------------------------------------------------------------------------------------
 
 Config.Icons = {
-	coin = "🪙",
+	coin = "💰",
 	pop = "🎈",
 	shop = "🛒",
 	upgrades = "⬆️",

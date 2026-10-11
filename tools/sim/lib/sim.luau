@@ -215,6 +215,38 @@ function Sim.uiIssues(p)
 			end
 		end
 	end
+	-- Desktop: Roblox's chat window sits top-left under the top bar and the player list (leaderstats) top-right;
+	-- both cover HUD placed there. Only small HUD pieces count; centred panels just pass through those corners.
+	if not R.MOBILE then
+		local pg = R.rawGetChild(p, "PlayerGui")
+		local reported = {}
+		for _, d in ipairs(pg and R.descendants(pg) or {}) do
+			local cls = S[d].ClassName
+			local isText = cls == "TextLabel" or cls == "TextButton"
+			if (isText or cls == "ImageButton") and visibleGui(d) then
+				local layer = layerOf(d)
+				local shown = not isText or ((R.rawGet(d, "Text") or "") ~= "" and (R.rawGet(d, "TextTransparency") or 0) < 0.9)
+				if shown and layer and S[layer].ClassName == "ScreenGui" then
+					local x, y, w, h = R.guiRect(d)
+					-- one report per HUD piece (the ancestor two levels under the ScreenGui)
+					local top = d
+					while S[top].parent and S[top].parent ~= layer and S[S[top].parent].parent ~= layer do
+						top = S[top].parent
+					end
+					local cx, cy = x + w / 2, y + h / 2
+					local small = w > 2 and h > 2 and w < 0.4 * W and not reported[top]
+					local name = R.fullName(d):gsub("^Players%.%w+%.PlayerGui%.", "")
+					if small and cx < 0.3 * W and cy > R.GUI_INSET and cy < 0.33 * H then
+						reported[top] = true
+						table.insert(out, string.format("under the Roblox chat window (top-left): %s @%d,%d", name, x, y))
+					elseif small and cx > 0.8 * W and cy > R.GUI_INSET and cy < 0.28 * H then
+						reported[top] = true
+						table.insert(out, string.format("under the Roblox player list (top-right): %s @%d,%d", name, x, y))
+					end
+				end
+			end
+		end
+	end
 	for i = 1, #rects do
 		for j = i + 1, #rects do
 			local a, b = rects[i], rects[j]

@@ -91,7 +91,7 @@ local function grantCoins(n: number): (Player, { [string]: any }) -> boolean
 	return function(player, d)
 		d.coins = (d.coins or 0) + n
 		d.totalCoins = (d.totalCoins or 0) + n
-		Shop.notify(player, "🪙 +" .. Fmt.commas(n) .. " coins!", "gold")
+		Shop.notify(player, "💰 +" .. Fmt.commas(n) .. " coins!", "gold")
 		return true
 	end
 end

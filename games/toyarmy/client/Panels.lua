@@ -81,7 +81,7 @@ end
 
 -- Toy Box: the army and the mold press -----------------------------------------------------------------------------
 do
-	local p = panel("Army", "🪖 TOY BOX", "green", Vector2.new(700, 520))
+	local p = panel("Army", "💂 TOY BOX", "green", Vector2.new(700, 520))
 	local head = body("", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 4), TextXAlignment = Enum.TextXAlignment.Left })
 	head.Parent = p.body
 	local press = UI.frame(p.body, { BackgroundColor3 = Color3.fromRGB(232, 238, 252), Size = UDim2.new(1, 0, 0, 66), Position = UDim2.fromOffset(0, 38) })
@@ -139,7 +139,7 @@ do
 			return
 		end
 		local busy = Game.busy()
-		head.Text = string.format("🪖 %d / %d soldiers   ·   💪 %s power   ·   squad of %d", Game.count(d), Game.capacity(d), Fmt.num(Game.armyPower(d)), Game.squadSize(d))
+		head.Text = string.format("💂 %d / %d soldiers   ·   💪 %s power   ·   squad of %d", Game.count(d), Game.capacity(d), Fmt.num(Game.armyPower(d)), Game.squadSize(d))
 		-- mold press
 		local m1 = d.merging[1]
 		if m1 then
@@ -426,7 +426,7 @@ do
 				local power: number = tonumber(snap and snap.power) or 0
 				local fighting: boolean = snap ~= nil and snap.fight == true
 				local yours: string = mine > 0 and (" · yours: " .. mine) or ""
-				r.info.Text = "💪 " .. Fmt.num(power) .. " · " .. #units .. "/" .. def.cap .. " 🪖 · +" .. def.income .. " 🧱/5s" .. yours .. (fighting and " · ⚔️ BATTLE!" or "")
+				r.info.Text = "💪 " .. Fmt.num(power) .. " · " .. #units .. "/" .. def.cap .. " 💂 · +" .. def.income .. " 🧱/5s" .. yours .. (fighting and " · ⚔️ BATTLE!" or "")
 				r.recall.Visible = mine > 0 and not (snap and snap.fight)
 				r.deploy.Text = owner == side and "🛡️ GUARD" or "⚔️ ATTACK"
 			end

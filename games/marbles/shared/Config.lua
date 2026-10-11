@@ -451,7 +451,7 @@ Config.Passes = {
 }
 Config.Products = {
 	StarterPack = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎒", desc = "2,000 coins + a Mega Pack. Once per player." },
-	CoinsS = { id = 0, name = "1,500 Coins", price = 29, glyph = "🪙", desc = "A pocket of coins." },
+	CoinsS = { id = 0, name = "1,500 Coins", price = 29, glyph = "💰", desc = "A pocket of coins." },
 	CoinsM = { id = 0, name = "8,000 Coins", price = 99, glyph = "💰", desc = "A bag of coins." },
 	CoinsL = { id = 0, name = "50,000 Coins", price = 449, glyph = "🏦", desc = "A vault of coins." },
 	LuckBoost = { id = 0, name = "Luck Boost (15 min)", price = 39, glyph = "🍀", desc = "2x pack luck and mutation chance for 15 minutes." },
@@ -473,7 +473,7 @@ Config.Meshes = {
 
 -- Emoji icons (swap for our own icon ids later).
 Config.Icons = {
-	coins = "🪙",
+	coins = "💰",
 	trophy = "🏆",
 	marble = "🔮",
 	marbles = "🔮",
@@ -497,7 +497,7 @@ Config.Icons = {
 	bot = "🤖",
 	speed = "💨",
 	grip = "🧲",
-	weight = "🪨",
+	weight = "⚖️",
 	level = "⬆️",
 	xp = "✨",
 	sleep = "💤",

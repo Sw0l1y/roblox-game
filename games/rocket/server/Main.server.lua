@@ -80,7 +80,7 @@ Data.init({
 		{ name = "🚀 Launches", get = function(d)
 			return d.launches or 0
 		end },
-		{ name = "🪙 Coins", get = function(d)
+		{ name = "💰 Coins", get = function(d)
 			return Fmt.num(d.coins or 0)
 		end },
 	},

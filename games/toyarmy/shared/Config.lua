@@ -99,7 +99,7 @@ export type UnitDef = {
 	scale: number,
 }
 Config.Units = {
-	{ key = "Rifleman", name = "Rifleman", tier = "Common", atk = 10, hp = 30, merge = 0, special = "", glyph = "🪖", desc = "Pew pew! The classic.", scale = 1 },
+	{ key = "Rifleman", name = "Rifleman", tier = "Common", atk = 10, hp = 30, merge = 0, special = "", glyph = "💂", desc = "Pew pew! The classic.", scale = 1 },
 	{ key = "Bazooka", name = "Bazooka", tier = "Uncommon", atk = 34, hp = 100, merge = 4, special = "splash", glyph = "💥", desc = "Blasts two toys at once.", scale = 1 },
 	{ key = "Medic", name = "Medic", tier = "Rare", atk = 105, hp = 330, merge = 12, special = "heal", glyph = "⛑️", desc = "Patches up the squad.", scale = 1.05 },
 	{ key = "Tank", name = "Tank", tier = "Epic", atk = 360, hp = 1150, merge = 30, special = "armor", glyph = "🛡️", desc = "Armored: takes 30% less.", scale = 1 },
@@ -254,7 +254,7 @@ Config.BaseSlots = {
 export type UpgradeDef = { key: string, name: string, desc: string, glyph: string, base: number, growth: number, max: number }
 Config.Upgrades = {
 	{ key = "box", name = "Bigger Box", desc = "+4 soldier slots", glyph = "📦", base = 100, growth = 1.7, max = 20 },
-	{ key = "squad", name = "Squad Size", desc = "+1 soldier per deploy", glyph = "🪖", base = 300, growth = 2.4, max = 6 },
+	{ key = "squad", name = "Squad Size", desc = "+1 soldier per deploy", glyph = "💂", base = 300, growth = 2.4, max = 6 },
 	{ key = "press", name = "Plastic Press", desc = "+10 🧱/min, even offline", glyph = "🏭", base = 120, growth = 1.55, max = 25 },
 	{ key = "mold", name = "Fast Molds", desc = "-6% merge time", glyph = "⏩", base = 250, growth = 1.9, max = 10 },
 	{ key = "lucky", name = "Lucky Bags", desc = "+6% bag luck", glyph = "🍀", base = 500, growth = 2.1, max = 10 },
@@ -405,7 +405,7 @@ Config.Products = {
 	starter = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎒", desc = "1,000 plastic, a Medic and 3 Heavy Duffels." },
 	bags10 = { id = 0, name = "10 Bags of Soldiers", price = 69, glyph = "🎒", desc = "Ten free Bags of Soldiers." },
 	callcat = { id = 0, name = "Call the Cat!", price = 79, glyph = "🐱", desc = "The cat comes NOW and swats the enemy army. Whole server sees it!" },
-	plasticM = { id = 0, name = "Bucket of Plastic", price = 99, glyph = "🪣", desc = "7,500 plastic (grows with your rank)." },
+	plasticM = { id = 0, name = "Bucket of Plastic", price = 99, glyph = "🧺", desc = "7,500 plastic (grows with your rank)." },
 	tanks = { id = 0, name = "Tank Bundle", price = 99, glyph = "🛡️", desc = "2 Tanks + 1 Gold Tank." },
 	helis = { id = 0, name = "Heli Bundle", price = 249, glyph = "🚁", desc = "2 Helicopters + 1 Glow Helicopter." },
 	plasticL = { id = 0, name = "Truck of Plastic", price = 299, glyph = "🚚", desc = "30,000 plastic (grows with your rank)." },
@@ -431,7 +431,7 @@ Config.Meshes = {
 Config.Icons = {
 	plastic = "🧱",
 	bag = "🎒",
-	army = "🪖",
+	army = "💂",
 	map = "🗺️",
 	index = "📖",
 	base = "📦",

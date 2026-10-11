@@ -406,7 +406,7 @@ local function gate(parent: Instance, zoneIndex: number)
 		l.Font = Enum.Font.LuckiestGuy
 		l.TextScaled = true
 		l.TextColor3 = WHITE
-		l.Text = "🔒 " .. string.upper(z.name) .. "\n🪙 " .. Fmt.commas(z.cost)
+		l.Text = "🔒 " .. string.upper(z.name) .. "\n💰 " .. Fmt.commas(z.cost)
 		local st = Instance.new("UIStroke")
 		st.Thickness = 4
 		st.Color = P.ink
@@ -416,7 +416,7 @@ local function gate(parent: Instance, zoneIndex: number)
 	end
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "UnlockPrompt"
-	prompt.ActionText = "Unlock 🪙 " .. Fmt.num(z.cost)
+	prompt.ActionText = "Unlock 💰 " .. Fmt.num(z.cost)
 	prompt.ObjectText = z.glyph .. " " .. z.name
 	prompt.HoldDuration = 0.35
 	prompt.MaxActivationDistance = 18

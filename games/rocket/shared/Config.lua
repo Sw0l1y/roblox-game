@@ -288,7 +288,7 @@ Config.Passes = {
 	RobotCrew = { id = 0, name = "Robot Crew", price = 299, icon = "🤖", desc = "2 robots follow you and help lift every part." },
 	MegaJetpack = { id = 0, name = "Mega Jetpack", price = 149, icon = "🚀", desc = "Double jump with flames + faster hauling." },
 	VIP = { id = 0, name = "VIP Window Seat", price = 399, icon = "👑", desc = "Gold window seat at launch, VIP tag, +20% coins." },
-	Coins2x = { id = 0, name = "2x Coins", price = 249, icon = "🪙", desc = "Double coins from every part, forever." },
+	Coins2x = { id = 0, name = "2x Coins", price = 249, icon = "💰", desc = "Double coins from every part, forever." },
 	SkinGalaxy = { id = 0, name = "Galaxy Rocket Skin", price = 79, icon = "🌌", desc = "Paint the server rocket purple-pink." },
 	SkinCandy = { id = 0, name = "Candy Rocket Skin", price = 129, icon = "🍬", desc = "Paint the server rocket candy pink." },
 	SkinGolden = { id = 0, name = "Golden Rocket", price = 1299, icon = "👑", desc = "A solid gold rocket. The ultimate flex." },
@@ -301,7 +301,7 @@ Config.Products = {
 	SupplyDrop = { id = 0, name = "Call a Supply Drop", price = 149, icon = "📦", desc = "Star Crates fall from the sky for the whole server." },
 	StarterPack = { id = 0, name = "Starter Pack", price = 49, icon = "🎁", desc = "Coins + Power Gloves upgrade + 15 min 3x strength.", coins = 1500, once = true },
 	Boost15 = { id = 0, name = "3x Strength (15 min)", price = 39, icon = "⚡", desc = "Triple strength for 15 minutes." },
-	CoinsS = { id = 0, name = "Pile of Coins", price = 25, icon = "🪙", desc = "A handful of coins.", coins = 500 },
+	CoinsS = { id = 0, name = "Pile of Coins", price = 25, icon = "💰", desc = "A handful of coins.", coins = 500 },
 	CoinsM = { id = 0, name = "Sack of Coins", price = 99, icon = "💰", desc = "A big sack of coins.", coins = 2500 },
 	CoinsL = { id = 0, name = "Crate of Coins", price = 299, icon = "🏦", desc = "A crate full of coins.", coins = 10000 },
 	CoinsXL = { id = 0, name = "Vault of Coins", price = 799, icon = "💎", desc = "A whole vault.", coins = 35000 },
@@ -309,7 +309,7 @@ Config.Products = {
 
 -- UI glyphs (emoji now, swap for our own icon ids later).
 Config.Icons = {
-	coin = "🪙",
+	coin = "💰",
 	strength = "💪",
 	rocket = "🚀",
 	shop = "🛒",

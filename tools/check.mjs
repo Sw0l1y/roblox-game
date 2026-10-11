@@ -113,5 +113,17 @@ for (const { result } of results) {
     console.log(`${isError ? 'ERROR' : 'warn '} ${file}:${d.location.begin.line + 1}: ${d.message.replace(/\s+/g, ' ').slice(0, 300)}`);
   }
 }
+// Glyphs Roblox can't draw: its emoji font (Twemoji) stops at Unicode 12 (checked in Studio 2026-10-11:
+// 🪙 🪖 🪣 🪨 🫐 🫧 🥲 came out blank), and ▸/◂ are missing from the UI fonts. They show up as empty boxes.
+const BAD_GLYPH = /[\u25B8\u25C2\u{1F6D6}\u{1F6D7}\u{1F6DC}-\u{1F6DF}\u{1F6FB}\u{1F6FC}\u{1F90C}\u{1F972}\u{1F977}-\u{1F979}\u{1F9A3}\u{1F9A4}\u{1F9AB}-\u{1F9AD}\u{1F9CB}\u{1F9CC}\u{1F7F0}\u{1FA74}-\u{1FA77}\u{1FA7B}-\u{1FA7F}\u{1FA83}-\u{1FA8F}\u{1FA96}-\u{1FAFF}]/u;
+for (const f of Object.values(all)) {
+  fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+    const m = line.replace(/--.*$/, '').match(BAD_GLYPH);
+    if (m) {
+      errors++;
+      console.log(`ERROR ${path.relative(ROOT, f)}:${i + 1}: "${m[0]}" doesn't render in Roblox (shows as an empty box); use an older emoji`);
+    }
+  });
+}
 console.log(`\n${game}: ${errors} errors, ${warnings} warnings (${hidden} generic-Instance/unused notes hidden; --all to show)`);
 process.exit(errors ? 1 : 0);

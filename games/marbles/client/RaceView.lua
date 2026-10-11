@@ -897,12 +897,12 @@ local function showReward(rec: Rec)
 		return
 	end
 	local coins = tonumber(info.coins) or 0
-	local coinChip = chip("+0 🪙", "gold")
+	local coinChip = chip("+0 💰", "gold")
 	chip("+" .. tostring(info.xp or 0) .. " XP", "purple")
 	chip("+" .. tostring(info.league or 0) .. " 🏅", "sky")
 	local v = Instance.new("NumberValue")
 	v.Changed:Connect(function(x)
-		coinChip.Text = "+" .. Fmt.commas(x) .. " 🪙"
+		coinChip.Text = "+" .. Fmt.commas(x) .. " 💰"
 	end)
 	UI.tween(v, 0.9, { Value = coins }, Enum.EasingStyle.Quad)
 	task.delay(1, function()
@@ -912,7 +912,7 @@ local function showReward(rec: Rec)
 	local target = RaceView.coinTarget
 	if target then
 		local from = coinChip.AbsolutePosition + coinChip.AbsoluteSize / 2 + game:GetService("GuiService"):GetGuiInset()
-		UI.fly(from, target, math.clamp(math.floor(coins / 8), 4, 14), "🪙")
+		UI.fly(from, target, math.clamp(math.floor(coins / 8), 4, 14), "💰")
 	end
 	if (tonumber(info.levelUps) or 0) > 0 then
 		task.delay(0.9, function()
