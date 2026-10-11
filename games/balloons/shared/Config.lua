@@ -364,7 +364,7 @@ Config.Mega = {
 -- primitive balloon (stretched ball + knot + string + shine).
 Config.Meshes = {
 	balloon = {
-		mesh = 0,
+		mesh = 79181564347447,
 		texture = 0,
 		size = V(3, 3.45, 3),
 		prompt = "smooth round party balloon slightly taller than wide, small tied knot at the bottom, perfectly symmetrical, simple clean shape, plain white",

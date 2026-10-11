@@ -52,7 +52,7 @@ end
 -- otherwise the part keeps its flat palette colour.
 local function tex(p: BasePart, variant: string): BasePart
 	if World.hasVariant(variant) then
-		World.texture(p, variant)
+		World.texture(p, variant, p.Color)
 	end
 	return p
 end

@@ -467,8 +467,8 @@ Config.NoOffersBefore = 150 -- seconds of play before any purchase popup
 
 -- Hero mesh slot: one sphere mesh; every marble def has its own texture slot (def.texture).
 Config.Meshes = {
-	Marble = { mesh = 0, texture = 0, size = Vector3.new(3, 3, 3), prompt = "perfectly round smooth sphere, simple clean shape, no details" },
-	Trophy = { mesh = 0, texture = 0, size = Vector3.new(60, 90, 60), prompt = "simple trophy cup with two round handles on a short square base, smooth" },
+	Marble = { mesh = 83290749954823, texture = 0, size = Vector3.new(3, 3, 3), prompt = "perfectly round smooth sphere, simple clean shape, no details" },
+	Trophy = { mesh = 132816977831168, texture = 109122908686377, size = Vector3.new(60, 90, 60), prompt = "simple trophy cup with two round handles on a short square base, smooth" },
 }
 
 -- Emoji icons (swap for our own icon ids later).

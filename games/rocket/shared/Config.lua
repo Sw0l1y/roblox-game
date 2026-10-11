@@ -347,20 +347,20 @@ Config.Icons = {
 -- Hero meshes (AI-generated later; 0 = not yet, primitives are used). Prompts follow PROTOCOL 4.3: shape words, no theme words.
 Config.Meshes = {
 	noseCone = {
-		mesh = 0,
-		texture = 0,
+		mesh = 126507582776353,
+		texture = 138325314451382,
 		size = V3(5, 6, 5),
 		prompt = "smooth white party hat cone with a bright orange tip and two thin orange rings, perfectly round and symmetrical, flat round base, no brim",
 	},
 	crewBot = {
-		mesh = 0,
-		texture = 0,
+		mesh = 97514797873917,
+		texture = 119030315157132,
 		size = V3(3.4, 4.6, 3.4),
 		prompt = "small round white helper robot with one big cyan visor, two short arms raised, floating on a round navy base, no legs, simple clean shapes",
 	},
 	supplyPod = {
-		mesh = 0,
-		texture = 0,
+		mesh = 103241298498288,
+		texture = 118023485969993,
 		size = V3(8, 10, 8),
 		prompt = "round white drop pod capsule with two orange stripes, three short legs and a flat round top, simple clean shapes",
 	},

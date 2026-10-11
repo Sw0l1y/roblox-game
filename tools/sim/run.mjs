@@ -56,12 +56,19 @@ function manifest() {
   add('ServerScriptService', '', 'Main', 'Script', path.join(gdir, 'server', 'Main.server.lua'));
   add('StarterPlayer', '', 'Main', 'LocalScript', path.join(gdir, 'client', 'Main.client.lua'));
   const materials = [];
+  const looks = {};
   for (const f of [path.join(ROOT, 'kit', 'materials.json'), path.join(gdir, 'materials.json')]) {
     if (!fs.existsSync(f)) continue;
     for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(f, 'utf8')))) {
-      if (!k.startsWith('_') && v.color) materials.push({ name: k, base: v.base, color: v.color, normal: v.normal, roughness: v.roughness, metalness: v.metalness });
+      if (!k.startsWith('_') && v.color) {
+        materials.push({ name: k, base: v.base, color: v.color, normal: v.normal, roughness: v.roughness, metalness: v.metalness });
+        if (v.preview) looks[k] = v.preview;
+      }
     }
   }
+  // same generated module as build.py's material_looks()
+  const looksSrc = 'return {\n' + Object.entries(looks).map(([k, c]) => `\t${k} = Color3.fromRGB(${c.join(', ')}),\n`).join('') + '}\n';
+  items.push({ container: 'ReplicatedStorage', folder: 'Shared', name: 'MaterialLooks', class: 'ModuleScript', source: looksSrc, path: 'MaterialLooks (generated)' });
   const meta = fs.existsSync(path.join(gdir, 'game.json')) ? JSON.parse(fs.readFileSync(path.join(gdir, 'game.json'), 'utf8')) : {};
   return { items, materials, walkSpeed: meta.walkSpeed ?? 20, jumpPower: meta.jumpPower ?? 50, maxPlayers: meta.maxPlayers };
 }

@@ -24,13 +24,10 @@ export type GateInfo = { zone: number, wall: BasePart, prompt: ProximityPrompt }
 Map.gates = {} :: { GateInfo }
 Map.root = nil :: Folder?
 
--- Colour for a surface that may carry a generated variant: white when the variant exists (Part.Color
--- multiplies the texture), the flat palette colour when it has not been generated yet.
+-- Colour + variant for a surface that may carry a generated texture. The colour stays the palette colour:
+-- World.texture turns it into the right tint when the variant exists.
 local function tex(variant: string, flat: Color3): (Color3, string?)
-	if World.hasVariant(variant) then
-		return WHITE, variant
-	end
-	return flat, nil
+	return flat, if World.hasVariant(variant) then variant else nil
 end
 
 local function persistent(m: Model)

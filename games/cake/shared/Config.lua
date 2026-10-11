@@ -344,13 +344,13 @@ Config.OfferAfter = 300 -- seconds of play before the one-time starter offer may
 -- Hero meshes: AI-generated later (ids 0 now). Every use has a primitive fallback in CakeBuilder.
 export type MeshDef = { mesh: number, texture: number, size: Vector3, prompt: string }
 Config.Meshes = {
-	Strawberry = { mesh = 0, texture = 0, size = V(1.2, 1.6, 1.2), prompt = "a single strawberry, smooth glossy red, small green leaf crown on top, simple clean shapes, perfectly symmetrical" },
-	Cupcake = { mesh = 0, texture = 0, size = V(1.2, 1.9, 1.2), prompt = "a small cupcake, mint paper cup with vertical ridges, round pink frosting swirl, one cherry on top, simple clean shapes" },
-	Crown = { mesh = 0, texture = 0, size = V(1.8, 1.3, 1.8), prompt = "small gold crown, five rounded points with balls on the tips, one red round gem in front, smooth simple clean shapes" },
-	Castle = { mesh = 0, texture = 0, size = V(1.6, 3, 1.6), prompt = "one round white tower with a pink cone roof and a small gold flag, simple clean shapes, toy style" },
-	Unicorn = { mesh = 0, texture = 0, size = V(1.8, 2.2, 1.2), prompt = "a spiral unicorn horn with gold and white stripes, two small white ears at its base, smooth simple shapes" },
-	Swan = { mesh = 0, texture = 0, size = V(1.2, 1.8, 1.8), prompt = "a small white swan sitting, curved neck, orange beak, wings folded, smooth simple clean shapes" },
-	Trophy = { mesh = 0, texture = 0, size = V(1.4, 2, 1.4), prompt = "a small shiny gold trophy cup with two round handles on a short round base, smooth simple clean shapes" },
+	Strawberry = { mesh = 72286654626933, texture = 73990870392776, size = V(1.2, 1.6, 1.2), prompt = "a single strawberry, smooth glossy red, small green leaf crown on top, simple clean shapes, perfectly symmetrical" },
+	Cupcake = { mesh = 123533505763956, texture = 135150338837295, size = V(1.2, 1.9, 1.2), prompt = "a small cupcake, mint paper cup with vertical ridges, round pink frosting swirl, one cherry on top, simple clean shapes" },
+	Crown = { mesh = 131565692711917, texture = 113126380971214, size = V(1.8, 1.3, 1.8), prompt = "small gold crown, five rounded points with balls on the tips, one red round gem in front, smooth simple clean shapes" },
+	Castle = { mesh = 122776006740492, texture = 110674373510744, size = V(1.6, 3, 1.6), prompt = "one round white tower with a pink cone roof and a small gold flag, simple clean shapes, toy style" },
+	Unicorn = { mesh = 129109824156526, texture = 106955847148753, size = V(1.8, 2.2, 1.2), prompt = "a spiral unicorn horn with gold and white stripes, two small white ears at its base, smooth simple shapes" },
+	Swan = { mesh = 89223478440388, texture = 92588257747924, size = V(1.2, 1.8, 1.8), prompt = "a small white swan sitting, curved neck, orange beak, wings folded, smooth simple clean shapes" },
+	Trophy = { mesh = 102615103051898, texture = 84777282490244, size = V(1.4, 2, 1.4), prompt = "a small shiny gold trophy cup with two round handles on a short round base, smooth simple clean shapes" },
 } :: { [string]: MeshDef }
 
 -- UI glyphs (swap for our own icon ids later) ------------------------------------------------------------

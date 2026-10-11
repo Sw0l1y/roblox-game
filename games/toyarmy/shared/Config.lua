@@ -417,14 +417,14 @@ export type MeshInfo = { mesh: number, texture: number, size: Vector3, prompt: s
 -- Hero mesh slots: generate in Studio (PROTOCOL §4.3), fill the ids in. 0 = use the primitive build. ---------------
 -- Soldiers are single-colour plastic, so the texture can stay 0 and the part colour is set to the team colour.
 Config.Meshes = {
-	Rifleman = { mesh = 0, texture = 0, size = Vector3.new(2.6, 3.6, 2.6), prompt = "classic plastic toy army man standing upright aiming a rifle forward, on a small round base, single solid colour, smooth simple clean shapes" },
-	Bazooka = { mesh = 0, texture = 0, size = Vector3.new(2.6, 3.8, 3.2), prompt = "classic plastic toy army man standing upright with a bazooka tube on his right shoulder, on a small round base, single solid colour, smooth simple clean shapes" },
-	Medic = { mesh = 0, texture = 0, size = Vector3.new(2.6, 3.7, 2.6), prompt = "classic plastic toy army medic standing upright holding a small first aid box, backpack with a cross, on a small round base, single solid colour, smooth simple shapes" },
-	Tank = { mesh = 0, texture = 0, size = Vector3.new(4.2, 3.2, 6.4), prompt = "small toy army tank, boxy hull, two tracks with round wheels, round turret with one long straight cannon, single solid colour, smooth simple clean shapes" },
-	Heli = { mesh = 0, texture = 0, size = Vector3.new(4.2, 3.8, 8), prompt = "small toy army helicopter, rounded body with bubble cockpit, two-blade top rotor, thin tail with small rotor, two landing skids, single solid colour, smooth simple shapes" },
-	General = { mesh = 0, texture = 0, size = Vector3.new(3, 5.4, 3), prompt = "plastic toy army general standing upright pointing forward, peaked cap, long coat, medals, on a small round base, single solid colour, smooth simple shapes" },
-	Dino = { mesh = 0, texture = 0, size = Vector3.new(4.5, 6.5, 8.5), prompt = "chunky toy robot t-rex standing upright, boxy metal panels, big square jaw, tiny arms, thick tail, round glowing eyes, smooth simple clean shapes" },
-	Cat = { mesh = 0, texture = 0, size = Vector3.new(30, 40, 60), prompt = "big fluffy orange tabby house cat standing on four legs, tail up, round head, pointed ears, smooth simple shapes, perfectly symmetrical" },
+	Rifleman = { mesh = 98846026302625, texture = 0, size = Vector3.new(2.6, 3.6, 2.6), prompt = "classic plastic toy army man standing upright aiming a rifle forward, on a small round base, single solid colour, smooth simple clean shapes" },
+	Bazooka = { mesh = 88056513934113, texture = 0, size = Vector3.new(2.6, 3.8, 3.2), prompt = "classic plastic toy army man standing upright with a bazooka tube on his right shoulder, on a small round base, single solid colour, smooth simple clean shapes" },
+	Medic = { mesh = 73629216566438, texture = 0, size = Vector3.new(2.6, 3.7, 2.6), prompt = "classic plastic toy army medic standing upright holding a small first aid box, backpack with a cross, on a small round base, single solid colour, smooth simple shapes" },
+	Tank = { mesh = 130275429278896, texture = 0, size = Vector3.new(4.2, 3.2, 6.4), prompt = "small toy army tank, boxy hull, two tracks with round wheels, round turret with one long straight cannon, single solid colour, smooth simple clean shapes" },
+	Heli = { mesh = 110517301607708, texture = 0, size = Vector3.new(4.2, 3.8, 8), prompt = "small toy army helicopter, rounded body with bubble cockpit, two-blade top rotor, thin tail with small rotor, two landing skids, single solid colour, smooth simple shapes" },
+	General = { mesh = 98396886739471, texture = 0, size = Vector3.new(3, 5.4, 3), prompt = "plastic toy army general standing upright pointing forward, peaked cap, long coat, medals, on a small round base, single solid colour, smooth simple shapes" },
+	Dino = { mesh = 115100710640997, texture = 0, size = Vector3.new(4.5, 6.5, 8.5), prompt = "chunky toy robot t-rex standing upright, boxy metal panels, big square jaw, tiny arms, thick tail, round glowing eyes, smooth simple clean shapes" },
+	Cat = { mesh = 113446086946089, texture = 124539411674219, size = Vector3.new(30, 40, 60), prompt = "big fluffy orange tabby house cat standing on four legs, tail up, round head, pointed ears, smooth simple shapes, perfectly symmetrical" },
 } :: { [string]: MeshInfo }
 
 -- UI glyphs (emoji for now; swap for our own icon ids later) ------------------------------------------------------
