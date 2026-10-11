@@ -210,7 +210,6 @@ function UI.button(parent: Instance, str: string, color: any, props: { [string]:
 	b.TextColor3 = UI.WHITE
 	b.Text = str
 	b.Size = UDim2.fromOffset(180, 56)
-	UI.stroke(b, 2.5, UI.INK, true)
 	UI.set(b, props)
 	b.Parent = parent
 	UI.corner(b, 14)
@@ -224,6 +223,39 @@ function UI.button(parent: Instance, str: string, color: any, props: { [string]:
 		ZIndex = b.ZIndex,
 	})
 	UI.corner(gloss, 10)
+	-- A UIGradient tints everything its parent draws, text included (white text came out orange-on-orange in
+	-- Studio). So the button's own text stays invisible and a child label above the gloss mirrors it.
+	b.TextTransparency = 1
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.fromScale(1, 1)
+	label.ZIndex = b.ZIndex + 1
+	local mirrored = { "Text", "TextColor3", "FontFace", "TextScaled", "TextSize", "TextWrapped", "TextXAlignment", "TextYAlignment", "RichText", "ZIndex" }
+	local function sync(prop: string)
+		if prop == "ZIndex" then
+			label.ZIndex = b.ZIndex + 1
+		else
+			local v = (b :: any)[prop]
+			if v ~= nil then
+				(label :: any)[prop] = v
+			end
+		end
+	end
+	for _, prop in ipairs(mirrored) do
+		sync(prop)
+		b:GetPropertyChangedSignal(prop :: any):Connect(function()
+			sync(prop)
+		end)
+	end
+	b:GetPropertyChangedSignal("TextTransparency"):Connect(function()
+		if b.TextTransparency < 1 then -- a caller fading the text: fade the label, keep the button's own text hidden
+			label.TextTransparency = b.TextTransparency
+			b.TextTransparency = 1
+		end
+	end)
+	UI.stroke(label, 2.5, UI.INK, true)
+	label.Parent = b
 	local pad = Instance.new("UIPadding")
 	pad.PaddingTop = UDim.new(0.14, 0)
 	pad.PaddingBottom = UDim.new(0.14, 0)
@@ -683,6 +715,21 @@ local toastHolder = UI.frame(gui, {
 })
 local tl = UI.list(toastHolder, 6)
 tl.VerticalAlignment = Enum.VerticalAlignment.Top
+-- Toasts live outside the scaled root (they sit above panels), so they copy its scale and stay just under the
+-- game's top HUD at every screen size. Games with a taller top HUD move them down with UI.setToastTop.
+local toastScale = Instance.new("UIScale")
+toastScale.Parent = toastHolder
+local toastTop = 96
+local function placeToasts()
+	toastScale.Scale = rootScale.Scale
+	toastHolder.Position = UDim2.new(0.5, 0, 0, toastTop * rootScale.Scale)
+end
+rootScale:GetPropertyChangedSignal("Scale"):Connect(placeToasts)
+placeToasts()
+function UI.setToastTop(y: number)
+	toastTop = y
+	placeToasts()
+end
 function UI.toast(str: string, color: any, seconds: number?)
 	local c = UI.color(color)
 	local f = UI.frame(toastHolder, { Size = UDim2.fromOffset(480, 44), ZIndex = 55 })

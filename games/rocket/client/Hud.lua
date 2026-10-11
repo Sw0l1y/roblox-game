@@ -126,19 +126,30 @@ local progress = UI.bar(UI.root, "orange", {
 })
 Hud.progress = progress
 
-local function pill(name: string, color: string, anchorX: number, x: number): (Frame, TextLabel)
-	local f = UI.card(UI.root, color, {
+-- Timer pills (supply drop, boosts) share a centred row under the progress bar, so they stay out of the top
+-- corners where the Roblox chat window (left) and player list (right) sit.
+local pills = UI.frame(UI.root, {
+	Name = "Pills",
+	BackgroundTransparency = 1,
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 112),
+	Size = UDim2.fromOffset(440, 34),
+})
+UI.list(pills, 12, true)
+UI.setToastTop(154) -- toasts go under the timer pills
+
+local function pill(name: string, color: string, order: number): (Frame, TextLabel)
+	local f = UI.card(pills, color, {
 		Name = name,
-		AnchorPoint = Vector2.new(anchorX, 0),
-		Position = UDim2.new(0.5, x, 0, 70),
 		Size = UDim2.fromOffset(206, 34),
+		LayoutOrder = order,
 		Visible = false,
 	})
 	local l = UI.text(f, "", { Size = UDim2.new(1, -14, 0.8, 0), Position = UDim2.new(0, 7, 0.1, 0) })
 	return f, l
 end
-local dropPill, dropText = pill("DropPill", "gold", 1, -232)
-local boostPill, boostText = pill("BoostPill", "orange", 0, 232)
+local dropPill, dropText = pill("DropPill", "gold", 1)
+local boostPill, boostText = pill("BoostPill", "orange", 2)
 
 -- Hint line (bottom centre) -----------------------------------------------------------------------------------
 
@@ -166,11 +177,17 @@ end
 
 -- Left menu ---------------------------------------------------------------------------------------------------
 
+-- Both side menus sit at mid-height. On desktop that is the middle of the space under the Roblox top bar,
+-- clear of the chat window (top-left) and the player list (top-right); phones (no chat window, a thumbstick
+-- bottom-left and the jump button bottom-right) sit them a little higher.
+local MID = if UI.isMobile then -24 else 30
+
 local left = UI.frame(UI.root, {
 	Name = "LeftMenu",
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 16, 0, 130),
-	Size = UDim2.fromOffset(170, 260),
+	AnchorPoint = Vector2.new(0, 0.5),
+	Position = UDim2.new(0, 16, 0.5, MID),
+	Size = UDim2.fromOffset(170, 248), -- 2 x 3 buttons of 76 with 10 gaps
 })
 local leftGrid = UI.grid(left, UDim2.fromOffset(76, 76), 10)
 leftGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
@@ -188,12 +205,11 @@ local crewBtn = menuButton(left, "Crew", I.crew, "CREW", "gold", 4)
 local skinsBtn = menuButton(left, "Skins", I.skins, "SKINS", "pink", 5)
 local muteBtn = menuButton(left, "Mute", I.music, "MUSIC", "grey", 6)
 
--- Right column -------------------------------------------------------------------------------------------------
+-- Mini crew board (desktop: under the left menu) ---------------------------------------------------------------
 
 local board = UI.card(UI.root, "dark", {
 	Name = "MiniBoard",
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -16, 0, 120),
+	Position = UDim2.new(0, 16, 0.5, MID + 248 / 2 + 14),
 	Size = UDim2.fromOffset(236, 140),
 })
 UI.text(board, I.crew .. " CREW BOARD", { Size = UDim2.new(1, -16, 0, 24), Position = UDim2.fromOffset(8, 4), TextColor3 = UI.colors.gold })
@@ -207,22 +223,25 @@ for i = 1, 5 do
 	})
 end
 
+if UI.isMobile then
+	-- phones: no room for the mini board (the Crew panel has the full board)
+	board.Visible = false
+end
+
+-- Right column -------------------------------------------------------------------------------------------------
+
+-- Centred on the same line as the left menu; up to 5 buttons (386 tall) still clear the player list on desktop
+-- and the touch jump button on phones.
 local right = UI.frame(UI.root, {
 	Name = "RightColumn",
 	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -16, 0, 274),
-	Size = UDim2.fromOffset(76, 420),
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(1, -16, 0.5, MID),
+	Size = UDim2.fromOffset(76, 400),
 })
 local rightList = UI.list(right, 9)
-rightList.VerticalAlignment = Enum.VerticalAlignment.Top
+rightList.VerticalAlignment = Enum.VerticalAlignment.Center
 rightList.HorizontalAlignment = Enum.HorizontalAlignment.Right
-if UI.isMobile then
-	-- phones: no room for the mini board (the Crew panel has the full board); the column moves up so it
-	-- stays above the touch jump button
-	board.Visible = false
-	right.Position = UDim2.new(1, -16, 0, 120)
-end
 
 local dailyBtn = menuButton(right, "Daily", I.daily, "DAILY", "pink", 1, 70)
 local fuelBtn = menuButton(right, "Fuel", I.fuel, "FUEL!", "orange", 2, 70)

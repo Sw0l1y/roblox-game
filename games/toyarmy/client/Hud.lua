@@ -57,30 +57,40 @@ local score = UI.card(UI.root, "dark", {
 	Position = UDim2.new(0.5, 0, 0, 72),
 	Size = UDim2.fromOffset(380, 40),
 })
+UI.setToastTop(120) -- toasts go under the war score bar
 local scoreG = UI.text(score, "GREEN 0", { Size = UDim2.fromOffset(130, 30), Position = UDim2.fromOffset(8, 5), TextColor3 = Config.C.green, TextXAlignment = Enum.TextXAlignment.Left })
 local scoreT = UI.text(score, "0 TAN", { Size = UDim2.fromOffset(130, 30), Position = UDim2.new(1, -138, 0, 5), TextColor3 = Config.C.tan, TextXAlignment = Enum.TextXAlignment.Right })
 local roundText = UI.text(score, "🏆 3:00", { Size = UDim2.fromOffset(110, 28), Position = UDim2.new(0.5, -55, 0, 6) })
 
 -- Left menu -----------------------------------------------------------------------------------------------------------------
+-- The side menus are 2-wide grids at left-middle / right-middle: on desktop Roblox's chat window covers the top-left
+-- corner and the player list the top-right one, so both grids sit a little below the centre line there (MID).
+local MID = UI.isMobile and 0 or 24
+local CELL, CELL_GAP = 78, 14
 local left = UI.frame(UI.root, {
 	Name = "Left",
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0, 0.5),
-	Position = UDim2.new(0, 14, 0.5, 24),
-	Size = UDim2.fromOffset(84, 540),
+	Position = UDim2.new(0, 14, 0.5, MID),
+	Size = UDim2.fromOffset(2 * CELL + CELL_GAP + 4, 3 * CELL + 2 * CELL_GAP),
 })
-UI.list(left, 10)
+-- two per row, pinned: the 4 px of slack keeps a scaled-down frame from rounding to one column
+local leftGrid = UI.grid(left, UDim2.fromOffset(CELL, CELL), CELL_GAP)
+leftGrid.FillDirectionMaxCells = 2
+leftGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
 local menu: { [string]: UI.IconButton } = {}
+-- rows of two; BASE (the last tutorial goal) sits in the inner column so the guide finger can point at it from the
+-- right without covering another button
 local MENU = {
 	{ "Army", I.army, "ARMY", "green" },
 	{ "Bags", I.bag, "BAGS", "orange" },
-	{ "Upgrades", I.base, "BASE", "blue" },
 	{ "Index", I.index, "INDEX", "purple" },
+	{ "Upgrades", I.base, "BASE", "blue" },
 	{ "Map", I.map, "MAP", "teal" },
 	{ "Shop", I.shop, "SHOP", "pink" },
 }
 for i, m in ipairs(MENU) do
-	local b = UI.iconButton(left, m[2], m[3], m[4], { LayoutOrder = i, Size = UDim2.fromOffset(78, 78) })
+	local b = UI.iconButton(left, m[2], m[3], m[4], { LayoutOrder = i, Size = UDim2.fromOffset(CELL, CELL) })
 	b.button.Name = m[1] .. "Button"
 	menu[m[1]] = b
 	b.button.MouseButton1Click:Connect(function()
@@ -89,36 +99,34 @@ for i, m in ipairs(MENU) do
 end
 
 -- Right column ------------------------------------------------------------------------------------------------------------------
+-- Six buttons make three rows centred like the left menu; a landed supply drop adds a fourth row underneath (so the
+-- others never jump). Phones use smaller cells so that row stays clear of Roblox's touch jump button (bottom right).
+local SIDE, SIDE_GAP = 70, 14
+if UI.isMobile then
+	SIDE, SIDE_GAP = 62, 10
+end
 local right = UI.frame(UI.root, {
 	Name = "Right",
 	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -14, 0.5, 20),
-	Size = UDim2.fromOffset(78, 600),
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -14, 0.5, MID - (3 * SIDE + 2 * SIDE_GAP) / 2),
+	Size = UDim2.fromOffset(2 * SIDE + SIDE_GAP + 4, 4 * SIDE + 3 * SIDE_GAP),
 })
-local rightList = UI.list(right, 8)
-local SIDE = 70
-if UI.isMobile then
-	-- phones: start the column under the top bar and keep it compact, so its bottom buttons stay clear of
-	-- Roblox's touch jump button (bottom right) instead of covering it and eating jump taps
-	SIDE = 62
-	rightList.Padding = UDim.new(0, 4)
-	rightList.VerticalAlignment = Enum.VerticalAlignment.Top
-	right.AnchorPoint = Vector2.new(1, 0)
-	right.Position = UDim2.new(1, -14, 0, 80)
-	right.Size = UDim2.fromOffset(78, 7 * SIDE + 6 * 4)
-end
+local rightGrid = UI.grid(right, UDim2.fromOffset(SIDE, SIDE), SIDE_GAP)
+rightGrid.FillDirectionMaxCells = 2
+rightGrid.HorizontalAlignment = Enum.HorizontalAlignment.Right
+rightGrid.VerticalAlignment = Enum.VerticalAlignment.Top
 local function side(order: number, glyph: string, label: string, color: any): UI.IconButton
 	local b = UI.iconButton(right, glyph, label, color, { LayoutOrder = order, Size = UDim2.fromOffset(SIDE, SIDE) })
 	return b
 end
 local dailyB = side(1, I.daily, "DAILY", "gold")
 local giftB = side(2, I.gift, "GIFT", "teal")
-local supplyB = side(3, I.supply, "SUPPLY", "green")
-local luckB = side(4, I.luck, "LUCK", "green")
-local catB = side(5, I.cat, "CAT", "orange")
-local autoB = side(6, I.ai, "AUTO", "blue")
-local muteB = side(7, I.mute, "MUSIC", "dark")
+local luckB = side(3, I.luck, "LUCK", "green")
+local catB = side(4, I.cat, "CAT", "orange")
+local autoB = side(5, I.ai, "AUTO", "blue")
+local muteB = side(6, I.mute, "MUSIC", "dark")
+local supplyB = side(7, I.supply, "SUPPLY", "green")
 supplyB.button.Visible = false
 
 -- Bottom: goal bar and the three big buttons ----------------------------------------------------------------------------
@@ -175,20 +183,23 @@ local finger = UI.text(UI.fx, "👇", { Font = Enum.Font.GothamBold, AnchorPoint
 local fingerTarget: GuiObject? = nil
 
 -- Feed --------------------------------------------------------------------------------------------------------------------------
+-- Under the left menu (newest line at the bottom): clear of the chat window and left of the goal bar / big buttons.
+-- Lines are tall enough for a long message to wrap onto two lines instead of shrinking to a sliver.
+local FEED_W, FEED_LINE, FEED_MAX = 270, 30, 4
 local feed = UI.frame(UI.root, {
 	Name = "Feed",
 	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 110, 0, 130),
-	Size = UDim2.fromOffset(420, 200),
+	Position = UDim2.new(0, 14, 0.5, MID + left.Size.Y.Offset / 2 + 14),
+	Size = UDim2.fromOffset(FEED_W, FEED_MAX * FEED_LINE + (FEED_MAX - 1) * 3),
 })
-local fl = UI.list(feed, 4, false, Enum.HorizontalAlignment.Left)
+local fl = UI.list(feed, 3, false, Enum.HorizontalAlignment.Left)
 fl.VerticalAlignment = Enum.VerticalAlignment.Top
 local feedN = 0
 local function addFeed(text: string, color: string?)
 	feedN += 1
 	local l = UI.text(feed, text, {
 		Font = UI.BODY,
-		Size = UDim2.fromOffset(420, 26),
+		Size = UDim2.fromOffset(FEED_W, FEED_LINE),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = UI.lighten(UI.color(color or "white"), 0.25),
 		LayoutOrder = feedN,
@@ -199,7 +210,7 @@ local function addFeed(text: string, color: string?)
 			table.insert(kids, k :: TextLabel)
 		end
 	end
-	if #kids > 5 then
+	if #kids > FEED_MAX then
 		table.sort(kids, function(a: TextLabel, b: TextLabel)
 			return a.LayoutOrder < b.LayoutOrder
 		end)
@@ -279,7 +290,8 @@ local function refresh()
 	local ready = Game.readyTotal(d)
 	local target = player:GetAttribute("Target") :: string?
 	if ready > 0 then
-		deployBtn.Text = "⚔️ DEPLOY → " .. zoneName(target)
+		-- words, not "→": the arrow did not render in the title font in Studio, so the button read "DEPLOY OUTPOST"
+		deployBtn.Text = "⚔️ DEPLOY TO " .. zoneName(target)
 		UI.recolor(deployBtn, "red")
 	else
 		deployBtn.Text = Game.count(d) > 0 and "⚔️ ALL DEPLOYED" or "⚔️ NO SOLDIERS"
@@ -350,7 +362,15 @@ for _, attr in ipairs({ "Busy", "Target", "SupplyReady" }) do
 	player:GetAttributeChangedSignal(attr):Connect(refresh)
 end
 
--- Finger bob over the goal button.
+-- A HUD element's position on the effects layer. AbsolutePosition is measured from below Roblox's top bar while the
+-- layer (IgnoreGuiInset) starts at the very top of the screen, so measure from the layer itself; using
+-- AbsolutePosition as-is put the finger a top bar's height (58 px) too high, over the character.
+local function onFx(g: GuiObject): Vector2
+	return g.AbsolutePosition - UI.fx.AbsolutePosition
+end
+
+-- Finger bob at the goal button: from above for the bottom buttons, from the inside for the side menus (so it
+-- doesn't cover the button above it in the grid).
 task.spawn(function()
 	local t = 0
 	while true do
@@ -358,10 +378,23 @@ task.spawn(function()
 		t += 0.05
 		local b = fingerTarget
 		if b and b.Visible and not Reveal.isOpen() then
-			local p = b.AbsolutePosition
+			local p = onFx(b)
 			local s = b.AbsoluteSize
+			local bob = math.abs(math.sin(t * 5)) * 12
+			if b:IsDescendantOf(left) then
+				finger.Text = "👈"
+				finger.AnchorPoint = Vector2.new(0, 0.5)
+				finger.Position = UDim2.fromOffset(p.X + s.X + 2 + bob, p.Y + s.Y / 2)
+			elseif b:IsDescendantOf(right) then
+				finger.Text = "👉"
+				finger.AnchorPoint = Vector2.new(1, 0.5)
+				finger.Position = UDim2.fromOffset(p.X - 2 - bob, p.Y + s.Y / 2)
+			else
+				finger.Text = "👇"
+				finger.AnchorPoint = Vector2.new(0.5, 1)
+				finger.Position = UDim2.fromOffset(p.X + s.X / 2, p.Y - 2 - bob)
+			end
 			finger.Visible = true
-			finger.Position = UDim2.fromOffset(p.X + s.X / 2, p.Y - 2 - math.abs(math.sin(t * 5)) * 12)
 		else
 			finger.Visible = false
 		end
@@ -530,7 +563,7 @@ Net.event("Reward").OnClientEvent:Connect(function(kind, amount, pos, extra)
 		local n = tonumber(amount) or 0
 		local text = "+" .. Fmt.num(n) .. " 🧱"
 		if kind == "income" then
-			UI.floater(text, "yellow", plastic.frame.AbsolutePosition + Vector2.new(plastic.frame.AbsoluteSize.X * 0.6, 60), 26)
+			UI.floater(text, "yellow", onFx(plastic.frame) + Vector2.new(plastic.frame.AbsoluteSize.X * 0.6, 60), 26)
 			return
 		end
 		local from = (typeof(pos) == "Vector3" and UI.screenPos(pos)) or UI.center()

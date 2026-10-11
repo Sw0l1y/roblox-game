@@ -88,8 +88,8 @@ end
 
 -- Ground, plaza floor, carpet -------------------------------------------------------------------------
 local function buildGround(f: Folder)
-	-- soft mint lawn out to the horizon, cream paving street inside it
-	local lawn = tex(World.part({ Name = "Lawn", Size = V(340, 1, 340), CFrame = CF(0, -0.5, 0), Color = C(176, 224, 166), Parent = f }), "HouseGrass")
+	-- fresh mint lawn out to the horizon, cream paving street inside it
+	local lawn = tex(World.part({ Name = "Lawn", Size = V(340, 1, 340), CFrame = CF(0, -0.5, 0), Color = C(156, 216, 140), Parent = f }), "HouseGrass")
 	lawn.CanTouch = false
 	local base = tex(World.disc(f, 0, 0, 104, 0.06, 0.6, P.creamDark), "CakeStreet")
 	base.Name = "Street"
@@ -568,12 +568,16 @@ local function buildStage(f: Folder): (BasePart, Folder, { BasePart }, { SpotLig
 end
 
 function Plaza.build(): Built
+	-- Preset A tuned for a pastel world: the plaza is mostly cream, white and pink, which the grass-green games'
+	-- light settings blew out to white (Studio playtest). So: a little less sun, ambient and exposure, no added
+	-- colour-correction brightness, more contrast and saturation, and a clear blue sky (light haze) instead of
+	-- a pink-white one, so the pastels read against it.
 	Look.apply({
 		preset = "A",
-		overrides = { ClockTime = 15.2, Ambient = C(126, 116, 128), OutdoorAmbient = C(176, 160, 170) },
-		atmosphere = { Color = C(255, 226, 236), Decay = C(255, 186, 204), Haze = 1.1, Density = 0.28, Offset = 0.2 },
-		cc = { Brightness = 0.08, Contrast = 0.1, Saturation = 0.22, TintColor = C(255, 248, 243) },
-		clouds = { Cover = 0.55, Density = 0.4, Color = C(255, 238, 246) },
+		overrides = { ClockTime = 15.2, Brightness = 2.3, ExposureCompensation = -0.1, Ambient = C(106, 100, 114), OutdoorAmbient = C(150, 144, 158) },
+		atmosphere = { Color = C(206, 226, 255), Decay = C(150, 150, 215), Haze = 0.5, Density = 0.24, Offset = 0.15, Glare = 0 },
+		cc = { Brightness = 0, Contrast = 0.16, Saturation = 0.3, TintColor = C(255, 250, 246) },
+		clouds = { Cover = 0.55, Density = 0.4, Color = C(255, 255, 255) },
 	})
 
 	local plaza = World.folder("Plaza")

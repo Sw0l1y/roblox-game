@@ -19,8 +19,9 @@ Debug commands (Studio only), from the server command bar:
 | `clip` | play the giant-winner-cake moment right now |
 
 ## First session (new player — run `reset` first)
-- [ ] Spawn under the candy-cane arch facing the stage; landmark cake + CAKE OFF! sign visible; HUD: coins, level
-      bar, 🎯 goal chip, phase pill with countdown, Celebrity countdown, left menu, right Box/2x/Theme column.
+- [ ] Spawn under the candy-cane arch facing the stage; landmark cake + CAKE OFF! sign visible; HUD: phase pill with
+      countdown + Celebrity countdown (top centre), coins/level/🎯 goal + 2x2 menu (left-middle), Box/2x/Theme
+      (right-middle); nothing under the chat window (top-left) or the player list (top-right).
 - [ ] "🎂 CAKE OFF!" banner + toast; tip pill "your bakery has the pink beam"; pink beam + "⬇ YOUR BAKERY ⬇" over
       the nearest station; your name on the station sign.
 - [ ] First round starts ≤ 20 s after joining: theme spinner lands on a theme with idea glyphs.

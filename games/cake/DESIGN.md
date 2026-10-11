@@ -57,8 +57,10 @@ Recurring event: Celebrity Judge round every 10 minutes.
 
 **Art bible:** cozy bright bakery-street plaza. Palette: cream `#FFF4E0` (ground/tiles), strawberry pink
 `#FFB3C7` (structure/awnings), mint `#A8E6CF` + sky `#A0D8F7` (accents), chocolate `#6B4226` (trim/drips),
-gold `#FFCD46` (rare glow/UI highlight). Lighting: preset **A (bright cartoon day) tuned warm** — ClockTime 15.2,
-pink-cream atmosphere haze, warm colour correction (+0.08 brightness, +0.22 saturation), soft clouds; no sky ids.
+gold `#FFCD46` (rare glow/UI highlight). Lighting: preset **A (bright cartoon day) toned down for pastels** —
+ClockTime 15.2, sun 2.3, exposure -0.1, lower ambient, clear blue-lavender haze (0.5), colour correction with no
+added brightness (+0.16 contrast, +0.3 saturation), white clouds; no sky ids. Big flats stay off pure white
+(plaza checker `#FCECD6` / `#FFC8DA`): near-white surfaces clip to white in Roblox's sun.
 Materials: SmoothPlastic palette parts; 3 generated variants on big flats only (`CakeTile` checker floor,
 `CakeWood` counters/station floors, `CakeStreet` paving) + kit `HousePanels` on shop facades; flat fallback =
 checker tiles drawn from parts. Mesh sources: our own chunky primitives for everything structural; hero AI meshes

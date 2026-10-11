@@ -249,7 +249,7 @@ handlers.daily = function(streak: any, coins: any, megaDarts: any, luck: any)
 		extra ..= " + " .. I.luck .. " " .. tostring(luck) .. " min Lucky Boost"
 	end
 	UI.banner(I.daily .. " DAY " .. tostring(streak) .. " GIFT!", "green", 2.4)
-	UI.toast(I.coin .. " " .. Fmt.num(tonumber(coins) or 0) .. extra, "green", 4)
+	UI.toast(I.daily .. " Daily gift: " .. I.coin .. " " .. Fmt.num(tonumber(coins) or 0) .. " coins" .. extra, "green", 4)
 	UI.fly(UI.center(), Hud.coinTarget(), 12, I.coin, Hud.punchCoins)
 	UI.confetti(60)
 	Sfx.play("cash", 0.6)

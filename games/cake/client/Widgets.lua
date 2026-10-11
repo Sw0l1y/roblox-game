@@ -48,6 +48,15 @@ function Widgets.blank(b: TextButton)
 	b.Text = ""
 end
 
+-- Kit button with its caption in a child label. The kit puts the button's UIGradient on the TextButton itself,
+-- and a UIGradient tints the object's own text as well: a white caption came out pink on a pink button and read
+-- as disabled. Children are not tinted, so the caption stays white. Change the text through the returned label.
+function Widgets.captioned(parent: Instance, text: string, color: any, props: { [string]: any }?): (TextButton, TextLabel)
+	local b = UI.button(parent, "", color, props)
+	local caption = UI.text(b, text, { Name = "Caption", Size = UDim2.fromScale(1, 1), ZIndex = b.ZIndex + 1 })
+	return b, caption
+end
+
 export type Swatch = { button: TextButton, lock: TextLabel, sel: Frame, key: string }
 
 -- Round colour swatch button (Rainbow and Galaxy get gradients; "None" and "Auto" are special).

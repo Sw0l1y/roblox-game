@@ -1,5 +1,5 @@
--- HUD: coin counter (top centre) with the MEGA BALLOON pill / server HP bar under it, the left icon menu
--- (Upgrades, Shop, Index, Zones, Rebirth), the right gift/boost column (Daily gift, Mega Darts, Lucky Boost,
+-- HUD: coin counter (top centre) with the MEGA BALLOON pill / server HP bar under it, the left icon grid
+-- (Shop, Upgrades, Index, Zones, Rebirth), the right gift/boost grid (Daily gift, Mega Darts, Lucky Boost,
 -- Summon, Music) and the goal bar at the bottom. Main wires the button handlers through Hud.onButton.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -15,7 +15,6 @@ local State = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("
 local Hud = {}
 
 local I = Config.Icons
-local camera = workspace.CurrentCamera
 local _player = Players.LocalPlayer
 
 Hud.buttons = {} :: { [string]: UI.IconButton }
@@ -39,20 +38,29 @@ type Pulse = { arrow: TextLabel, token: number }
 local pulses: { [string]: Pulse } = {}
 local pulseToken = 0
 
-local function column(side: string): Frame
-	local f = UI.frame(UI.root, {
+-- Side menus: a 2-column grid of buttons on each side at mid height. On desktop Roblox's chat window covers the
+-- top-left ~40% of the screen and the player list the top-right, so the grids start below them. Phones show
+-- neither by default, so there the grids sit a little higher to stay clear of the jump button (bottom-right).
+local BTN = 78
+local GAP_X, GAP_Y = 22, 16
+
+local function menu(side: string): Frame
+	local left = side == "Left"
+	return UI.frame(UI.root, {
 		Name = side .. "Menu",
 		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(side == "Left" and 0 or 1, 0.5),
-		Position = side == "Left" and UDim2.new(0, 14, 0.47, 0) or UDim2.new(1, -14, 0.44, 0),
-		Size = UDim2.fromOffset(84, 500),
+		AnchorPoint = Vector2.new(left and 0 or 1, 0.5),
+		Position = UDim2.new(left and 0 or 1, left and 14 or -14, UI.isMobile and 0.53 or 0.6, 0),
+		Size = UDim2.fromOffset(BTN * 2 + GAP_X, BTN * 3 + GAP_Y * 2),
 	})
-	UI.list(f, 14)
-	return f
 end
 
-local function addButton(parent: Instance, key: string, glyph: string, label: string, color: string, order: number)
-	local b = UI.iconButton(parent, glyph, label, color, { Size = UDim2.fromOffset(78, 78), LayoutOrder = order })
+-- col 0 or 1 (0.5 = centred under both columns), row 0..2.
+local function addButton(parent: Instance, key: string, glyph: string, label: string, color: string, col: number, row: number)
+	local b = UI.iconButton(parent, glyph, label, color, {
+		Size = UDim2.fromOffset(BTN, BTN),
+		Position = UDim2.fromOffset(col * (BTN + GAP_X), row * (BTN + GAP_Y)),
+	})
 	b.button.Name = key .. "Button"
 	b.button.MouseButton1Click:Connect(function()
 		local f = Hud.onButton[key]
@@ -63,7 +71,9 @@ local function addButton(parent: Instance, key: string, glyph: string, label: st
 	Hud.buttons[key] = b
 end
 
--- Bouncing arrow next to a HUD button (FTUE / "you can afford this").
+-- Bouncing arrow next to a HUD button (FTUE / "you can afford this"), on the side facing the screen centre. The
+-- buttons the guide pulses (Upgrades, Zones, Rebirth) sit in the left grid's inner column or alone in their row,
+-- so the arrow never lands on a neighbouring button.
 function Hud.pulse(key: string, on: boolean)
 	local b = Hud.buttons[key]
 	if not b then
@@ -291,12 +301,15 @@ function Hud.init()
 		Position = UDim2.new(0.5, 0, 0, 10),
 		Size = UDim2.fromOffset(270, 58),
 	})
+	-- coin multiplier ("x1.10 coins") beside the counter, not under it: the event pill / HP bar and the toasts
+	-- stack right below the counter and used to cover it
 	multLabel = UI.text(coin.frame, "", {
+		Name = "Mult",
 		Font = UI.BODY,
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -6, 1, 2),
-		Size = UDim2.fromOffset(110, 22),
-		TextXAlignment = Enum.TextXAlignment.Right,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(1, 10, 0.5, 0),
+		Size = UDim2.fromOffset(124, 28),
+		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = UI.colors.yellow,
 		ZIndex = coin.frame.ZIndex + 3,
 	})
@@ -326,31 +339,23 @@ function Hud.init()
 	end
 	UI.rainbow(hpBar.fill)
 
-	-- move the kit's toasts below our top stack
-	local toasts = UI.gui:FindFirstChild("Toasts")
-	local function placeToasts()
-		if toasts and toasts:IsA("GuiObject") then
-			toasts.Position = UDim2.new(0.5, 0, 0, math.floor(146 * UI.scale()))
-		end
-	end
-	placeToasts()
-	camera:GetPropertyChangedSignal("ViewportSize"):Connect(placeToasts)
+	UI.setToastTop(146) -- toasts go below our top stack (coins, event pill, HP bar)
 
-	-- left menu
-	local left = column("Left")
-	addButton(left, "Upgrades", I.upgrades, "Upgrades", "blue", 1)
-	addButton(left, "Shop", I.shop, "Shop", "pink", 2)
-	addButton(left, "Index", I.index, "Index", "purple", 3)
-	addButton(left, "Zones", I.zones, "Zones", "teal", 4)
-	addButton(left, "Rebirth", I.rebirth, "Rebirth", "orange", 5)
+	-- left grid: the inner (right-hand) column holds the buttons the guide points at
+	local left = menu("Left")
+	addButton(left, "Shop", I.shop, "Shop", "pink", 0, 0)
+	addButton(left, "Upgrades", I.upgrades, "Upgrades", "blue", 1, 0)
+	addButton(left, "Index", I.index, "Index", "purple", 0, 1)
+	addButton(left, "Zones", I.zones, "Zones", "teal", 1, 1)
+	addButton(left, "Rebirth", I.rebirth, "Rebirth", "orange", 0.5, 2)
 
-	-- right column
-	local right = column("Right")
-	addButton(right, "Daily", I.daily, "Gift", "green", 1)
-	addButton(right, "Mega", I.megaDart, "Mega Dart", "red", 2)
-	addButton(right, "Boost", I.luck, "Luck x2", "green", 3)
-	addButton(right, "Summon", I.mega, "MEGA!", "pink", 4)
-	addButton(right, "Mute", I.music, "Music", "grey", 5)
+	-- right grid
+	local right = menu("Right")
+	addButton(right, "Daily", I.daily, "Gift", "green", 0, 0)
+	addButton(right, "Mega", I.megaDart, "Mega Dart", "red", 1, 0)
+	addButton(right, "Boost", I.luck, "Luck x2", "green", 0, 1)
+	addButton(right, "Summon", I.mega, "MEGA!", "pink", 1, 1)
+	addButton(right, "Mute", I.music, "Music", "grey", 0.5, 2)
 
 	-- goal bar
 	goalHolder = UI.card(UI.root, "dark", {

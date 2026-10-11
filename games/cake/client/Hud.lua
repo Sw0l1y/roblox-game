@@ -1,5 +1,6 @@
--- HUD: coins + level + next goal (top left), phase/theme pill with timer and the Celebrity Judge countdown
--- (top centre), left icon menu, right gift/boost column, FTUE tip pill. Mobile-first sizes.
+-- HUD: phase/theme pill with timer and the Celebrity Judge countdown (top centre); coins, level, next goal and
+-- the 2x2 icon menu stacked at left-middle; the gift/boost column at right-middle; FTUE tip pill. The top-left
+-- and top-right corners stay empty: on desktop Roblox's chat window and player list cover them. Mobile-first sizes.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
@@ -28,6 +29,7 @@ local eventLabel: TextLabel
 local eventCard: Frame
 local tipCard: Frame
 local tipLabel: TextLabel
+local menu: Frame
 local buttons: { [string]: UI.IconButton } = {}
 local pulsing: { [GuiObject]: boolean } = {}
 local lastBeep = -1
@@ -74,13 +76,22 @@ end
 function Hud.init(c: Own.Ctx)
 	ctx = c
 	local root = UI.root
+	-- side stacks start below Roblox's chat window (desktop, top-left) and player list (top-right); phones show
+	-- neither, so there they sit higher, clear of the jump button (bottom-right). Scale positions are screen
+	-- fractions: UI.root is resized to the viewport divided by its UIScale.
+	local top = if UI.isMobile then 0.3 else 0.36
 
-	-- currency + level + next goal (below the Roblox top bar buttons)
-	coins = UI.counter(root, I.coin, "gold", Fmt.commas, { Name = "Coins", Position = UDim2.fromOffset(52, 64), Size = UDim2.fromOffset(240, 54) })
+	-- left-middle stack: coins, level, next goal, then the 2x2 menu grid
+	local left = UI.frame(root, { Name = "LeftHud", BackgroundTransparency = 1, Position = UDim2.new(0, 12, top, 0), Size = UDim2.fromOffset(262, 324) })
+	local stack = UI.list(left, 8, false, Enum.HorizontalAlignment.Left)
+	stack.VerticalAlignment = Enum.VerticalAlignment.Top
+	-- the coin pill's icon hangs off its left edge, so the pill sits inset in a full-width row
+	local coinRow = UI.frame(left, { Name = "CoinRow", BackgroundTransparency = 1, LayoutOrder = 1, Size = UDim2.fromOffset(262, 54) })
+	coins = UI.counter(coinRow, I.coin, "gold", Fmt.commas, { Name = "Coins", Position = UDim2.fromOffset(30, 0), Size = UDim2.fromOffset(232, 54) })
 	Hud.coinTarget = coins.icon
-	levelBar = UI.bar(root, "purple", { Name = "Level", Position = UDim2.fromOffset(24, 126), Size = UDim2.fromOffset(268, 32) })
+	levelBar = UI.bar(left, "purple", { Name = "Level", LayoutOrder = 2, Size = UDim2.fromOffset(262, 32) })
 	levelBar.set(0, "Lv 1 · Kitchen Helper")
-	goalCard = UI.card(root, "teal", { Name = "Goal", Position = UDim2.fromOffset(24, 166), Size = UDim2.fromOffset(268, 40) })
+	goalCard = UI.card(left, "teal", { Name = "Goal", LayoutOrder = 3, Size = UDim2.fromOffset(262, 40) })
 	goalLabel = UI.text(goalCard, "", { Font = UI.BODY, Size = UDim2.new(1, -16, 0.76, 0), Position = UDim2.new(0, 8, 0.12, 0) })
 	local goalBtn = Instance.new("TextButton")
 	goalBtn.Name = "GoalButton"
@@ -104,12 +115,17 @@ function Hud.init(c: Own.Ctx)
 	eventCard = UI.card(root, "purple", { Name = "Event", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 100), Size = UDim2.fromOffset(340, 36) })
 	eventLabel = UI.text(eventCard, "", { Font = UI.BODY, Size = UDim2.new(1, -16, 0.78, 0), Position = UDim2.new(0, 8, 0.11, 0) })
 
-	-- left icon menu
-	-- top-anchored below the goal chip (centred, it slid under the chip on short phone screens)
-	local left = UI.frame(root, { Name = "LeftMenu", BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 196), Size = UDim2.fromOffset(90, 400) })
-	UI.list(left, 14)
+	UI.setToastTop(146) -- toasts go below our top stack (phase pill, event chip)
+
+	-- left icon menu (2x2, under the goal chip; hidden while the build tray is open, see Hud.tick)
+	-- (a few px wider than 2 cells + gap, capped at 2 per row: an exact fit can round down to one column once scaled)
+	menu = UI.frame(left, { Name = "LeftMenu", BackgroundTransparency = 1, LayoutOrder = 4, Size = UDim2.fromOffset(180, 174) })
+	local grid = UI.grid(menu, UDim2.fromOffset(80, 80), 14)
+	grid.FillDirectionMaxCells = 2
+	grid.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	grid.VerticalAlignment = Enum.VerticalAlignment.Top
 	local function leftBtn(name: string, glyph: string, label: string, color: string, order: number, fn: () -> ())
-		local b = UI.iconButton(left, glyph, label, color, { Name = name, LayoutOrder = order, Size = UDim2.fromOffset(80, 80) })
+		local b = UI.iconButton(menu, glyph, label, color, { Name = name, LayoutOrder = order, Size = UDim2.fromOffset(80, 80) })
 		b.button.MouseButton1Click:Connect(fn)
 		buttons[name] = b
 	end
@@ -129,9 +145,10 @@ function Hud.init(c: Own.Ctx)
 		Net.func("Act"):InvokeServer("mute", m)
 	end)
 
-	-- right gift/boost column
-	local right = UI.frame(root, { Name = "RightMenu", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.46, 0), Size = UDim2.fromOffset(90, 300) })
-	UI.list(right, 14)
+	-- right gift/boost column, top-aligned with the left stack
+	local right = UI.frame(root, { Name = "RightMenu", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, top, 0), Size = UDim2.fromOffset(80, 268) })
+	local rl = UI.list(right, 14)
+	rl.VerticalAlignment = Enum.VerticalAlignment.Top
 	local function rightBtn(name: string, glyph: string, label: string, color: string, order: number, fn: () -> ())
 		local b = UI.iconButton(right, glyph, label, color, { Name = name, LayoutOrder = order, Size = UDim2.fromOffset(80, 80) })
 		b.button.MouseButton1Click:Connect(fn)
@@ -195,15 +212,18 @@ local function phaseText(phase: string, left: number, state: Instance): string
 	return ""
 end
 
--- Called every frame by Main.
-function Hud.tick(state: Instance, now: number)
+-- Called every frame by Main. `building`: the build tray is open (it covers the bottom of the screen, where the
+-- 2x2 menu would reach on 16:9 screens). `spinning`: the theme card is still shuffling, so the pill must not
+-- give the theme away yet.
+function Hud.tick(state: Instance, now: number, building: boolean?, spinning: boolean?)
+	menu.Visible = not building
 	local phase = tostring(state:GetAttribute("Phase") or "Waiting")
 	local ends = tonumber(state:GetAttribute("PhaseEnds")) or 0
 	local left = math.max(0, ends - now)
 	local themeKey = tostring(state:GetAttribute("Theme") or "")
 	local theme = Config.ThemeByKey[themeKey]
 	local celeb = state:GetAttribute("Celebrity") == true
-	if theme and phase ~= "Lobby" and phase ~= "Waiting" then
+	if theme and phase ~= "Lobby" and phase ~= "Waiting" and not spinning then
 		themeLabel.Text = theme.glyph .. " " .. string.upper(theme.name)
 	else
 		themeLabel.Text = "🎂 CAKE OFF!"

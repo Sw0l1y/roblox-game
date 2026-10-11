@@ -822,13 +822,14 @@ local function buildTray()
 	setPage("Cake")
 
 	-- big prompts (outside the tray)
-	goBtn = UI.button(rootUI, I.go .. " GO TO MY BAKERY", "pink", { Name = "GoToStation", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -120), Size = UDim2.fromOffset(380, 84), Visible = false })
+	-- captions as child labels (Widgets.captioned): with the kit's gradient on the button text they read as disabled
+	goBtn = Widgets.captioned(rootUI, I.go .. " GO TO MY BAKERY", "pink", { Name = "GoToStation", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -120), Size = UDim2.fromOffset(380, 84), Visible = false })
 	goBtn.MouseButton1Click:Connect(function()
 		ctx.act("tp")
 		Sfx.play("whoosh", 0.5)
 		exited = false
 	end)
-	decorateBtn = UI.button(rootUI, I.cake .. " DECORATE!", "green", { Name = "Decorate", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -120), Size = UDim2.fromOffset(340, 84), Visible = false })
+	decorateBtn = Widgets.captioned(rootUI, I.cake .. " DECORATE!", "green", { Name = "Decorate", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -120), Size = UDim2.fromOffset(340, 84), Visible = false })
 	decorateBtn.MouseButton1Click:Connect(function()
 		exited = false
 	end)

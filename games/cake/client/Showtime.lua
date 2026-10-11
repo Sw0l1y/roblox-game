@@ -53,6 +53,7 @@ local showRig: Rig.Rig? = nil
 local giantRig: Rig.Rig? = nil
 local giantBase = CFrame.new()
 local themeToken = 0
+local themeSpinning = false -- the reveal card is still shuffling themes
 local resultToken = 0
 
 -- UI
@@ -488,6 +489,7 @@ local function onTheme(p: D)
 	themeTitle.Text = if celeb then "🌟 CELEBRITY JUDGE ROUND 🌟" else "THIS ROUND'S THEME"
 	themeIdeas.Text = ""
 	themeCard.Visible = true
+	themeSpinning = true
 	UI.punch(themeCard, 0.3)
 	task.spawn(function()
 		Sfx.play("reveal", 0.5)
@@ -504,6 +506,7 @@ local function onTheme(p: D)
 		if themeToken ~= my then
 			return
 		end
+		themeSpinning = false
 		themeGlyph.Text = t.glyph
 		themeName.Text = string.upper(t.name)
 		UI.punch(themeName, 0.5)
@@ -618,6 +621,11 @@ function Showtime.camera(): CFrame?
 		return CFrame.lookAt(c.pos, c.look)
 	end
 	return nil
+end
+
+-- True while the theme reveal is still shuffling (the HUD pill waits for it before naming the theme).
+function Showtime.spinning(): boolean
+	return themeSpinning and themeCard.Visible
 end
 
 function Showtime.tip(): string?

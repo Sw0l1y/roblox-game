@@ -15,7 +15,7 @@
 
 **FTUE:** 0-10 s spawn on the Meadow facing the hub and the Mega Pump; 7 easy balloons rise around you, goal bar + beam point at the nearest one, first pop < 5 s. 30 s: Dart Power costs 30 coins (≈15 pops); the Upgrades button pulses with an arrow. ~45 s: a seeded Rare (reserved for you) rises right next to you with a sparkle + beam; ~110 s a seeded Epic if you missed it. 2.5 min: first MEGA BALLOON on a new server (the "wow"), then the goal bar shows the next zone gate with a progress bar. No purchase prompt before minute 4 (one-time Starter Pack offer, never during the event).
 
-**Economy:** one currency (coins 🪙). Sinks: upgrades (5 tracks, geometric costs), zone gates, rebirth. Value = tier value x zone value multiplier (x1 / x10 / x120 / x1,000) x coin multiplier (rebirth, 2x pass, VIP 1.25, Premium 1.1, Index set bonuses). HP x zone HP multiplier (x1 / x5 / x40 / x300).
+**Economy:** one currency (coins 💰). Sinks: upgrades (5 tracks, geometric costs), zone gates, rebirth. Value = tier value x zone value multiplier (x1 / x10 / x120 / x1,000) x coin multiplier (rebirth, 2x pass, VIP 1.25, Premium 1.1, Index set bonuses). HP x zone HP multiplier (x1 / x5 / x40 / x300).
 Tiers (kit `Tiers`), spawn weights per zone with numeric odds shown in the Index (base luck; luck shifts weight toward rarer tiers):
 
 | Tier | Odds | HP / value (Meadow) | Meadow | Candy Hills | Sky Islands | Space Rainbow |

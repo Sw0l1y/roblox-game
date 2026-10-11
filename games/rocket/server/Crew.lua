@@ -193,8 +193,9 @@ function Crew.tag(player: Player)
 	local vip = Shop.owns(player, "VIP")
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "CrewTag"
-	bb.Size = UDim2.fromScale(8, 2.2)
-	bb.StudsOffset = Vector3.new(0, 2.6, 0)
+	-- sized in studs so it shrinks with distance; small enough not to swamp the player at spawn
+	bb.Size = UDim2.fromScale(6, 1.7)
+	bb.StudsOffset = Vector3.new(0, 2.5, 0)
 	bb.MaxDistance = 90
 	bb.LightInfluence = 0
 	bb.Adornee = head

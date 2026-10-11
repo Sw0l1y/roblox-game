@@ -549,17 +549,22 @@ local function buildBot(cfg: Configuration): BotVis
 		end
 	end
 	local anchor = list[1].p
-	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromScale(7, 1.3)
-	bb.StudsOffsetWorldSpace = Vector3.new(0, 3.4, 0)
-	bb.MaxDistance = 80
-	bb.LightInfluence = 0
-	bb.Adornee = anchor
-	local name = cfg:GetAttribute("Name")
-	local l = text(bb, 0, 1, 2.5)
-	l.Text = "🤖 " .. (type(name) == "string" and name or "Crew Bot")
-	l.TextColor3 = owned and P.gold or Color3.fromRGB(200, 240, 255)
-	bb.Parent = anchor
+	-- Only other players' Robot Crew bots get a name tag (small, in studs, close range only): it says whose gold
+	-- robot that is. Plain crew bots and your own robots need none; their tags just piled up over the player.
+	if owned and numAttr(cfg, "Owner", 0) ~= player.UserId then
+		local bb = Instance.new("BillboardGui")
+		bb.Name = "BotTag"
+		bb.Size = UDim2.fromScale(3.6, 0.6)
+		bb.StudsOffsetWorldSpace = Vector3.new(0, 3.2, 0)
+		bb.MaxDistance = 45
+		bb.LightInfluence = 0
+		bb.Adornee = anchor
+		local name = cfg:GetAttribute("Name")
+		local l = text(bb, 0, 1, 1.5)
+		l.Text = "🤖 " .. (type(name) == "string" and name or "Robot")
+		l.TextColor3 = P.gold
+		bb.Parent = anchor
+	end
 	m.Parent = holder
 	local from = vecAttr(cfg, "From", Vector3.zero)
 	return { cfg = cfg, model = m, parts = list, pos = from, yaw = 0 }

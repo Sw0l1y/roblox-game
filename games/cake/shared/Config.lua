@@ -25,8 +25,8 @@ Config.Palette = {
 	white = C(255, 255, 255),
 	gold = C(255, 205, 70),
 	ink = C(40, 30, 48),
-	tileA = C(255, 246, 232),
-	tileB = C(255, 220, 230),
+	tileA = C(252, 236, 214), -- plaza checker: off-white tiles washed out to pure white in Studio's sun
+	tileB = C(255, 200, 218),
 }
 Config.StationColors = { C(255, 179, 199), C(168, 230, 207), C(160, 216, 247), C(255, 226, 130), C(205, 180, 245), C(255, 196, 160) }
 

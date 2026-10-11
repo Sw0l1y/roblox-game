@@ -60,7 +60,7 @@ Build: `python3 build.py balloons`, open `balloons.rbxlx` in Studio, Play (F5). 
 
 ## Shop (Studio simulates every purchase; ids are 0)
 - [ ] Passes tab: 2x Coins, Auto-Pop Aura, Lucky Darts, VIP (👑 head tag + [👑 VIP] chat prefix + gold darts), Golden Dart (golden glowing darts, x3 power) → OWNED after buying, celebration banner.
-- [ ] Boosts tab: 10 Mega Darts (right column 💥 badge; tap to arm → ON!, next dart is a big red Mega Dart with splash), Lucky Boost (Boost button shows the timer), Summon MEGA, Starter Pack (disappears after buying).
+- [ ] Boosts tab: 10 Mega Darts (right grid 💥 badge; tap to arm → ON!, next dart is a big red Mega Dart with splash), Lucky Boost (Boost button shows the timer), Summon MEGA, Starter Pack (disappears after buying).
 - [ ] Coins tab: amounts scale with your best zone and rebirths.
 
 ## Robustness

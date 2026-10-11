@@ -154,25 +154,44 @@ local indexCounter = UI.counter(top, I.marble, "purple", function(n: number): st
 	return string.format("%d/%d", math.floor(n), #Config.Marbles)
 end, { LayoutOrder = 3, Size = UDim2.fromOffset(170, 52) })
 
--- Next goal pill (top left, under the Roblox buttons)
-local goalPill = UI.frame(root, { Name = "Goal", Position = UDim2.fromOffset(16, 112), Size = UDim2.fromOffset(430, 44), Visible = false })
+-- On desktop Roblox's chat window covers the top-left third of the screen (under its top bar) and the player
+-- list the top-right corner, so nothing of ours goes there: the next-goal hint sits top centre under the
+-- counters, and both menu columns start below those windows. Phones have neither open, so their columns
+-- stay centred (clear of the thumbstick and the jump button).
+local MOBILE = UI.isMobile
+
+-- Next goal pill (top centre, under the counters)
+local goalPill = UI.frame(root, { Name = "Goal", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 74), Size = UDim2.fromOffset(600, 40), Visible = false })
 UI.corner(goalPill, 18)
 UI.stroke(goalPill, 3)
 UI.gradient(goalPill, UI.shade(UI.colors.teal, 0.6), UI.shade(UI.colors.teal, 0.38))
-local goalText = UI.text(goalPill, "", { Size = UDim2.new(1, -20, 0.72, 0), Position = UDim2.new(0, 10, 0.14, 0), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 3 })
+local goalText = UI.text(goalPill, "", { Size = UDim2.new(1, -24, 0.72, 0), Position = UDim2.new(0, 12, 0.14, 0), ZIndex = 3 })
+UI.setToastTop(122) -- toasts stack under the hint instead of over it
 
--- Left menu
-local left = UI.frame(root, { Name = "Menu", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 16, 0.5, 40), Size = UDim2.fromOffset(84, 470) })
-UI.list(left, 12)
+-- Left menu (5 buttons: 5 x 78 + 4 x 12 = 438 tall)
+local left = UI.frame(root, {
+	Name = "Menu",
+	BackgroundTransparency = 1,
+	AnchorPoint = MOBILE and Vector2.new(0, 0.5) or Vector2.new(0, 0),
+	Position = MOBILE and UDim2.new(0, 16, 0.5, 40) or UDim2.new(0, 16, 0.34, 10),
+	Size = UDim2.fromOffset(84, 438),
+})
+UI.list(left, 12).VerticalAlignment = MOBILE and Enum.VerticalAlignment.Center or Enum.VerticalAlignment.Top
 local bMarbles = UI.iconButton(left, I.marbles, "Marbles", "purple", { LayoutOrder = 1 })
 local bPacks = UI.iconButton(left, I.pack, "Packs", "green", { LayoutOrder = 2 })
 local bShine = UI.iconButton(left, I.shine, "Shine", "gold", { LayoutOrder = 3 })
 local bLeague = UI.iconButton(left, I.league, "League", "sky", { LayoutOrder = 4 })
 local bShop = UI.iconButton(left, I.shop, "Shop", "pink", { LayoutOrder = 5 })
 
--- Right column
-local rightCol = UI.frame(root, { Name = "Side", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -16, 0.42, 0), Size = UDim2.fromOffset(84, 420) })
-UI.list(rightCol, 12)
+-- Right column (3 to 5 buttons: Luck and 2x come and go)
+local rightCol = UI.frame(root, {
+	Name = "Side",
+	BackgroundTransparency = 1,
+	AnchorPoint = MOBILE and Vector2.new(1, 0.5) or Vector2.new(1, 0),
+	Position = MOBILE and UDim2.new(1, -16, 0.42, 0) or UDim2.new(1, -16, 0.28, 40),
+	Size = UDim2.fromOffset(84, 438),
+})
+UI.list(rightCol, 12).VerticalAlignment = MOBILE and Enum.VerticalAlignment.Center or Enum.VerticalAlignment.Top
 local bDaily = UI.iconButton(rightCol, I.daily, "Daily", "orange", { LayoutOrder = 1 })
 local bGp = UI.iconButton(rightCol, I.gp, "GP", "purple", { LayoutOrder = 2 })
 local bLuck = UI.iconButton(rightCol, I.luck, "Luck", "green", { LayoutOrder = 3 })
@@ -931,7 +950,7 @@ type Goal = { text: string, button: GuiObject?, flip: boolean, station: string }
 local function goal(): Goal?
 	local f = data.ftue or {}
 	if not f.raced then
-		return { text = "🏁 Your first race is starting - tap BOOST when you glow!", button = nil, flip = false, station = "" }
+		return { text = "🏁 First race! Tap BOOST when you glow!", button = nil, flip = false, station = "" }
 	end
 	if ((data.packs or {}).welcome or 0) > 0 then
 		return { text = "🎁 Open your FREE Welcome Pack!", button = bPacks.button, flip = false, station = "PacksPrompt" }

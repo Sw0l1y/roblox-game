@@ -3,7 +3,7 @@
 -- height 15 times a second; this module buffers those snapshots, renders every marble 0.2 s behind the
 -- server with smooth interpolation (rolling Glass marbles moved with one BulkMoveTo per frame), plays race
 -- events in sync with that view, and runs the race UI: the big BOOST button with its timing meter, the
--- place/progress strip, chase cameras, countdown lights, and the clip moments - a slowed-down photo finish
+-- place/progress strip, chase cameras, countdown lights, name tags, and the clip moments - a slowed-down photo finish
 -- from a side camera, and slow-mo when your marble catches big air off a jump.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -60,6 +60,14 @@ type MB = {
 	glowState: number,
 	finished: boolean,
 	place: number,
+	-- name tag (see makeLabel / updateTags)
+	tag: BillboardGui?,
+	tagName: string,
+	tagLabel: TextLabel?,
+	tagStrokes: { UIStroke },
+	tagRows: number,
+	tagChars: number,
+	tagLeader: boolean,
 }
 
 type Rec = {
@@ -196,11 +204,11 @@ UI.text(perfZone, "PERFECT", { Size = UDim2.fromScale(1, 0.8), Position = UDim2.
 local needle = UI.frame(meter, { Size = UDim2.new(0, 6, 1, 10), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0, 0.5), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 12 })
 UI.stroke(needle, 2)
 
--- camera button (bottom left, above the menu)
+-- camera button: at the left end of the progress strip, clear of BOOST (which phones move left) at every width
 local camBtn = UI.iconButton(root, Config.Icons.camera, "Camera", "purple", {
 	Name = "CameraBtn",
 	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.new(1, -250, 1, -40),
+	Position = UDim2.new(0.5, -300, 1, -26),
 	Size = UDim2.fromOffset(78, 78),
 	Visible = false,
 	ZIndex = 8,
@@ -460,70 +468,201 @@ local function marblesFolder(): Folder
 	return f :: Folder
 end
 
+-- Name tags. Other marbles' tags are sized in studs (plus a few pixels so distant ones stay legible), so they
+-- shrink with distance like the marbles do instead of a whole pack's names piling up at full size, and
+-- updateTags shows only a few at a time: the leader's (with a crown), then the nearest, never two on top of
+-- each other. Your own marble gets a gold "YOU" chip drawn over everything.
+local TAG_H = 0.6 -- studs per line of text (+ TAG_PX pixels)
+local TAG_PX = 8
+local TAG_W = 6 -- studs (+ TAG_WPX pixels): room for long names; TextScaled shrinks what doesn't fit
+local TAG_WPX = 60
+local TAG_RANGE = 70 -- studs from the camera
+local TAG_MAX = 4 -- other marbles' tags shown at once
+local YOU_W, YOU_WPX, YOU_H, YOU_HPX = 1.6, 46, 0.8, 26 -- the YOU chip (studs + pixels)
+local CROWN = "👑 "
+
+local function tagText(parent: Instance, text: string, color: Color3, mb: MB): TextLabel
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.LuckiestGuy
+	l.TextScaled = true
+	l.Text = text
+	l.TextColor3 = color
+	local s = Instance.new("UIStroke")
+	s.Thickness = 2
+	s.Color = UI.INK
+	s.Parent = l
+	table.insert(mb.tagStrokes, s)
+	l.Parent = parent
+	return l
+end
+
 local function makeLabel(mb: MB)
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "Tag"
 	bb.Adornee = mb.built.glow
 	bb.LightInfluence = 0
-	local l = Instance.new("TextLabel")
-	l.BackgroundTransparency = 1
-	l.Size = UDim2.fromScale(1, 1)
-	l.Font = Enum.Font.LuckiestGuy
-	l.TextScaled = true
-	local s = Instance.new("UIStroke")
-	s.Thickness = 2.5
-	s.Color = UI.INK
-	s.Parent = l
-	local def = mb.def
-	local mutDef = mb.ent.mut and Config.MutationByKey[mb.ent.mut] or nil
 	if mb.mine then
-		bb.Size = UDim2.fromOffset(150, 46)
-		bb.StudsOffsetWorldSpace = V3(0, 4.2, 0)
+		bb.Size = UDim2.new(YOU_W, YOU_WPX, YOU_H, YOU_HPX)
+		bb.StudsOffsetWorldSpace = V3(0, RAD + 2.3, 0)
 		bb.AlwaysOnTop = true
-		bb.MaxDistance = 1000
-		l.Text = "YOU ▼"
-		l.TextColor3 = Color3.fromRGB(255, 240, 90)
-	else
-		bb.Size = UDim2.fromOffset(130, 30)
-		bb.StudsOffsetWorldSpace = V3(0, 3.4, 0)
-		bb.MaxDistance = 90
-		local name = tostring(mb.ent.name)
-		if mutDef then
-			name = mutDef.glyph .. " " .. name
+		bb.MaxDistance = 2000
+		-- pointer under the chip: a turned square, its top half hidden behind the chip
+		local tip = Instance.new("Frame")
+		tip.Name = "Tip"
+		tip.AnchorPoint = Vector2.new(0.5, 0.5)
+		tip.Position = UDim2.fromScale(0.5, 0.72)
+		tip.SizeConstraint = Enum.SizeConstraint.RelativeYY
+		tip.Size = UDim2.fromScale(0.3, 0.3)
+		tip.Rotation = 45
+		tip.BackgroundColor3 = Color3.fromRGB(255, 214, 50)
+		tip.BorderSizePixel = 0
+		tip.ZIndex = 1
+		local ts = Instance.new("UIStroke")
+		ts.Thickness = 2.5
+		ts.Color = UI.INK
+		ts.Parent = tip
+		tip.Parent = bb
+		local chip = Instance.new("Frame")
+		chip.Name = "Chip"
+		chip.Position = UDim2.fromOffset(3, 3) -- inset so the outline isn't clipped
+		chip.Size = UDim2.new(1, -6, 0.72, -3)
+		chip.BackgroundColor3 = Color3.fromRGB(255, 214, 50)
+		chip.BorderSizePixel = 0
+		chip.ZIndex = 2
+		local cc = Instance.new("UICorner")
+		cc.CornerRadius = UDim.new(0.5, 0)
+		cc.Parent = chip
+		local cs = Instance.new("UIStroke")
+		cs.Thickness = 2.5
+		cs.Color = UI.INK
+		cs.Parent = chip
+		chip.Parent = bb
+		local l = tagText(chip, "YOU", UI.INK, mb)
+		l.Size = UDim2.fromScale(0.8, 0.76)
+		l.Position = UDim2.fromScale(0.1, 0.13)
+		l.ZIndex = 3
+		local st = l:FindFirstChildOfClass("UIStroke")
+		if st then
+			st.Enabled = false
 		end
-		l.Text = name
-		l.TextColor3 = Color3.new(1, 1, 1)
+		mb.tagLabel = l
+	else
+		local def = mb.def
+		local mutDef = mb.ent.mut and Config.MutationByKey[mb.ent.mut] or nil
+		-- the mutation tease: a gold/rainbow/cosmic marble gets a second, smaller line above its name
+		local rows = mutDef and 1.75 or 1
+		mb.tagRows = rows
+		bb.Size = UDim2.new(TAG_W, TAG_WPX, TAG_H * rows, TAG_PX * rows)
+		bb.StudsOffsetWorldSpace = V3(0, RAD + 1 + TAG_H * rows / 2, 0)
+		bb.MaxDistance = TAG_RANGE
+		bb.Enabled = false -- updateTags decides
+		local l = tagText(bb, mb.tagName, Color3.new(1, 1, 1), mb)
+		l.AnchorPoint = Vector2.new(0, 1)
+		l.Position = UDim2.fromScale(0, 1)
+		l.Size = UDim2.fromScale(1, 1 / rows)
 		if def then
 			local g = Instance.new("UIGradient")
 			g.Color = ColorSequence.new(Color3.new(1, 1, 1), UI.lighten(Tiers.get(def.tier).color, 0.2))
 			g.Rotation = 90
 			g.Parent = l
 		end
+		mb.tagLabel = l
+		local chars = utf8.len(mb.tagName) or #mb.tagName
+		if mutDef then
+			local mutText = string.upper(mutDef.name) .. " x" .. tostring(mutDef.mult)
+			local m = tagText(bb, mutText, mutDef.color, mb)
+			m.Size = UDim2.fromScale(1, 0.72 / rows)
+			chars = math.max(chars, (utf8.len(mutText) or #mutText) * 0.72)
+		end
+		mb.tagChars = chars + 3 -- room for the leader's crown
 	end
-	l.Parent = bb
+	mb.tag = bb
 	bb.Parent = mb.built.glow
-	-- the mutation tease: a cosmic/rainbow marble gets a second line everyone can read
-	if mutDef and not mb.mine then
-		local bb2 = Instance.new("BillboardGui")
-		bb2.Name = "Mut"
-		bb2.Adornee = mb.built.glow
-		bb2.LightInfluence = 0
-		bb2.Size = UDim2.fromOffset(150, 26)
-		bb2.StudsOffsetWorldSpace = V3(0, 5.6, 0)
-		bb2.MaxDistance = 160
-		local m = Instance.new("TextLabel")
-		m.BackgroundTransparency = 1
-		m.Size = UDim2.fromScale(1, 1)
-		m.Font = Enum.Font.LuckiestGuy
-		m.TextScaled = true
-		m.Text = string.upper(mutDef.name) .. " x" .. tostring(mutDef.mult)
-		m.TextColor3 = mutDef.color
-		local s2 = Instance.new("UIStroke")
-		s2.Thickness = 2.5
-		s2.Color = UI.INK
-		s2.Parent = m
-		m.Parent = bb2
-		bb2.Parent = mb.built.glow
+end
+
+-- Which name tags show: every 0.1 s, your own chip claims its spot, then the leader's tag, mutated marbles and
+-- the nearest marbles take theirs while they don't overlap one already placed (up to TAG_MAX).
+local tagWait = 0
+local tagRects: { { number } } = {}
+type TagCand = { mb: MB, pri: number, x: number, y: number, z: number }
+local tagCands: { TagCand } = {}
+
+local function tagFree(x0: number, y0: number, x1: number, y1: number): boolean
+	for _, r in ipairs(tagRects) do
+		if x0 < r[3] and x1 > r[1] and y0 < r[4] and y1 > r[2] then
+			return false
+		end
+	end
+	return true
+end
+
+local function updateTags(dt: number)
+	tagWait -= dt
+	if tagWait > 0 then
+		return
+	end
+	tagWait = 0.1
+	table.clear(tagRects)
+	table.clear(tagCands)
+	local k = camera.ViewportSize.Y / (2 * math.tan(math.rad(camera.FieldOfView) / 2)) -- pixels per stud, 1 stud away
+	for _, rec in pairs(races) do
+		local leader = rec.renderSim > 0 and leaderOf(rec) or nil
+		for _, mb in ipairs(rec.marbles) do
+			local bb = mb.tag
+			local l = mb.tagLabel
+			if bb and l then
+				local p, onScreen = camera:WorldToViewportPoint(mb.pos + bb.StudsOffsetWorldSpace)
+				local z = math.max(p.Z, 0.1)
+				if mb.mine then
+					if onScreen then
+						local w, h = YOU_W * k / z + YOU_WPX, YOU_H * k / z + YOU_HPX
+						table.insert(tagRects, { p.X - w / 2, p.Y - h / 2, p.X + w / 2, p.Y + h / 2 })
+					end
+				else
+					local isLeader = mb == leader
+					if isLeader ~= mb.tagLeader then
+						mb.tagLeader = isLeader
+						l.Text = isLeader and (CROWN .. mb.tagName) or mb.tagName
+					end
+					if onScreen and p.Z > 6 and p.Z < TAG_RANGE then
+						-- nearer first; the leader and mutated marbles jump the queue; a shown tag is sticky
+						local pri = z - (isLeader and 1000 or 0) - (mb.tagRows > 1 and 25 or 0) - (bb.Enabled and 6 or 0)
+						table.insert(tagCands, { mb = mb, pri = pri, x = p.X, y = p.Y, z = z })
+					elseif bb.Enabled then
+						bb.Enabled = false
+					end
+				end
+			end
+		end
+	end
+	table.sort(tagCands, function(a: TagCand, b: TagCand): boolean
+		return a.pri < b.pri
+	end)
+	local shown = 0
+	for _, c in ipairs(tagCands) do
+		local mb = c.mb
+		local bb = mb.tag :: BillboardGui
+		local line = TAG_H * k / c.z + TAG_PX
+		-- the text's own extent (TextScaled centres it in a wider box), trimmed a little so neighbours can touch
+		local w = math.min(TAG_W * k / c.z + TAG_WPX, line * 0.6 * mb.tagChars) * 0.9
+		local h = line * mb.tagRows * 0.9
+		local x0, y0, x1, y1 = c.x - w / 2, c.y - h / 2, c.x + w / 2, c.y + h / 2
+		local on = shown < TAG_MAX and tagFree(x0, y0, x1, y1)
+		if on then
+			shown += 1
+			table.insert(tagRects, { x0, y0, x1, y1 })
+			-- outline in proportion to the text: 2.5 px on a big tag would blot out a small one
+			local th = math.clamp(line * 0.08, 1, 2.5)
+			for _, s in ipairs(mb.tagStrokes) do
+				if math.abs(s.Thickness - th) > 0.2 then
+					s.Thickness = th
+				end
+			end
+		end
+		if bb.Enabled ~= on then
+			bb.Enabled = on
+		end
 	end
 end
 
@@ -577,6 +716,13 @@ local function buildMarble(rec: Rec, ent: { [string]: any }): MB
 		glowState = -1,
 		finished = false,
 		place = 0,
+		tag = nil,
+		tagName = tostring(ent.name),
+		tagLabel = nil,
+		tagStrokes = {},
+		tagRows = 1,
+		tagChars = 0,
+		tagLeader = false,
 	}
 	mb.boostTrail.Enabled = false
 	local trailKey = ent.trail
@@ -1423,6 +1569,7 @@ RunService:BindToRenderStep("MarbleRaces", Enum.RenderPriority.Camera.Value, fun
 		camera.FieldOfView += (targetFov - camera.FieldOfView) * (1 - exp(-dt * 3))
 	end
 	updateCamera(dt)
+	updateTags(dt)
 	updateRaceUi(focus)
 end)
 

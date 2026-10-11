@@ -190,7 +190,7 @@ RunService:BindToRenderStep("CakeCam", Enum.RenderPriority.Camera.Value, functio
 end)
 
 RunService.Heartbeat:Connect(function(dt: number)
-	Hud.tick(state, workspace:GetServerTimeNow())
+	Hud.tick(state, workspace:GetServerTimeNow(), BuildMode.isActive(), Showtime.spinning())
 	BuildMode.tick(dt)
 	Showtime.tick(dt)
 	Hud.tip(Showtime.tip() or BuildMode.tip())
