@@ -1,13 +1,15 @@
 -- First-time flow and "what next" guidance: a glowing beam + bouncing arrow to the current goal (the nose
 -- cone at your feet, then the launch pad, then the depot, then the Gear kiosk when you can afford gloves),
 -- a hint line, help-ping beams to crewmates who need a hand, a pulsing Gear button, and gentle offers that
--- only start after Config.Tune.offerAfter seconds (never before minute 2).
+-- only start after Config.Tune.offerAfter seconds (never before minute 2): the Starter Pack while its 10-minute
+-- first-session window is open (with the countdown), the 9 R$ Rookie Deal for players who never bought anything,
+-- the next strength step when parts are too heavy, Robot Crew.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
-local Net = require(Shared:WaitForChild("Net"))
+local Fmt = require(Shared:WaitForChild("Fmt"))
 local ClientLib = ReplicatedStorage:WaitForChild("ClientLib")
 local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
@@ -15,6 +17,7 @@ local State = require(ClientLib:WaitForChild("State"))
 local Hub = require(ClientLib:WaitForChild("Hub"))
 local Render = require(ClientLib:WaitForChild("Render"))
 local Hud = require(ClientLib:WaitForChild("Hud"))
+local Store = require(ClientLib:WaitForChild("Store"))
 
 local Guide = {}
 
@@ -22,7 +25,6 @@ local T = Config.Tune
 local I = Config.Icons
 local P = Config.Palette
 local player = Hub.player
-local buyRemote = Net.event("Buy")
 
 -- Goal marker: an invisible anchor with a target attachment, a bouncing neon arrow and a ground ring.
 local marker = Instance.new("Part")
@@ -240,7 +242,7 @@ local offersShown = 0
 local lastOffer = 0
 
 local function anyPanelOpen(): boolean
-	for _, n in ipairs({ "Shop", "Gear", "Index", "Daily", "Crew", "Notice", "__offer" }) do
+	for _, n in ipairs({ "Shop", "Gear", "Index", "Daily", "Crew", "Notice", "Live", "LiveGift", "__offer" }) do
 		local p = UI.getPanel(n)
 		if p and p.isOpen() then
 			return true
@@ -249,16 +251,29 @@ local function anyPanelOpen(): boolean
 	return false
 end
 
-local function owns(key: string): boolean
-	local d = State.data
-	if not d then
-		return false
+local owns = Store.owns
+
+-- Keep a countdown line in the open offer popup (the Starter Pack's window).
+local function countdown(text: string, left: () -> number)
+	local p = UI.getPanel("__offer")
+	if not p then
+		return
 	end
-	local passes: any = d.passes
-	if type(passes) ~= "table" then
-		return false
+	local label: TextLabel? = nil
+	for _, c in ipairs(p.body:GetChildren()) do
+		if c:IsA("TextLabel") and (c :: TextLabel).Text == text then
+			label = c :: TextLabel
+		end
 	end
-	return (passes :: any)[key] == true
+	if not label then
+		return
+	end
+	task.spawn(function()
+		while p.isOpen() and left() > 0 do
+			(label :: TextLabel).Text = string.format("%s\n%s ENDS IN %s", text, I.timer, Fmt.time(left()))
+			task.wait(1)
+		end
+	end)
 end
 
 local function maybeOffer()
@@ -273,32 +288,54 @@ local function maybeOffer()
 		return
 	end
 	local o: { [string]: any }? = nil
-	if not d.starter then
+	local timed = false
+	if Store.starterLeft() > 30 then
 		local item = Config.Products.StarterPack
+		timed = true
 		o = {
 			title = "STARTER PACK",
-			text = item.desc,
+			text = "New crew only! " .. item.desc,
 			glyph = item.icon,
 			price = "R$ " .. item.price,
 			color = "pink",
 			seconds = 25,
 			onBuy = function()
-				buyRemote:FireServer("product", "StarterPack")
+				Store.buy("product", "StarterPack")
+			end,
+		}
+	elseif Store.introOk() then
+		local item = Config.Products.Intro9
+		o = {
+			title = "ROOKIE DEAL",
+			text = item.desc,
+			glyph = item.icon,
+			price = "R$ " .. item.price,
+			color = "teal",
+			seconds = 25,
+			onBuy = function()
+				Store.buy("product", "Intro9")
 			end,
 		}
 	elseif stuckSeen > 20 then
+		local launches = tonumber(d.launches) or 0
+		local best = Config.freeMult(launches)
 		for _, key in ipairs(Config.Ladder) do
-			if not owns(key) then
-				local pass = (Config.Passes :: any)[key]
+			if owns(key) then
+				best = math.max(best, (Config.Passes :: any)[key].mult)
+			end
+		end
+		for _, key in ipairs(Config.Ladder) do
+			local pass = (Config.Passes :: any)[key]
+			if pass.mult > best and not owns(key) then
 				o = {
 					title = "TOO HEAVY?",
-					text = string.format("%s forever. Lift the big boosters solo!", pass.name),
+					text = string.format("%s forever (free at %s launches). Lift the big boosters solo!", pass.name, Fmt.commas(pass.launches or 0)),
 					glyph = pass.icon,
 					price = "R$ " .. pass.price,
 					color = "orange",
 					seconds = 25,
 					onBuy = function()
-						buyRemote:FireServer("pass", key)
+						Store.buy("pass", key)
 					end,
 				}
 				break
@@ -314,7 +351,7 @@ local function maybeOffer()
 			color = "teal",
 			seconds = 25,
 			onBuy = function()
-				buyRemote:FireServer("pass", "RobotCrew")
+				Store.buy("pass", "RobotCrew")
 			end,
 		}
 	end
@@ -323,6 +360,9 @@ local function maybeOffer()
 		lastOffer = os.clock()
 		stuckSeen = 0
 		UI.offer(o)
+		if timed then
+			countdown(o.text, Store.starterLeft)
+		end
 		Sfx.play("sparkle", 0.4)
 	end
 end

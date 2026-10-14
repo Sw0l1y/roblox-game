@@ -423,11 +423,12 @@ end
 
 -- Layout ----------------------------------------------------------------------------------------------
 
--- Slots in build order (lower first). size: 1 small (solo/duo), 2 medium, 3 large.
-function Parts.layout(planetIndex: number, size: number): Layout
+-- Slots in build order (lower first). size: 1 small (solo/duo), 2 medium, 3 large. extra: extra fuel tanks
+-- (bigger rocket tiers: Silver +1, Gold +2, Galaxy +3).
+function Parts.layout(planetIndex: number, size: number, extra: number?): Layout
 	local pl = Config.planet(planetIndex)
 	local s = pl.scale
-	local tanks = 2 + pl.extraTanks + (size - 1)
+	local tanks = 2 + pl.extraTanks + (size - 1) + (extra or 0)
 	local nb = size == 1 and 2 or (size == 2 and 4 or 6)
 	local nf = nb == 6 and 6 or 4
 	local slots: { Slot } = {}
@@ -523,9 +524,10 @@ function Parts.layout(planetIndex: number, size: number): Layout
 	}
 end
 
--- Tallest rocket a planet can have (for sizing its launch tower).
+-- Tallest rocket a planet can have (for sizing its launch tower): large, top rocket tier.
 function Parts.maxHeight(planetIndex: number): number
-	return Parts.layout(planetIndex, 3).height
+	local top = Config.RocketTiers[#Config.RocketTiers]
+	return Parts.layout(planetIndex, 3, top.extra).height
 end
 
 return Parts

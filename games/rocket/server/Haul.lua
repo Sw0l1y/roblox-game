@@ -14,6 +14,8 @@ local Tiers = require(Shared:WaitForChild("Tiers"))
 local Parts = require(Shared:WaitForChild("Parts"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Mission = require(script.Parent:WaitForChild("Mission"))
 local Rocket = require(script.Parent:WaitForChild("Rocket"))
 local Crew = require(script.Parent:WaitForChild("Crew"))
@@ -297,6 +299,7 @@ function Haul.lift(player: Player, id: string)
 		d.ftue.step = 1
 		Data.dirty(player)
 	end
+	Crew.mark(player, "lift")
 	recompute(l)
 	if l.speed <= 0 and not l.pinged then
 		l.pinged = true
@@ -359,14 +362,16 @@ local function questReward(player: Player, d: { [string]: any })
 	end
 end
 
-local function reward(player: Player, l: Loose, share: number, crateBonus: number)
+-- helper: this player joined someone else's lift; team: lifters (players + bots) on the part.
+local function reward(player: Player, l: Loose, share: number, crateBonus: number, helper: boolean, team: number)
 	local d = Data.get(player)
 	if not d then
 		return
 	end
 	local coins = Config.deliverCoins(l.weight, l.tier, Mission.planet, Mission.mission) * crateBonus * Crew.coinMult(player)
 	coins = Crew.addCoins(player, coins)
-	local gain = math.max(0.5, l.weight * T.strengthPerWeight)
+	-- Zero-G training (after every landing, extendable by anyone) multiplies strength gains
+	local gain = math.max(0.5, l.weight * T.strengthPerWeight) * Boosts.mult("train")
 	d.strengthEarned = (d.strengthEarned or 0) + gain
 	local rankBefore = Config.rank(d.hauled or 0)
 	d.hauled = (d.hauled or 0) + l.weight
@@ -383,7 +388,26 @@ local function reward(player: Player, l: Loose, share: number, crateBonus: numbe
 	if (d.ftue.step or 0) < 2 then
 		d.ftue.step = 2
 	end
+	Crew.mark(player, "reward")
 	questReward(player, d)
+	-- launch-week quests and badges (kit Live)
+	Live.quest(player, "parts", 1)
+	Live.badge(player, "FirstPart")
+	if team >= 2 then
+		Live.quest(player, "team", 1)
+		Live.badge(player, "TeamLift")
+	end
+	if helper then
+		Live.quest(player, "help", 1)
+	end
+	if l.star then
+		Live.quest(player, "crate", 1)
+	elseif (Tiers.index[l.tier] or 1) >= 4 then
+		Live.quest(player, "rare", 1)
+	end
+	if l.tier == "Secret" and not l.star then
+		Live.badge(player, "SecretPart")
+	end
 	Crew.contribute(player, l.weight * share)
 	Crew.refresh(player)
 	local rankAfter, rank = Config.rank(d.hauled)
@@ -419,6 +443,7 @@ local function deliver(l: Loose)
 	for _, p in ipairs(holders) do
 		table.insert(names, p.DisplayName)
 	end
+	local team = #holders + botCount(l)
 	Mission.fireAll("bolt", {
 		id = l.id,
 		slot = l.slot,
@@ -430,9 +455,9 @@ local function deliver(l: Loose)
 		pos = l.pos,
 	})
 	l.slot = nil -- delivered: keep the fill when removing
-	for _, p in ipairs(holders) do
+	for i, p in ipairs(holders) do
 		local share = total > 0 and Crew.strength(p) / total or 1 / #holders
-		reward(p, l, share, l.star and T.crateCoinMult or 1)
+		reward(p, l, share, l.star and T.crateCoinMult or 1, i > 1, team)
 	end
 	local tIdx = Tiers.index[l.tier] or 1
 	if tIdx >= 5 and not l.star then
@@ -448,27 +473,31 @@ local function deliver(l: Loose)
 	end
 end
 
--- A drone flies a part in and bolts it on (Star Crates, Fuel the Server). Returns true if a slot was filled.
+-- A drone flies a part in and bolts it on (Star Crates, Fuel the Server, "+N Parts"). Returns true if a slot
+-- was filled. The part's tier is fixed (T.droneTier): nothing anyone pays for is a random roll.
 function Haul.autoBolt(by: string, reason: string): boolean
 	if not Mission.inBuild() then
 		return false
 	end
 	local s = Rocket.nextOpen(nil)
 	if not s then
-		-- take a slot whose part is just lying around
+		-- take a slot whose part is just lying around (the new-player part by the spawn last)
+		local pick: Loose? = nil
 		for _, l in pairs(Haul.parts) do
-			if l.slot and l.mode == "rest" then
-				local slotIndex = l.slot
-				Haul.remove(l)
-				s = Rocket.slots[slotIndex]
-				break
+			if l.slot and l.mode == "rest" and (not pick or (pick.ftue and not l.ftue)) then
+				pick = l
 			end
+		end
+		if pick and pick.slot then
+			local slotIndex = pick.slot
+			Haul.remove(pick)
+			s = Rocket.slots[slotIndex]
 		end
 	end
 	if not s then
 		return false
 	end
-	local tier = (Tiers.roll(Config.Rarity, rng, 1.5) :: Config.Rarity).key
+	local tier = T.droneTier
 	Rocket.fill(s.i, tier, 1.6)
 	Mission.fireAll("drone", { cf = Rocket.worldCF(s.i), kind = s.kind, tier = tier, by = by, reason = reason, scale = s.scale })
 	return true
@@ -567,9 +596,10 @@ local function syncMoving()
 	end
 end
 
+-- Depot parts are free rolls; server luck boosts (bought, or the hourly event) shift them toward rare tiers with
+-- the same maths as the odds shown in the Index (Tiers.oddsLive).
 local function rollTier(): string
-	local luck = Mission.boosted() and 1.6 or 1
-	return (Tiers.roll(Config.Rarity, rng, luck) :: Config.Rarity).key
+	return (Tiers.roll(Config.Rarity, rng, Boosts.mult("luck")) :: Config.Rarity).key
 end
 
 local function spawner()

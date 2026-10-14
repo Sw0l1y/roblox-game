@@ -1,6 +1,6 @@
--- Build the Rocket! 🚀  Client entry: starts the renderers, HUD, launch cinematic and guide, plays each
--- planet's music, keeps gravity in sync, gives Mega Jetpack owners a flaming double jump and animates
--- rainbow rank tags.
+-- Build the Rocket! 🚀  Client entry: live shop prices, the FREE panel (kit LiveUI), the renderers, HUD, shop,
+-- launch cinematic and guide; plays each planet's music, keeps gravity in sync, gives Mega Jetpack owners a
+-- flaming double jump and animates rainbow rank tags.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -12,7 +12,10 @@ local ClientLib = ReplicatedStorage:WaitForChild("ClientLib")
 local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
 local Fx = require(ClientLib:WaitForChild("Fx"))
+local Prices = require(ClientLib:WaitForChild("Prices"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 local Hub = require(ClientLib:WaitForChild("Hub"))
+local Store = require(ClientLib:WaitForChild("Store"))
 local Render = require(ClientLib:WaitForChild("Render"))
 local Hud = require(ClientLib:WaitForChild("Hud"))
 local Cinema = require(ClientLib:WaitForChild("Cinema"))
@@ -21,8 +24,14 @@ local Guide = require(ClientLib:WaitForChild("Guide"))
 local player = Players.LocalPlayer
 local P = Config.Palette
 
+-- Live Robux prices (regional pricing, price tests) replace the planned ones; open pages redraw.
+Prices.sync(Config.Passes :: any, Config.Products :: any)
+Prices.onChange(Hud.refreshOpen)
+LiveUI.init(Config.Live)
+
 Render.init()
 Hud.init()
+Store.init()
 Cinema.init()
 Guide.init()
 

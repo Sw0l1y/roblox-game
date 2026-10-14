@@ -1,6 +1,8 @@
 -- Studio-only test hooks: ServerStorage.DebugCmd (BindableFunction). Invoke with a command string, e.g.
 --   give 1e6 | give <player> cash 1e6 | give <player> strength 500 | event | clip | fill | planet 3 | reset <player>
 --   state | rarity Legendary | fuel | boost 60 | daily <player> | offline <player> 5 | ftue <player> | pass <player> VIP
+--   luck 4 60 | zerog 60 | hourly | tier Galaxy | next Gold | parts 5 | blocked <player> on|off | starter <player>
+--   quest <key> 3 | minutes 30
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -10,6 +12,8 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Mission = require(script.Parent:WaitForChild("Mission"))
 local Rocket = require(script.Parent:WaitForChild("Rocket"))
 local Crew = require(script.Parent:WaitForChild("Crew"))
@@ -71,17 +75,44 @@ local function give(list: { Player }, stat: string, n: number): string
 	return string.format("gave %s %s to %s", tostring(n), stat, #out > 0 and table.concat(out, ", ") or "nobody")
 end
 
+local function boostText(): string
+	local out = {}
+	for _, kind in ipairs({ "coins", "strength", "luck", "train" }) do
+		local m = Boosts.mult(kind)
+		if m > 1 then
+			table.insert(out, string.format("%s=x%s/%ds", kind, tostring(m), math.floor(Boosts.left(kind))))
+		end
+	end
+	return #out > 0 and table.concat(out, " ") or "none"
+end
+
+local function marks(p: Player): string
+	local m = Crew.marks[p] or {}
+	local out = {}
+	for _, k in ipairs({ "lift", "reward", "gift" }) do
+		table.insert(out, string.format("%s=%s", k, if m[k] then string.format("%.1fs", m[k]) else "-"))
+	end
+	return table.concat(out, " ")
+end
+
 local function state(): string
 	local filled, total = Rocket.counts()
+	local nextT = Mission.nextTiers[1]
 	local lines = {
-		string.format("planet=%s mission=%d phase=%s rocket=%d/%d size=%d skin=%s", Mission.planetInfo().key, Mission.mission, Mission.phase, filled, total, Rocket.size, Rocket.skin),
-		string.format("loose=%d bots=%d boost=%ds nextDrop=%ds gravity=%.1f", Haul.count(), Bots.count(), math.max(0, math.floor(Mission.boostUntil - Mission.now())), math.floor(Events.nextDrop - Mission.now()), workspace.Gravity),
+		string.format("planet=%s mission=%d phase=%s rocket=%d/%d size=%d tier=%s next=%s skin=%s", Mission.planetInfo().key, Mission.mission, Mission.phase, filled, total, Rocket.size, Rocket.tier, nextT and nextT.tier or "roll", Rocket.skin),
+		string.format("loose=%d bots=%d boosts=%s nextDrop=%ds gravity=%.1f", Haul.count(), Bots.count(), boostText(), math.floor(Events.nextDrop - Mission.now()), workspace.Gravity),
 	}
 	for _, p in ipairs(Players:GetPlayers()) do
 		local d = Data.get(p)
 		if d then
 			local holding = Haul.holdingOf(p)
 			table.insert(lines, string.format("%s coins=%d str=%.1f hauled=%d delivered=%d launches=%d gear=%d/%d/%d/%d ftue=%d holding=%s", p.Name, math.floor(tonumber(d.coins) or 0), Crew.strength(p), math.floor(tonumber(d.hauled) or 0), tonumber(d.delivered) or 0, tonumber(d.launches) or 0, tonumber(d.gear.gloves) or 1, tonumber(d.gear.suit) or 1, tonumber(d.gear.jet) or 1, tonumber(d.gear.drones) or 1, tonumber(d.ftue.step) or 0, if holding then holding.kind else "-"))
+			local live: { [string]: any } = d.live or {}
+			local qs = {}
+			for _, q: any in ipairs(live.quests or {}) do
+				table.insert(qs, string.format("%s %d%s", tostring(q.key), tonumber(q.n) or 0, if q.done then "ok" else ""))
+			end
+			table.insert(lines, string.format("  ftue %s · spent=%d sessions=%d firstJoin=%ds ago randomBlocked=%s friends=%s ladder=x%s launchCredit=x%d · play=%dmin quests=[%s]", marks(p), tonumber(d.spent) or 0, tonumber(d.sessions) or 0, os.time() - (tonumber(d.firstJoin) or os.time()), tostring(p:GetAttribute("RandomBlocked")), tostring(p:GetAttribute("Friends")), tostring(Crew.ladderMult(p, d)), Crew.launchMult(p), tonumber(live.minutes) or 0, table.concat(qs, ", ")))
 		end
 	end
 	return table.concat(lines, "\n")
@@ -173,9 +204,81 @@ local function run(cmd: string): string
 		end
 		return "no player"
 	elseif c == "boost" then
-		Mission.boost(tonumber(args[2] or "") or 60, "Debug")
+		local secs = tonumber(args[2] or "") or 60
+		Boosts.add("coins", 2, secs, "Debug")
+		Boosts.add("strength", 2, secs, "Debug")
 		Crew.invalidate(nil)
-		return "server boost on"
+		return "server 2x coins + strength on: " .. boostText()
+	elseif c == "luck" then
+		Boosts.add("luck", tonumber(args[2] or "") or 2, tonumber(args[3] or "") or 60, "Debug")
+		return "luck on: " .. boostText()
+	elseif c == "zerog" then
+		Boosts.add("train", Config.Tune.zeroGMult, tonumber(args[2] or "") or 60, "Debug")
+		return "zero-g on: " .. boostText()
+	elseif c == "hourly" then
+		Events.hourly()
+		return "hourly event: " .. boostText()
+	elseif c == "tier" then
+		local tier = Config.rocketTier(args[2] or "Galaxy")
+		if not Mission.inBuild() then
+			return "only during the build phase"
+		end
+		Haul.clear()
+		Crew.resetContrib()
+		Rocket.build(Mission.planet, Rocket.size, tier.key)
+		Rewards.repaint()
+		Bots.sync()
+		return "rebuilt the rocket as " .. tier.key
+	elseif c == "next" then
+		local tier = Config.rocketTier(args[2] or "Gold")
+		Mission.queueTier(tier.key, "Debug")
+		return "queued next rocket " .. tier.key
+	elseif c == "parts" then
+		local p = Players:GetPlayers()[1]
+		if p then
+			Events.parts(p, tonumber(args[2] or "") or 3)
+			return "parts drop sent"
+		end
+		return "no player"
+	elseif c == "blocked" then
+		-- test the paid-random restriction path: blocked <player> on|off
+		local on = args[3] ~= "off"
+		for _, p in ipairs(targets(args[2])) do
+			p:SetAttribute("RandomBlocked", on)
+		end
+		return "RandomBlocked=" .. tostring(on)
+	elseif c == "starter" then
+		-- reopen the 10-minute first-session Starter Pack window
+		for _, p in ipairs(targets(args[2])) do
+			local d = Data.get(p)
+			if d then
+				d.firstJoin = os.time()
+				d.sessions = 1
+				d.starter = false
+				if d.bought then
+					d.bought.StarterPack = nil
+				end
+				Data.dirty(p)
+			end
+		end
+		return "starter window reopened"
+	elseif c == "quest" then
+		local key = args[2] or "parts"
+		local n = tonumber(args[3] or "") or 1
+		for _, p in ipairs(Players:GetPlayers()) do
+			Live.quest(p, key, n)
+		end
+		return "quest " .. key .. " +" .. n
+	elseif c == "minutes" then
+		local n = tonumber(args[2] or "") or 60
+		for _, p in ipairs(Players:GetPlayers()) do
+			local d = Data.get(p) :: any
+			if d and type(d.live) == "table" then
+				d.live.minutes = n
+				Data.dirty(p)
+			end
+		end
+		return "playtime set to " .. n .. " min"
 	elseif c == "daily" then
 		for _, p in ipairs(targets(args[2])) do
 			local d = Data.get(p)
@@ -224,7 +327,7 @@ local function run(cmd: string): string
 		Bots.sync()
 		return "bots=" .. Bots.count()
 	end
-	return "unknown command: " .. cmd .. " (give, event, clip, fill, planet, reset, state, rarity, fuel, boost, daily, offline, ftue, pass, bots)"
+	return "unknown command: " .. cmd .. " (give, event, clip, fill, planet, reset, state, rarity, fuel, boost, luck, zerog, hourly, tier, next, parts, blocked, starter, quest, minutes, daily, offline, ftue, pass, bots)"
 end
 
 function Debug.init(dataDefaults: { [string]: any })

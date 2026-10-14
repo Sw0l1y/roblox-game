@@ -1,4 +1,5 @@
--- Build the Rocket! 🚀  Server entry: world, saves, shop, the haul loop, bots, events and the launch.
+-- Build the Rocket! 🚀  Server entry: world, saves, shop, the haul loop, bots, events and the launch, plus the
+-- launch-week features (kit Live: codes, playtime gifts, quests, badges, invites, friend bonus, hourly event).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -9,6 +10,8 @@ local Fmt = require(Shared:WaitForChild("Fmt"))
 
 local Data = require(script.Parent:WaitForChild("Lib"):WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Lib"):WaitForChild("Shop"))
+local Boosts = require(script.Parent:WaitForChild("Lib"):WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Lib"):WaitForChild("Live"))
 local Assets = require(script.Parent:WaitForChild("Lib"):WaitForChild("Assets"))
 local Map = require(script.Parent:WaitForChild("Lib"):WaitForChild("Map"))
 local Mission = require(script.Parent:WaitForChild("Lib"):WaitForChild("Mission"))
@@ -22,7 +25,7 @@ local Launch = require(script.Parent:WaitForChild("Lib"):WaitForChild("Launch"))
 local Debug = require(script.Parent:WaitForChild("Lib"):WaitForChild("Debug"))
 
 -- Every remote exists before any client asks for it.
-for _, name in ipairs({ "Game", "Lift", "Drop", "Help", "Upgrade", "Skin", "Daily", "Popper", "Fx", "Notify", "Data", "Buy" }) do
+for _, name in ipairs({ "Game", "Lift", "Drop", "Help", "Upgrade", "SkipPick", "Skin", "Daily", "Popper", "Fx", "Notify", "Data", "Buy", "Live" }) do
 	Net.event(name)
 end
 
@@ -48,6 +51,7 @@ local DEFAULTS = {
 	ftue = { step = 0, epic = false },
 	lastOnline = 0,
 	starter = false,
+	welcomed = false,
 	seen = {},
 	muted = false,
 }
@@ -86,52 +90,148 @@ Data.init({
 	},
 })
 
--- Shop: products grant here; passes apply through Shop.onPass (on purchase and on every join).
-local function coinsPack(key: string): (Player, { [string]: any }) -> boolean
+-- Shop: products grant here; passes apply through Shop.onPass (on purchase and on every join). Gift products
+-- (`gift`) are granted by the kit.
+type Grant = (Player, { [string]: any }) -> boolean
+local products = Config.Products :: { [string]: any }
+
+local function thanks(p: Player, item: { [string]: any })
+	Mission.fire(p, "thanks", { name = item.name, icon = item.icon })
+end
+
+local function addPersonalBoost(p: Player, d: { [string]: any }, minutes: number)
+	d.boostUntil = math.max(d.boostUntil or 0, os.time()) + minutes * 60
+	Crew.refresh(p)
+end
+
+local function coinsPack(key: string): Grant
 	return function(p, d)
-		local item = (Config.Products :: any)[key]
+		local item = products[key]
 		Crew.addCoins(p, (item.coins or 0) * Rewards.bestMult(d))
-		Mission.fire(p, "thanks", { name = item.name, icon = item.icon })
+		thanks(p, item)
 		return true
+	end
+end
+
+-- Server boosts (coins, luck, strength ladder) for everyone, with a big shoutout banner.
+local function serverBoost(key: string): Grant
+	return function(p, _d)
+		local b = products[key].boost
+		local m = Boosts.add(b.kind, b.mult, (b.minutes or 15) * 60, p.DisplayName)
+		Crew.invalidate(nil)
+		Mission.announce(string.format("%s %s started %sx %s for EVERYONE!", Config.Icons.boost, p.DisplayName, tostring(m), tostring(b.label or b.kind)), "gold", "cheer")
+		return true
+	end
+end
+
+-- "+N Parts" / "Finish the Rocket!": drones bolt parts onto the server rocket.
+local function partsDrop(key: string): Grant
+	return function(p, _d)
+		Events.parts(p, products[key].parts or 3)
+		return true
+	end
+end
+
+-- "Next Rocket: Silver/Gold/Galaxy": the next rocket gets that tier (fixed, shown before buying).
+local function nextRocket(key: string): Grant
+	return function(p, _d)
+		local tier = Config.rocketTier(products[key].tier)
+		Mission.queueTier(tier.key, p.DisplayName)
+		Mission.announce(string.format("%s %s ordered a %s ROCKET! x%s launch rewards for everyone!", tier.icon, p.DisplayName, string.upper(tier.name), tostring(tier.reward)), "gold", "cheer")
+		return true
+	end
+end
+
+-- Zero-G training minutes for the whole server.
+local function zeroG(key: string): Grant
+	return function(p, _d)
+		local minutes: number = tonumber(products[key].train) or 1
+		local mult: number = Config.Tune.zeroGMult
+		Boosts.add("train", mult, minutes * 60, p.DisplayName)
+		Mission.announce(string.format("%s %s added +%d MIN ZERO-G TRAINING! %dx strength gains for everyone!", Config.Icons.zerog, p.DisplayName, minutes, mult), "purple", "magic")
+		return true
+	end
+end
+
+local function skipGear(key: string): Grant
+	return function(p, d)
+		return Rewards.skip(p, d, products[key].skip or 2)
+	end
+end
+
+local grants: { [string]: Grant } = {
+	FuelServer = function(p, _d)
+		Events.fuel(p)
+		return true
+	end,
+	SupplyDrop = function(p, _d)
+		Events.supplyDrop(p.DisplayName)
+		return true
+	end,
+	Intro9 = function(p, d)
+		local item = products.Intro9
+		Crew.addCoins(p, item.coins * Rewards.bestMult(d))
+		addPersonalBoost(p, d, 15)
+		thanks(p, item)
+		return true
+	end,
+	StarterPack = function(p, d)
+		Crew.addCoins(p, products.StarterPack.coins * Rewards.bestMult(d))
+		if Config.Gear.gloves.cost[(d.gear.gloves or 1) + 1] then
+			d.gear.gloves = (d.gear.gloves or 1) + 1
+		end
+		d.starter = true
+		addPersonalBoost(p, d, Config.Tune.potionSeconds / 60)
+		Crew.dress(p)
+		thanks(p, products.StarterPack)
+		return true
+	end,
+	Boost15 = function(p, d)
+		addPersonalBoost(p, d, Config.Tune.potionSeconds / 60)
+		thanks(p, products.Boost15)
+		return true
+	end,
+}
+for key, item in pairs(products) do
+	if grants[key] or item.gift then
+		continue
+	elseif item.boost then
+		grants[key] = serverBoost(key)
+	elseif item.parts then
+		grants[key] = partsDrop(key)
+	elseif item.tier then
+		grants[key] = nextRocket(key)
+	elseif item.train then
+		grants[key] = zeroG(key)
+	elseif item.skip then
+		grants[key] = skipGear(key)
+	elseif item.coins then
+		grants[key] = coinsPack(key)
 	end
 end
 
 Shop.init({
 	passes = Config.Passes :: any,
 	products = Config.Products :: any,
-	grants = {
-		FuelServer = function(p, _d)
-			Events.fuel(p)
-			return true
-		end,
-		SupplyDrop = function(p, _d)
-			Events.supplyDrop(p.DisplayName)
-			return true
-		end,
-		StarterPack = function(p, d)
-			Crew.addCoins(p, 1500 * Rewards.bestMult(d))
-			if Config.Gear.gloves.cost[(d.gear.gloves or 1) + 1] then
-				d.gear.gloves = (d.gear.gloves or 1) + 1
-			end
-			d.boostUntil = math.max(d.boostUntil or 0, os.time()) + Config.Tune.potionSeconds
-			d.starter = true
-			Crew.refresh(p)
-			Crew.dress(p)
-			Mission.fire(p, "thanks", { name = "Starter Pack", icon = "🎁" })
-			return true
-		end,
-		Boost15 = function(p, d)
-			d.boostUntil = math.max(d.boostUntil or 0, os.time()) + Config.Tune.potionSeconds
-			Crew.refresh(p)
-			Mission.fire(p, "thanks", { name = "3x Strength", icon = "⚡" })
-			return true
-		end,
-		CoinsS = coinsPack("CoinsS"),
-		CoinsM = coinsPack("CoinsM"),
-		CoinsL = coinsPack("CoinsL"),
-		CoinsXL = coinsPack("CoinsXL"),
-	},
+	grants = grants,
 })
+
+-- Launch-week features. Rewards: coins x best planet (like coin packs) and minutes of personal 3x Strength.
+Live.init({
+	config = Config.Live,
+	grant = function(player, d, reward, _source)
+		if reward.coins then
+			Crew.addCoins(player, reward.coins * Rewards.bestMult(d))
+		end
+		if reward.boost then
+			addPersonalBoost(player, d, reward.boost)
+		end
+		Data.dirty(player)
+	end,
+})
+Live.onHour(function()
+	Events.hourly()
+end)
 
 local function addTrail(player: Player)
 	local c = player.Character
@@ -172,7 +272,7 @@ Shop.onPass(function(player, key)
 		d.seen[key] = true
 		Data.dirty(player)
 	end
-	if string.sub(key, 1, 3) == "Str" then
+	if string.sub(key, 1, 3) == "Str" or string.sub(key, 1, 6) == "Launch" then
 		Crew.refresh(player)
 	elseif key == "RobotCrew" then
 		Bots.sync()
@@ -258,6 +358,7 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 
 Data.onLoaded(function(player, d)
+	Rewards.welcome(player, d)
 	local key = Config.dateKey(os.time())
 	if d.quest.date ~= key then
 		d.quest.date = key
@@ -280,6 +381,7 @@ Data.onLoaded(function(player, d)
 	end
 	local want = Config.sizeClass(#Players:GetPlayers())
 	if Mission.inBuild() and filled == preFilled and want > Rocket.size and Haul.count() <= #Map.areas[Mission.planet].depotPads + 1 then
+		-- (the rebuild keeps the rocket's tier)
 		local busy = false
 		for _, l in pairs(Haul.parts) do
 			if l.mode == "carry" then

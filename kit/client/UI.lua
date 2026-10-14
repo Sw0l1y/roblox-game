@@ -827,7 +827,7 @@ function UI.offer(o: { [string]: any })
 	if p then
 		p.frame:Destroy()
 	end
-	local panel = UI.panel("__offer", o.title or "SPECIAL OFFER", o.color or "pink", Vector2.new(460, 330))
+	local panel = UI.panel("__offer", o.title or "SPECIAL OFFER", o.color or "pink", Vector2.new(460, o.seconds and 362 or 330))
 	local body = panel.body
 	UI.text(body, o.glyph or "🎁", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(110, 110), Position = UDim2.new(0.5, -55, 0, 6) })
 	UI.text(body, o.text or "", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 64), Position = UDim2.new(0, 0, 0, 118), TextColor3 = UI.INK })
@@ -846,7 +846,7 @@ function UI.offer(o: { [string]: any })
 		end
 	end)
 	if o.seconds then
-		local timer = UI.text(body, "", { Size = UDim2.fromOffset(200, 28), Position = UDim2.new(0.5, -100, 1, -100), TextColor3 = UI.colors.red })
+		local timer = UI.text(body, "", { Size = UDim2.fromOffset(200, 26), Position = UDim2.new(0.5, -100, 1, -100), TextColor3 = UI.colors.red })
 		task.spawn(function()
 			local t = tonumber(o.seconds) or 0
 			while t > 0 and panel.isOpen() do

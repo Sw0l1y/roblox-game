@@ -1,5 +1,6 @@
 -- Server-wide state: which planet the server is on, mission number, phase of the build/launch cycle and the
--- server fuel boost. Mirrored into ReplicatedStorage.RocketState attributes for every client.
+-- queue of bought "Next Rocket" tiers. Mirrored into ReplicatedStorage.RocketState attributes for every client.
+-- Server-wide boosts (coins, strength, luck, Zero-G training) live in kit Boosts.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -13,8 +14,8 @@ local Mission = {}
 Mission.planet = 1
 Mission.mission = 1
 Mission.phase = "build" -- build | boarding | countdown | flight | warp | arrive
-Mission.boostUntil = 0
-Mission.boostBy = ""
+-- Bought rocket tiers waiting for the next rockets (best first): { tier, by }.
+Mission.nextTiers = {} :: { { tier: string, by: string } }
 
 local state = Instance.new("Folder")
 state.Name = "RocketState"
@@ -57,17 +58,31 @@ function Mission.weightMult(): number
 	return Mission.planetInfo().weight
 end
 
-function Mission.boosted(): boolean
-	return Mission.now() < Mission.boostUntil
+local function syncNext()
+	local n = Mission.nextTiers[1]
+	state:SetAttribute("NextTier", n and n.tier or "")
+	state:SetAttribute("NextBy", n and n.by or "")
+	state:SetAttribute("NextCount", #Mission.nextTiers)
 end
 
--- Server fuel boost: 2x coins and strength for everyone (stacks by extending).
-function Mission.boost(seconds: number, by: string)
-	local now = Mission.now()
-	Mission.boostUntil = math.max(Mission.boostUntil, now) + seconds
-	Mission.boostBy = by
-	state:SetAttribute("BoostUntil", Mission.boostUntil)
-	state:SetAttribute("BoostBy", by)
+-- A "Next Rocket" purchase: queued, higher tiers first (each purchase gets its own rocket).
+function Mission.queueTier(tier: string, by: string)
+	table.insert(Mission.nextTiers, { tier = tier, by = by })
+	local rank: { [string]: number } = {}
+	for i, t in ipairs(Config.RocketTiers) do
+		rank[t.key] = i
+	end
+	table.sort(Mission.nextTiers, function(a: { tier: string, by: string }, b: { tier: string, by: string }): boolean
+		return (rank[a.tier] or 0) > (rank[b.tier] or 0)
+	end)
+	syncNext()
+end
+
+-- The next queued tier (removed from the queue), or nil to roll one.
+function Mission.popTier(): { tier: string, by: string }?
+	local n = table.remove(Mission.nextTiers, 1)
+	syncNext()
+	return n
 end
 
 -- Move the whole server's look and physics to planet i (players are moved by the caller).
@@ -107,7 +122,6 @@ state:SetAttribute("Planet", 1)
 state:SetAttribute("Mission", 1)
 state:SetAttribute("Phase", "build")
 state:SetAttribute("PhaseT", 0)
-state:SetAttribute("BoostUntil", 0)
-state:SetAttribute("BoostBy", "")
+syncNext()
 
 return Mission

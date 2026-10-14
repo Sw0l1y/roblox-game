@@ -1,5 +1,6 @@
--- Progress outside the haul itself: gear upgrades (coins), rocket skins, the 7-day login streak, the daily
--- Fuel Run quest (in Haul), Drone Crew coins every minute and while offline, and party popper.
+-- Progress outside the haul itself: gear upgrades (coins, or a "Skip Gear Upgrade" product), rocket skins, the
+-- 7-day login streak, the daily Fuel Run quest (in Haul), Drone Crew coins every minute and while offline, the
+-- first-session welcome gift and party popper.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -8,6 +9,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Net = require(Shared:WaitForChild("Net"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Mission = require(script.Parent:WaitForChild("Mission"))
 local Crew = require(script.Parent:WaitForChild("Crew"))
 local Rocket = require(script.Parent:WaitForChild("Rocket"))
@@ -17,6 +19,7 @@ local Rewards = {}
 local T = Config.Tune
 local DAY = 20 * 3600
 local STREAK_BREAK = 48 * 3600
+local skipPick: { [Player]: string } = {} -- the gear track a player picked before buying a Skip product
 
 local function bestMult(d: { [string]: any }): number
 	return Config.planet(d.bestPlanet or 1).coins * Config.missionMult(d.bestMission or 1)
@@ -93,14 +96,79 @@ function Rewards.upgrade(player: Player, track: string)
 		return
 	end
 	d.coins -= cost
+	Rewards.levelUp(player, d, track)
+end
+
+function Rewards.levelUp(player: Player, d: { [string]: any }, track: string)
+	local level = d.gear[track] or 1
 	d.gear[track] = level + 1
 	if d.ftue and (d.ftue.step or 0) < 3 then
 		d.ftue.step = 3
 	end
+	Live.quest(player, "upgrade", 1)
 	Crew.refresh(player)
 	Crew.dress(player)
 	Crew.applyMovement(player)
 	Mission.fire(player, "upgraded", { track = track, level = level + 1 })
+end
+
+-- "Skip Gear Upgrade (Lv n)": the track the player picked if its next level is n, else any track whose next
+-- level is n, else the cheapest unfinished track (a receipt replayed on a later join still pays out); coins
+-- if every track is maxed.
+function Rewards.skip(player: Player, d: { [string]: any }, level: number): boolean
+	local function nextLevel(track: string): number?
+		local g = Config.Gear[track]
+		local lv = d.gear[track] or 1
+		return if g and g.cost[lv + 1] then lv + 1 else nil
+	end
+	local pick = skipPick[player]
+	local track: string? = nil
+	if pick and nextLevel(pick) == level then
+		track = pick
+	end
+	if not track then
+		for _, key in ipairs(Config.GearOrder) do
+			if nextLevel(key) == level then
+				track = key
+				break
+			end
+		end
+	end
+	if not track then
+		local best = math.huge
+		for _, key in ipairs(Config.GearOrder) do
+			local nl = nextLevel(key)
+			local cost = nl and Config.Gear[key].cost[nl]
+			if cost and cost < best then
+				best = cost
+				track = key
+			end
+		end
+	end
+	if track then
+		Rewards.levelUp(player, d, track)
+	else
+		Crew.addCoins(player, 50000 * bestMult(d))
+		Shop.notify(player, "All Gear is maxed: you got coins instead!", "gold")
+	end
+	return true
+end
+
+-- First session only: a free coin gift a little after joining (enough for the first Power Gloves upgrade).
+function Rewards.welcome(player: Player, d: { [string]: any })
+	if d.welcomed or (d.sessions or 1) > 1 then
+		return
+	end
+	task.delay(T.welcomeGiftAt, function()
+		local cur = Data.get(player)
+		if not player.Parent or cur ~= d or d.welcomed then
+			return
+		end
+		d.welcomed = true
+		local coins = Crew.addCoins(player, T.welcomeCoins * bestMult(d))
+		Crew.mark(player, "gift")
+		Mission.fire(player, "welcome", { coins = coins })
+	end)
 end
 
 -- Daily streak ------------------------------------------------------------------------------------------
@@ -167,6 +235,14 @@ function Rewards.init()
 		if type(track) == "string" and Net.allow(player, "upgrade", 0.25) then
 			Rewards.upgrade(player, track)
 		end
+	end)
+	Net.event("SkipPick").OnServerEvent:Connect(function(player, track)
+		if type(track) == "string" and Config.Gear[track] then
+			skipPick[player] = track
+		end
+	end)
+	Players.PlayerRemoving:Connect(function(p)
+		skipPick[p] = nil
 	end)
 	Net.event("Skin").OnServerEvent:Connect(function(player, key)
 		if type(key) == "string" and Net.allow(player, "skin", 0.5) then

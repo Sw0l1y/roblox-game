@@ -225,7 +225,7 @@ local function buildSpawn(f: Folder, O: Vector3, i: number): (SpawnLocation, CFr
 		World.box(f, CF(pos.X + x, 0.6, archZ), V3(3, 1.2, 3), P.navy, { Name = "ArchFoot" })
 		neon(World.ball(f, V3(pos.X + x, 20.6, archZ), 1.6, P.gold, { Name = "ArchLight", CanCollide = false }))
 	end
-	World.sign(f, CF(pos.X, 22.4, archZ), Vector2.new(30, 4.4), "🚀 BUILD THE ROCKET!", P.navy, P.gold, nil)
+	World.sign(f, CF(pos.X, 22.4, archZ), Vector2.new(30, 4.4), string.upper(Config.Title), P.navy, P.gold, nil)
 	return spawn, CFrame.lookAt(pos + V3(0, 1, 0), O + PAD + V3(0, 1, 0))
 end
 
@@ -751,7 +751,7 @@ function Map.build(i: number): Area
 	local O = pl.origin
 	local f = World.folder("Planet_" .. pl.key, workspace)
 	local rng = Random.new(1000 + i * 77)
-	local maxLayout = Parts.layout(i, 3)
+	local maxLayout = Parts.layout(i, 3, Config.RocketTiers[#Config.RocketTiers].extra)
 	local boltR = math.max(Config.Tune.boltRadius, math.ceil(maxLayout.radius + 7))
 	local padR = boltR + 9
 	local area: { [string]: any } = { index = i, origin = O, folder = f, padRadius = padR, boltRadius = boltR }

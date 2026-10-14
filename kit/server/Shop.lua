@@ -9,6 +9,9 @@
 --   gift = "PassKey"     (product) a gift copy of that pass for another player in the server (Shop.prompt target).
 --   boost = { kind = "coins", mult = 2, minutes = 15, needs = 2? }   (product) a server-wide boost (kit Boosts)
 --                        for everyone, with a shoutout; `needs` = only sold while that multiplier is running.
+--   intro = true         (product) first-purchase deal: only for players who never bought anything (d.spent).
+--   window = 600         (product) only during the first `window` seconds of the player's first session
+--                        (starter packs); measured from the save's firstJoin.
 -- Prices: Config holds the planned price; once an item exists, its live price (regional pricing, price tests)
 -- comes from GetProductInfo, here and in kit/client/Prices.
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -85,7 +88,7 @@ local function grantProduct(player: Player, key: string): boolean
 		fn = function(p: Player, _data: { [string]: any }): boolean
 			local b = item.boost :: { [string]: any }
 			local m = Boosts.add(b.kind, b.mult, (b.minutes or 15) * 60, p.DisplayName)
-			notifyRemote:FireAllClients("\u{26A1} " .. p.DisplayName .. " started " .. m .. "x " .. tostring(b.label or b.kind) .. " for EVERYONE!", "gold")
+			notifyRemote:FireAllClients("\u{26A1} " .. p.DisplayName .. " boosted the server: " .. m .. "x " .. tostring(b.label or b.kind) .. " for EVERYONE!", "gold")
 			return true
 		end
 	end
@@ -253,6 +256,16 @@ function Shop.prompt(player: Player, kind: string, key: string, target: number?)
 	end
 	if kind == "pass" and Shop.owns(player, key) then
 		notifyRemote:FireClient(player, "You already own " .. item.name .. "!", "green")
+		return
+	end
+	local data = Data.get(player) :: any
+	if kind ~= "pass" and (item :: any).intro and data and (data.spent or 0) > 0 then
+		notifyRemote:FireClient(player, item.name .. " is for your first purchase only!", "orange")
+		return
+	end
+	local window = (item :: any).window
+	if kind ~= "pass" and window and data and ((data.sessions or 1) > 1 or os.time() - (data.firstJoin or 0) > window) then
+		notifyRemote:FireClient(player, item.name .. " has ended.", "orange")
 		return
 	end
 	if kind ~= "pass" and item.once and Shop.boughtOnce(player, key) then

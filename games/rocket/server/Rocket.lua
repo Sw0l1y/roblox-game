@@ -1,6 +1,8 @@
 -- The one giant rocket everyone sees grow. Each slot is a hologram until a part is bolted on, then it takes
 -- the delivered part's rarity colours (and the server skin for Common parts). Reports progress to the
 -- RocketState attributes and the big billboard over the pad, and fires onComplete when every slot is full.
+-- Every rocket has a tier (Basic / Silver / Gold / Galaxy: bigger rocket, bigger launch rewards), shown by a
+-- glowing ring on the pad, sparkles for Gold and Galaxy, and the billboard.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,9 +35,11 @@ Rocket.skin = "Classic"
 Rocket.skinBy = ""
 Rocket.complete = false
 Rocket.builtAt = 0
+Rocket.tier = "Basic"
 
 local completeCallbacks: { () -> () } = {}
 local paintToken: { [number]: number } = {}
+local tierModel: Model? = nil -- the tier ring stays on the pad (not part of the rocket that flies off)
 
 function Rocket.onComplete(fn: () -> ())
 	table.insert(completeCallbacks, fn)
@@ -64,8 +68,8 @@ local function updateProgress()
 	Mission.set("Filled", filled)
 	Mission.set("Total", total)
 	local area = Mission.area()
-	local pl = Mission.planetInfo()
-	area.progressText.Text = string.format("%s ROCKET  %d/%d", pl.icon, filled, total)
+	local tier = Config.rocketTier(Rocket.tier)
+	area.progressText.Text = string.format("%s %s ROCKET  %d/%d", tier.icon, string.upper(tier.name), filled, total)
 	area.progressFill.Size = UDim2.fromScale(total > 0 and filled / total or 0, 1)
 end
 Rocket.updateProgress = updateProgress
@@ -83,13 +87,65 @@ local function solidify(s: SlotState)
 	s.model:SetAttribute("Tier", s.tier)
 end
 
--- Build (or rebuild) the rocket for a planet. size: 1 small, 2 medium, 3 large.
-function Rocket.build(planetIndex: number, size: number)
+-- Tier look: a neon ring around the rocket's base in the tier colour, sparkles from Gold up.
+local function tierFx(layout: Parts.Layout, tierKey: string)
+	if tierModel then
+		tierModel:Destroy()
+		tierModel = nil
+	end
+	local tier = Config.rocketTier(tierKey)
+	if tier.key == "Basic" then
+		return
+	end
+	local m = Instance.new("Model")
+	m.Name = "RocketTier"
+	m.Parent = workspace
+	tierModel = m
+	local r = layout.radius + 2
+	local ring = Instance.new("Part")
+	ring.Name = "TierRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.3, r * 2, r * 2)
+	ring.CFrame = Rocket.base * CFrame.new(0, 0.2, 0) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Color = tier.color
+	ring.Material = Enum.Material.Neon
+	ring.Transparency = 0.35
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.CastShadow = false
+	ring.Parent = m
+	if tier.key == "Silver" then
+		return
+	end
+	local light = Instance.new("PointLight")
+	light.Color = tier.color
+	light.Range = 40
+	light.Brightness = 1.5
+	light.Parent = ring
+	local glow = Instance.new("ParticleEmitter")
+	glow.Name = "TierSparkles"
+	glow.Color = ColorSequence.new(tier.color, Color3.new(1, 1, 1))
+	glow.LightEmission = 0.8
+	glow.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.6), NumberSequenceKeypoint.new(1, 0) })
+	glow.Lifetime = NumberRange.new(2, 3.5)
+	glow.Speed = NumberRange.new(6, 14)
+	glow.SpreadAngle = Vector2.new(10, 10)
+	glow.Rate = tier.key == "Galaxy" and 60 or 30
+	glow.EmissionDirection = Enum.NormalId.Right -- the cylinder's axis points up
+	glow.Parent = ring
+end
+
+-- Build (or rebuild) the rocket for a planet. size: 1 small, 2 medium, 3 large. tier: rocket tier key (kept
+-- when omitted, so a resize for a bigger crowd keeps the rolled or bought tier).
+function Rocket.build(planetIndex: number, size: number, tier: string?)
 	if Rocket.model then
 		Rocket.model:Destroy()
 	end
 	local area = Mission.area()
-	local layout = Parts.layout(planetIndex, size)
+	Rocket.tier = tier or Rocket.tier
+	local layout = Parts.layout(planetIndex, size, Config.rocketTier(Rocket.tier).extra)
 	Rocket.layout = layout
 	Rocket.size = size
 	Rocket.base = area.rocketBase
@@ -125,11 +181,13 @@ function Rocket.build(planetIndex: number, size: number)
 		table.insert(slots, st)
 	end
 	Rocket.slots = slots
+	tierFx(layout, Rocket.tier)
 	m.WorldPivot = Rocket.base
 	m.Parent = workspace
 	Rocket.model = m
 	area.progressGui.StudsOffsetWorldSpace = Vector3.new(0, layout.height + 12 * layout.scale, 0)
 	Mission.set("Size", size)
+	Mission.set("RocketTier", Rocket.tier)
 	Mission.set("BaseCF", Rocket.base)
 	Mission.set("Height", layout.height)
 	Mission.set("Scale", layout.scale)
@@ -267,5 +325,6 @@ end
 
 Mission.set("Skin", "Classic")
 Mission.set("SkinBy", "")
+Mission.set("RocketTier", "Basic")
 
 return Rocket

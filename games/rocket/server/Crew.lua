@@ -10,6 +10,8 @@ local Tiers = require(Shared:WaitForChild("Tiers"))
 local Fmt = require(Shared:WaitForChild("Fmt"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Mission = require(script.Parent:WaitForChild("Mission"))
 
 local Crew = {}
@@ -17,6 +19,21 @@ local Crew = {}
 local T = Config.Tune
 local carrySpeed: { [Player]: number } = {}
 local cache: { [Player]: number } = {}
+
+-- FTUE timings for this session (seconds after join): lift, reward, gift... Shown by Debug "state".
+Crew.marks = {} :: { [Player]: { [string]: number } }
+local joinedAt: { [Player]: number } = {}
+
+function Crew.mark(player: Player, key: string)
+	local m = Crew.marks[player]
+	if not m then
+		m = {}
+		Crew.marks[player] = m
+	end
+	if m[key] == nil then
+		m[key] = os.clock() - (joinedAt[player] or os.clock())
+	end
+end
 
 -- Contribution to the current rocket: userId -> { name, weight }.
 Crew.contrib = {} :: { [number]: { name: string, weight: number } }
@@ -48,8 +65,9 @@ end
 
 -- Strength ---------------------------------------------------------------------------------------------
 
-function Crew.ladderMult(player: Player): number
-	local best = 1
+-- Best strength-ladder step: a pass you own or a step unlocked for free by your launch count.
+function Crew.ladderMult(player: Player, d: { [string]: any }?): number
+	local best = Config.freeMult(d and tonumber(d.launches) or 0)
 	for _, key in ipairs(Config.Ladder) do
 		local pass = (Config.Passes :: any)[key]
 		if pass and Shop.owns(player, key) then
@@ -57,6 +75,13 @@ function Crew.ladderMult(player: Player): number
 		end
 	end
 	return best
+end
+
+-- Launches each launch counts for (x2 / x4 launch passes, stacking).
+function Crew.launchMult(player: Player): number
+	return Config.launchMult(function(key: string): boolean
+		return Shop.owns(player, key)
+	end)
 end
 
 function Crew.indexCount(d: { [string]: any }): number
@@ -80,11 +105,11 @@ end
 -- Permanent strength (what the leaderboard shows).
 function Crew.baseStrength(player: Player, d: { [string]: any }): number
 	local rankIdx = Config.rank(d.hauled or 0)
-	local mult = Crew.gearMult(d) * Crew.ladderMult(player) * (1 + T.indexBonus * Crew.indexCount(d)) * (1 + T.rankBonus * (rankIdx - 1))
+	local mult = Crew.gearMult(d) * Crew.ladderMult(player, d) * (1 + T.indexBonus * Crew.indexCount(d)) * (1 + T.rankBonus * (rankIdx - 1))
 	return (T.baseStrength + (d.strengthEarned or 0)) * mult
 end
 
--- Effective strength right now (boosts, server fuel, planet suit floor).
+-- Effective strength right now (personal 3x, server strength boosts incl. Fuel the Server, planet suit floor).
 function Crew.strength(player: Player): number
 	local cached = cache[player]
 	if cached then
@@ -98,9 +123,7 @@ function Crew.strength(player: Player): number
 	if (d.boostUntil or 0) > os.time() then
 		s *= T.potionMult
 	end
-	if Mission.boosted() then
-		s *= 2
-	end
+	s *= Boosts.mult("strength")
 	s = math.max(s, T.baseStrength * Mission.weightMult())
 	cache[player] = s
 	return s
@@ -125,10 +148,8 @@ function Crew.coinMult(player: Player): number
 	if player.MembershipType == Enum.MembershipType.Premium then
 		m *= T.premiumCoin
 	end
-	if Mission.boosted() then
-		m *= 2
-	end
-	return m
+	-- server coin boosts (bought, Fuel the Server, hourly event) and +10% per friend in the server
+	return m * Boosts.mult("coins") * Live.friendMult(player)
 end
 
 -- Movement ---------------------------------------------------------------------------------------------
@@ -406,9 +427,17 @@ local function updateBoard()
 end
 
 function Crew.init()
+	Players.PlayerAdded:Connect(function(p)
+		joinedAt[p] = os.clock()
+	end)
+	for _, p in ipairs(Players:GetPlayers()) do
+		joinedAt[p] = joinedAt[p] or os.clock()
+	end
 	Players.PlayerRemoving:Connect(function(p)
 		carrySpeed[p] = nil
 		cache[p] = nil
+		joinedAt[p] = nil
+		Crew.marks[p] = nil
 	end)
 	task.spawn(function()
 		while true do

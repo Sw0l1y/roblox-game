@@ -1,12 +1,14 @@
--- HUD and menus: coin/strength counters, the rocket progress bar, supply-drop and boost pills, left menu
--- (Shop, Gear, Index, Crew, Skins, Mute), right gift/boost column (Daily, Fuel the Server, Robot Crew, VIP,
--- Party Popper), a mini crew board, the carry panel (strength vs weight, NEED A HAND, DROP) and every panel:
--- tabbed Shop, Gear upgrades, the parts x rarity Index with odds, Daily streak + Fuel Run quest, Crew stats,
--- and notices (landing summary, offline drones). Also turns every server event into juice.
-local Players = game:GetService("Players")
+-- HUD and menus: coin/strength counters, the rocket progress bar (with the rocket's tier), timer pills (supply
+-- drop, personal 3x, Starter Pack countdown) and the server-boost pill, left menu (Shop, FREE, Boosts, Gear,
+-- Index, Crew, Skins, Invite, Mute), right gift/boost column (Daily, Fuel the Server, Robot Crew, VIP, Party
+-- Popper), a mini crew board, the carry panel (strength vs weight, NEED A HAND, DROP) and the panels: Gear
+-- upgrades (coins or a Skip product), the Index (parts x rarity with live odds, rocket tiers, planets, ranks),
+-- Daily streak + Fuel Run quest, Crew stats and notices (landing summary, offline drones). The shop itself is
+-- client/Store. Also turns every server event into juice.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
+local SocialService = game:GetService("SocialService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
@@ -17,16 +19,17 @@ local ClientLib = ReplicatedStorage:WaitForChild("ClientLib")
 local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
 local State = require(ClientLib:WaitForChild("State"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 local Hub = require(ClientLib:WaitForChild("Hub"))
+local Store = require(ClientLib:WaitForChild("Store"))
 
 local Hud = {}
 
 local T = Config.Tune
 local I = Config.Icons
 local player = Hub.player
-local buyRemote = Net.event("Buy")
 local upgradeRemote = Net.event("Upgrade")
-local skinRemote = Net.event("Skin")
+local skipRemote = Net.event("SkipPick")
 local dailyRemote = Net.event("Daily")
 local popperRemote = Net.event("Popper")
 local helpRemote = Net.event("Help")
@@ -40,36 +43,8 @@ local function data(): { [string]: any }?
 	return State.data
 end
 
-local function owns(key: string): boolean
-	local d = State.data
-	if not d then
-		return false
-	end
-	local passes: any = d.passes
-	if type(passes) ~= "table" then
-		return false
-	end
-	return (passes :: any)[key] == true
-end
-
--- `once` products (Starter Pack) the server already sold to this player.
-local function boughtOnce(d: { [string]: any }, key: string): boolean
-	local b: any = d.bought
-	if type(b) ~= "table" then
-		return false
-	end
-	return (b :: any)[key] == true
-end
-
-local function buy(kind: string, key: string)
-	local d = State.data
-	local item = (if kind == "pass" then Config.Passes else Config.Products :: any)[key]
-	if d and item and ((kind == "pass" and owns(key)) or (kind ~= "pass" and item.once == true and (boughtOnce(d, key) or (key == "StarterPack" and d.starter == true)))) then
-		Sfx.play("error", 0.5)
-		return
-	end
-	buyRemote:FireServer(kind, key)
-end
+local owns = Store.owns
+local buy = Store.buy
 
 -- Plain body text (Fredoka, ink, no outline) for light panels.
 local function body(parent: Instance, str: string, props: { [string]: any }?): TextLabel
@@ -93,10 +68,6 @@ local function strengthNow(): number
 	end
 	local d = State.data
 	return d and tonumber(d.strengthShown) or T.baseStrength
-end
-
-local function bestMult(d: { [string]: any }): number
-	return Config.planet(tonumber(d.bestPlanet) or 1).coins * Config.missionMult(tonumber(d.bestMission) or 1)
 end
 
 local function tierColor(key: string): Color3
@@ -126,17 +97,44 @@ local progress = UI.bar(UI.root, "orange", {
 })
 Hud.progress = progress
 
--- Timer pills (supply drop, boosts) share a centred row under the progress bar, so they stay out of the top
--- corners where the Roblox chat window (left) and player list (right) sit.
+-- Timer pills (supply drop, personal boost, Starter Pack countdown) share a centred row under the progress bar,
+-- and running server boosts get a second row, so they stay out of the top corners where the Roblox chat window
+-- (left) and player list (right) sit.
 local pills = UI.frame(UI.root, {
 	Name = "Pills",
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 112),
-	Size = UDim2.fromOffset(440, 34),
+	Size = UDim2.fromOffset(660, 34),
 })
 UI.list(pills, 12, true)
-UI.setToastTop(154) -- toasts go under the timer pills
+-- Server boosts (kit Boosts, drawn by kit LiveUI pills): one pill per kind, two per row.
+local serverPills = UI.frame(UI.root, {
+	Name = "ServerPills",
+	BackgroundTransparency = 1,
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 152),
+	Size = UDim2.fromOffset(556, 76),
+})
+UI.grid(serverPills, UDim2.fromOffset(274, 34), 8)
+local boostPills: { Frame } = {}
+for i, kind in ipairs({ "coins", "strength", "luck", "train" }) do
+	local label = ({ coins = "COINS", strength = "STRENGTH", luck = "LUCK", train = "ZERO-G" } :: { [string]: string })[kind]
+	boostPills[i] = LiveUI.boostPill(serverPills, { [kind] = label }, { LayoutOrder = i })
+end
+local function placeToasts()
+	local n = 0
+	for _, bp in ipairs(boostPills) do
+		if bp.Visible then
+			n += 1
+		end
+	end
+	UI.setToastTop(154 + math.ceil(n / 2) * 42) -- toasts go under the pills
+end
+for _, bp in ipairs(boostPills) do
+	bp:GetPropertyChangedSignal("Visible"):Connect(placeToasts)
+end
+placeToasts()
 
 local function pill(name: string, color: string, order: number): (Frame, TextLabel)
 	local f = UI.card(pills, color, {
@@ -150,6 +148,11 @@ local function pill(name: string, color: string, order: number): (Frame, TextLab
 end
 local dropPill, dropText = pill("DropPill", "gold", 1)
 local boostPill, boostText = pill("BoostPill", "orange", 2)
+-- Starter Pack countdown: first session only, from minute 2 until its 10-minute window closes. Tap = shop.
+local starterPill = UI.button(pills, "", "pink", { Name = "StarterPill", Size = UDim2.fromOffset(206, 34), LayoutOrder = 3, Visible = false })
+starterPill.MouseButton1Click:Connect(function()
+	Store.open("Coins")
+end)
 
 -- Hint line (bottom centre) -----------------------------------------------------------------------------------
 
@@ -187,7 +190,7 @@ local left = UI.frame(UI.root, {
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0, 0.5),
 	Position = UDim2.new(0, 16, 0.5, MID),
-	Size = UDim2.fromOffset(170, 248), -- 2 x 3 buttons of 76 with 10 gaps
+	Size = UDim2.fromOffset(248, 248), -- 3 x 3 buttons of 76 with 10 gaps
 })
 local leftGrid = UI.grid(left, UDim2.fromOffset(76, 76), 10)
 leftGrid.HorizontalAlignment = Enum.HorizontalAlignment.Left
@@ -199,11 +202,14 @@ local function menuButton(parent: Instance, key: string, glyph: string, label: s
 end
 
 local shopBtn = menuButton(left, "Shop", I.shop, "SHOP", "green", 1)
-local gearBtn = menuButton(left, "Gear", I.gear, "GEAR", "blue", 2)
-local indexBtn = menuButton(left, "Index", I.index, "INDEX", "purple", 3)
-local crewBtn = menuButton(left, "Crew", I.crew, "CREW", "gold", 4)
-local skinsBtn = menuButton(left, "Skins", I.skins, "SKINS", "pink", 5)
-local muteBtn = menuButton(left, "Mute", I.music, "MUSIC", "grey", 6)
+local freeBtn = menuButton(left, "Free", I.free, "FREE", "teal", 2)
+local boostsBtn = menuButton(left, "Boosts", I.boost, "BOOSTS", "orange", 3)
+local gearBtn = menuButton(left, "Gear", I.gear, "GEAR", "blue", 4)
+local indexBtn = menuButton(left, "Index", I.index, "INDEX", "purple", 5)
+local crewBtn = menuButton(left, "Crew", I.crew, "CREW", "gold", 6)
+local skinsBtn = menuButton(left, "Skins", I.skins, "SKINS", "pink", 7)
+local inviteBtn = menuButton(left, "Invite", I.invite, "INVITE", "sky", 8)
+local muteBtn = menuButton(left, "Mute", I.music, "MUSIC", "grey", 9)
 
 -- Mini crew board (desktop: under the left menu) ---------------------------------------------------------------
 
@@ -288,212 +294,11 @@ dropBtn.MouseButton1Click:Connect(function()
 	dropRemote:FireServer()
 end)
 
--- Panels: shared builders -------------------------------------------------------------------------------------
-
-type Card = { frame: Frame, button: TextButton, sub: TextLabel, title: TextLabel }
-
-local function shopCard(parent: Instance, glyph: string, title: string, desc: string, color: any, order: number, onBuy: () -> ()): Card
-	local f = UI.card(parent, color, { LayoutOrder = order })
-	UI.text(f, glyph, {
-		Font = Enum.Font.GothamBold,
-		Size = UDim2.new(0, 56, 0, 56),
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 4),
-	})
-	local t = UI.text(f, title, { Size = UDim2.new(1, -12, 0, 26), Position = UDim2.new(0, 6, 0, 60) })
-	local sub = UI.text(f, desc, {
-		Font = UI.BODY,
-		TextWrapped = true,
-		Size = UDim2.new(1, -14, 0, 34),
-		Position = UDim2.new(0, 7, 0, 86),
-		TextColor3 = Color3.fromRGB(240, 244, 255),
-	})
-	local b = UI.button(f, "BUY", "green", {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -6),
-		Size = UDim2.new(1, -20, 0, 40),
-	})
-	b.MouseButton1Click:Connect(onBuy)
-	return { frame = f, button = b, sub = sub, title = t }
-end
-
-local function setBuy(c: Card, ownedText: string?, priceText: string)
-	if ownedText then
-		c.button.Text = ownedText
-		UI.recolor(c.button, "grey")
-		c.button.Active = false
-	else
-		c.button.Text = priceText
-		UI.recolor(c.button, "green")
-		c.button.Active = true
-	end
-end
-
--- Shop ---------------------------------------------------------------------------------------------------------
-
-local shop = UI.panel("Shop", I.shop .. " SHOP", "green", Vector2.new(820, 548))
-local shopPages, shopSelect = UI.tabs(shop.body, { "Strength", "Passes", "Skins", "Coins" }, { "orange", "purple", "pink", "gold" })
-Hud.shopSelect = shopSelect
-
-local ladderCards: { [string]: Card } = {}
-do
-	local page = shopPages.Strength
-	body(page, "Strength comes from hauling parts and Gear. A pass multiplies it forever (your best one counts)!", {
-		Size = UDim2.new(1, 0, 0, 30),
-	})
-	local sc = UI.scroll(page, { Size = UDim2.new(1, 0, 1, -34), Position = UDim2.fromOffset(0, 34) })
-	UI.grid(sc, UDim2.fromOffset(142, 168), 10)
-	for i, key in ipairs(Config.Ladder) do
-		local pass = (Config.Passes :: any)[key]
-		local color = Tiers.list[math.clamp(math.ceil(i / 1.5), 1, #Tiers.list)].color
-		ladderCards[key] = shopCard(sc, pass.icon, string.format("%dx", pass.mult), "STRENGTH", color, i, function()
-			buy("pass", key)
-		end)
-	end
-end
-
-type ShopItem = { kind: string, key: string }
-local passItems: { ShopItem } = {
-	{ kind = "product", key = "FuelServer" },
-	{ kind = "pass", key = "RobotCrew" },
-	{ kind = "pass", key = "VIP" },
-	{ kind = "pass", key = "MegaJetpack" },
-	{ kind = "pass", key = "Coins2x" },
-	{ kind = "product", key = "SupplyDrop" },
-	{ kind = "product", key = "StarterPack" },
-	{ kind = "product", key = "Boost15" },
-	{ kind = "pass", key = "PartyPopper" },
-	{ kind = "pass", key = "RainbowTrail" },
-}
-local passCards: { [string]: Card } = {}
-do
-	local sc = UI.scroll(shopPages.Passes)
-	UI.grid(sc, UDim2.fromOffset(236, 176), 10)
-	local colors = { "orange", "teal", "gold", "red", "yellow", "purple", "pink", "blue", "pink", "sky" }
-	for i, it in ipairs(passItems) do
-		local item = (if it.kind == "pass" then Config.Passes else Config.Products :: any)[it.key]
-		passCards[it.key] = shopCard(sc, item.icon, string.upper(item.name), item.desc, colors[i] or "blue", i, function()
-			buy(it.kind, it.key)
-		end)
-	end
-end
-
-local skinCards: { [string]: Card } = {}
-do
-	local sc = UI.scroll(shopPages.Skins)
-	UI.grid(sc, UDim2.fromOffset(236, 176), 10)
-	for i, sk in ipairs(Config.Skins) do
-		local c = shopCard(sc, sk.icon, string.upper(sk.name), "", sk.accent, i, function()
-			local d = data()
-			if not d then
-				return
-			end
-			local unlocked = sk.unlock == "free"
-				or (sk.unlock == "launches" and (tonumber(d.launches) or 0) >= (sk.need or 0))
-				or (sk.unlock == "planet" and (tonumber(d.bestPlanet) or 1) >= (sk.need or 99))
-				or (sk.unlock == "pass" and sk.pass ~= nil and owns(sk.pass))
-			if unlocked then
-				skinRemote:FireServer(sk.key)
-			elseif sk.unlock == "pass" and sk.pass then
-				buy("pass", sk.pass)
-			else
-				Sfx.play("error", 0.5)
-			end
-		end)
-		-- colour swatches
-		local sw = UI.frame(c.frame, { BackgroundTransparency = 1, Size = UDim2.fromOffset(96, 22), Position = UDim2.new(0, 8, 0, 8) })
-		UI.list(sw, 4, true, Enum.HorizontalAlignment.Left)
-		for _, col in ipairs({ sk.body, sk.accent, sk.trim }) do
-			local dot = UI.frame(sw, { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = col })
-			UI.corner(dot, 10)
-			UI.stroke(dot, 2)
-		end
-		skinCards[sk.key] = c
-	end
-end
-
-local coinCards: { [string]: Card } = {}
-do
-	local page = shopPages.Coins
-	body(page, "Coin packs grow with your best planet. Spend coins on Gear to get stronger!", { Size = UDim2.new(1, 0, 0, 30) })
-	local holder = UI.frame(page, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -40), Position = UDim2.fromOffset(0, 40) })
-	UI.grid(holder, UDim2.fromOffset(178, 230), 12)
-	for i, key in ipairs({ "CoinsS", "CoinsM", "CoinsL", "CoinsXL" }) do
-		local item = (Config.Products :: any)[key]
-		coinCards[key] = shopCard(holder, item.icon, string.upper(item.name), "", "gold", i, function()
-			buy("product", key)
-		end)
-	end
-end
-
-local function refreshShop()
-	local d = data()
-	if not d then
-		return
-	end
-	local best = 0
-	for i, key in ipairs(Config.Ladder) do
-		if owns(key) then
-			best = i
-		end
-	end
-	for i, key in ipairs(Config.Ladder) do
-		local c = ladderCards[key]
-		local pass = (Config.Passes :: any)[key]
-		setBuy(c, if owns(key) then (if i == best then "ACTIVE ✅" else "OWNED") else nil, "R$ " .. pass.price)
-		c.sub.Text = if i == best + 1 then "⭐ NEXT STEP" else "STRENGTH"
-	end
-	for _, it in ipairs(passItems) do
-		local c = passCards[it.key]
-		local item = (if it.kind == "pass" then Config.Passes else Config.Products :: any)[it.key]
-		local bought = if it.kind == "pass" then owns(it.key) else (item.once == true and (d.starter == true and it.key == "StarterPack" or boughtOnce(d, it.key)))
-		setBuy(c, if bought then "OWNED ✅" else nil, "R$ " .. item.price)
-	end
-	for _, sk in ipairs(Config.Skins) do
-		local c = skinCards[sk.key]
-		local equipped = d.skin == sk.key
-		local unlocked = sk.unlock == "free"
-			or (sk.unlock == "launches" and (tonumber(d.launches) or 0) >= (sk.need or 0))
-			or (sk.unlock == "planet" and (tonumber(d.bestPlanet) or 1) >= (sk.need or 99))
-			or (sk.unlock == "pass" and sk.pass ~= nil and owns(sk.pass))
-		if sk.unlock == "launches" then
-			c.sub.Text = string.format("Launch %d rockets (%d/%d)", sk.need or 0, math.min(tonumber(d.launches) or 0, sk.need or 0), sk.need or 0)
-		elseif sk.unlock == "planet" then
-			c.sub.Text = "Reach " .. Config.planet(sk.need or 4).name
-		elseif sk.unlock == "pass" then
-			c.sub.Text = "Top hauler's skin paints the rocket!"
-		else
-			c.sub.Text = "The classic white and orange."
-		end
-		if equipped then
-			setBuy(c, "EQUIPPED ✅", "")
-		elseif unlocked then
-			c.button.Text = "EQUIP"
-			UI.recolor(c.button, "blue")
-			c.button.Active = true
-		elseif sk.unlock == "pass" and sk.pass then
-			local pass = (Config.Passes :: any)[sk.pass]
-			setBuy(c, nil, "R$ " .. pass.price)
-		else
-			c.button.Text = I.lock .. " LOCKED"
-			UI.recolor(c.button, "grey")
-			c.button.Active = true
-		end
-	end
-	local mult = bestMult(d)
-	for key, c in pairs(coinCards) do
-		local item = (Config.Products :: any)[key]
-		c.sub.Text = I.coin .. " " .. Fmt.commas(item.coins * mult)
-		setBuy(c, nil, "R$ " .. item.price)
-	end
-end
-shop.onOpen = refreshShop
-
 -- Gear ----------------------------------------------------------------------------------------------------------
 
-local gear = UI.panel("Gear", I.gear .. " GEAR", "blue", Vector2.new(700, 520))
+local gear = UI.panel("Gear", I.gear .. " GEAR", "blue", Vector2.new(760, 520))
 local gearTop = body(gear.body, "", { Size = UDim2.new(1, 0, 0, 30) })
-type GearRow = { level: TextLabel, effect: TextLabel, button: TextButton, bar: UI.Bar }
+type GearRow = { level: TextLabel, effect: TextLabel, button: TextButton, skip: TextButton, bar: UI.Bar }
 local gearRows: { [string]: GearRow } = {}
 do
 	local holder = UI.frame(gear.body, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -38), Position = UDim2.fromOffset(0, 38) })
@@ -513,11 +318,22 @@ do
 			TextXAlignment = Enum.TextXAlignment.Left,
 		})
 		local bar = UI.bar(row, "yellow", { Size = UDim2.fromOffset(340, 16), Position = UDim2.fromOffset(88, 70) })
-		local b = UI.button(row, "", "green", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(196, 60) })
+		local b = UI.button(row, "", "green", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -128, 0.5, 0), Size = UDim2.fromOffset(150, 60) })
 		b.MouseButton1Click:Connect(function()
 			upgradeRemote:FireServer(key)
 		end)
-		gearRows[key] = { level = level, effect = effect, button = b, bar = bar }
+		-- Skip Gear Upgrade: a product per level; the server applies it to the track picked here
+		local sk = UI.button(row, "", "purple", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(106, 60) })
+		sk.MouseButton1Click:Connect(function()
+			local d = data()
+			local lv = d and (tonumber(d.gear[key]) or 1) or 1
+			local product = "SkipL" .. (lv + 1)
+			if Config.gearCost(key, lv) and (Config.Products :: any)[product] then
+				skipRemote:FireServer(key)
+				buy("product", product)
+			end
+		end)
+		gearRows[key] = { level = level, effect = effect, button = b, skip = sk, bar = bar }
 	end
 end
 
@@ -557,6 +373,7 @@ local function refreshGear()
 			end
 			row.effect.Text = if maxed then string.format("%s x%s strength (max)", I.strength, tostring(g.mult[lv])) else string.format("%s x%s → x%s strength%s", I.strength, tostring(g.mult[lv]), tostring(g.mult[nextLv]), extra)
 		end
+		local skipItem = (Config.Products :: any)["SkipL" .. nextLv]
 		if maxed then
 			row.button.Text = "MAXED " .. I.check
 			UI.recolor(row.button, "grey")
@@ -565,6 +382,10 @@ local function refreshGear()
 			row.button.Text = I.coin .. " " .. Fmt.num(cost)
 			UI.recolor(row.button, if (tonumber(d.coins) or 0) >= cost then "green" else "grey")
 		end
+		row.skip.Visible = not maxed and skipItem ~= nil
+		if skipItem then
+			row.skip.Text = I.skip .. " R$" .. tostring(skipItem.price)
+		end
 	end
 end
 gear.onOpen = refreshGear
@@ -572,12 +393,16 @@ gear.onOpen = refreshGear
 -- Index -----------------------------------------------------------------------------------------------------------
 
 local index = UI.panel("Index", I.index .. " INDEX", "purple", Vector2.new(840, 548))
-local indexPages = UI.tabs(index.body, { "Parts", "Planets", "Ranks" }, { "purple", "sky", "gold" })
+local indexPages = UI.tabs(index.body, { "Parts", "Rockets", "Planets", "Ranks" }, { "purple", "orange", "sky", "gold" })
 local indexCells: { [string]: { frame: Frame, label: TextLabel } } = {}
 local indexFooter: TextLabel
+-- Odds per depot part tier: the base % (sums to 100) and, while a server luck boost runs, the boosted %.
+local oddsBase: { TextLabel } = {}
+local oddsLuck: { TextLabel } = {}
+local INDEX_TOP = 62
 do
 	local page = indexPages.Parts
-	local KW, CW, RH = 150, 82, 38
+	local KW, CW, RH = 150, 82, 36
 	for ti, r in ipairs(Config.Rarity) do
 		local t = Tiers.get(r.key)
 		local x = KW + (ti - 1) * CW
@@ -585,11 +410,13 @@ do
 		if t.rainbow then
 			UI.rainbow(name)
 		end
-		body(page, Tiers.odds(Config.Rarity, r), { Size = UDim2.fromOffset(CW - 4, 18), Position = UDim2.fromOffset(x, 22) })
+		oddsBase[ti] = body(page, Tiers.odds(Config.Rarity, r), { Size = UDim2.fromOffset(CW - 4, 18), Position = UDim2.fromOffset(x, 22) })
+		oddsLuck[ti] = body(page, "", { Size = UDim2.fromOffset(CW - 4, 18), Position = UDim2.fromOffset(x, 41), TextColor3 = Color3.fromRGB(30, 150, 60) })
 	end
+	body(page, "Odds", { Size = UDim2.fromOffset(KW - 10, 18), Position = UDim2.fromOffset(0, 22), TextXAlignment = Enum.TextXAlignment.Left })
 	for ki, kind in ipairs(Config.KindOrder) do
 		local k = Config.Kinds[kind]
-		local y = 44 + (ki - 1) * RH
+		local y = INDEX_TOP + (ki - 1) * RH
 		UI.text(page, k.icon .. " " .. string.upper(k.name), {
 			Size = UDim2.fromOffset(KW - 8, RH - 10),
 			Position = UDim2.fromOffset(0, y + 5),
@@ -607,7 +434,78 @@ do
 			indexCells[kind .. ":" .. r.key] = { frame = cell, label = lab }
 		end
 	end
-	indexFooter = body(page, "", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 44 + #Config.KindOrder * RH + 4) })
+	indexFooter = body(page, "", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, INDEX_TOP + #Config.KindOrder * RH + 4) })
+end
+
+-- Rocket tiers: odds of the free roll (live with luck), rewards, and "order the next rocket" buttons.
+type TierCard = { odds: TextLabel, status: TextLabel, button: TextButton? }
+local tierCards: { TierCard } = {}
+local tierNote: TextLabel
+do
+	local page = indexPages.Rockets
+	tierNote = body(page, "", { Size = UDim2.new(1, 0, 0, 30) })
+	local holder = UI.frame(page, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -38), Position = UDim2.fromOffset(0, 38) })
+	UI.grid(holder, UDim2.fromOffset(186, 300), 10)
+	for i, t in ipairs(Config.RocketTiers) do
+		local c = UI.card(holder, t.color, { LayoutOrder = i })
+		UI.text(c, t.icon, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(70, 70), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 4) })
+		UI.text(c, string.upper(t.name) .. " ROCKET", { Size = UDim2.new(1, -12, 0, 28), Position = UDim2.fromOffset(6, 76) })
+		local odds = UI.text(c, "", { Font = UI.BODY, Size = UDim2.new(1, -12, 0, 26), Position = UDim2.fromOffset(6, 106), TextColor3 = UI.colors.yellow })
+		UI.text(c, string.format("%s x%s launch rewards", I.coin, tostring(t.reward)), { Font = UI.BODY, Size = UDim2.new(1, -12, 0, 24), Position = UDim2.fromOffset(6, 136) })
+		UI.text(c, if t.extra > 0 then string.format("+%d fuel tank%s (bigger!)", t.extra, if t.extra > 1 then "s" else "") else "The standard rocket", { Font = UI.BODY, Size = UDim2.new(1, -12, 0, 22), Position = UDim2.fromOffset(6, 162) })
+		local status = UI.text(c, "", { Size = UDim2.new(1, -12, 0, 26), Position = UDim2.fromOffset(6, 190), TextColor3 = UI.colors.yellow })
+		local tc: TierCard = { odds = odds, status = status, button = nil }
+		local productKey = "Next" .. t.key
+		local item = (Config.Products :: any)[productKey]
+		if item then
+			local b = UI.button(c, "", "green", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -8), Size = UDim2.new(1, -20, 0, 48) })
+			b.MouseButton1Click:Connect(function()
+				buy("product", productKey)
+			end)
+			tc.button = b
+		end
+		tierCards[i] = tc
+	end
+end
+
+-- Server luck right now (kit Boosts: bought luck boosts and the hourly event).
+local function luckNow(): number
+	return (Store.boost("luck"))
+end
+
+local shownLuck = -1
+local function refreshOdds()
+	local luck = luckNow()
+	if luck == shownLuck then
+		return
+	end
+	shownLuck = luck
+	for ti, r in ipairs(Config.Rarity) do
+		oddsBase[ti].Text = Tiers.odds(Config.Rarity, r)
+		oddsLuck[ti].Text = if luck > 1 then I.luck .. " " .. Tiers.odds(Config.Rarity, r, luck) else ""
+	end
+	for i, t in ipairs(Config.RocketTiers) do
+		tierCards[i].odds.Text = Tiers.oddsLive(Config.RocketTiers, t, luck)
+	end
+end
+
+local function refreshTiers()
+	shownLuck = -1
+	refreshOdds()
+	local cur = Hub.str("RocketTier", "Basic")
+	local nextTier = Hub.str("NextTier", "")
+	local nextBy = Hub.str("NextBy", "")
+	local luck = luckNow()
+	tierNote.Text = string.format("Every new rocket rolls a tier%s. Order the next one for the whole server!", if luck > 1 then string.format(" (%s x%s luck now!)", I.luck, tostring(luck)) else "")
+	for i, t in ipairs(Config.RocketTiers) do
+		local tc = tierCards[i]
+		tc.status.Text = if t.key == cur then "\u{1F4CD} THIS ROCKET" elseif t.key == nextTier then "NEXT (" .. nextBy .. ")" else ""
+		local b = tc.button
+		if b then
+			local item = (Config.Products :: any)["Next" .. t.key]
+			b.Text = "ORDER R$ " .. tostring(item.price)
+		end
+	end
 end
 
 local planetCards: { { frame: Frame, status: TextLabel } } = {}
@@ -664,7 +562,9 @@ local function refreshIndex()
 		end
 	end
 	local total = #Config.KindOrder * #Config.Rarity
-	indexFooter.Text = string.format("%s %d/%d found  ·  +%d%% strength (1%% per entry)  ·  odds per depot part", I.index, found, total, found)
+	local luck = luckNow()
+	indexFooter.Text = string.format("%s %d/%d found  ·  +%d%% strength (1%% per entry)  ·  odds per depot part%s", I.index, found, total, found, if luck > 1 then string.format("  ·  %s x%s LUCK NOW", I.luck, tostring(luck)) else "")
+	refreshTiers()
 	for i, c in ipairs(planetCards) do
 		local pl = Config.Planets[i]
 		local visited = i == 1 or d.planets[pl.key] == true
@@ -921,7 +821,20 @@ Hud.showNotice = showNotice
 -- Menu wiring -------------------------------------------------------------------------------------------------
 
 shopBtn.button.MouseButton1Click:Connect(function()
-	UI.toggle("Shop")
+	if Store.isOpen() then
+		Store.panel.close()
+	else
+		Store.open(nil)
+	end
+end)
+freeBtn.button.MouseButton1Click:Connect(function()
+	LiveUI.open()
+end)
+boostsBtn.button.MouseButton1Click:Connect(function()
+	Store.open("Boosts")
+end)
+inviteBtn.button.MouseButton1Click:Connect(function()
+	pcall(SocialService.PromptGameInvite, SocialService, player, nil :: any)
 end)
 gearBtn.button.MouseButton1Click:Connect(function()
 	UI.toggle("Gear")
@@ -933,8 +846,7 @@ crewBtn.button.MouseButton1Click:Connect(function()
 	UI.toggle("Crew")
 end)
 skinsBtn.button.MouseButton1Click:Connect(function()
-	shop.open()
-	shopSelect("Skins")
+	Store.open("Skins")
 end)
 muteBtn.button.MouseButton1Click:Connect(function()
 	local m = not Sfx.isMuted()
@@ -981,9 +893,6 @@ local function coinPos(): Vector2
 end
 
 local function refreshOpen()
-	if shop.isOpen() then
-		refreshShop()
-	end
 	if gear.isOpen() then
 		refreshGear()
 	end
@@ -996,6 +905,12 @@ local function refreshOpen()
 	if crew.isOpen() then
 		refreshCrew()
 	end
+end
+
+-- Everything open right now (also after live prices arrive, see Main.client).
+function Hud.refreshOpen()
+	Store.refresh()
+	refreshOpen()
 end
 
 local function refreshButtons()
@@ -1063,7 +978,9 @@ local function refreshTop()
 	local pl = Hub.planetInfo()
 	local filled = Hub.num("Filled", 0)
 	local total = math.max(1, Hub.num("Total", 1))
-	local pText = if phase == "build" then string.format("%s %s ROCKET %d/%d", pl.icon, pl.name, filled, total) else I.launch .. " LAUNCHING!"
+	local tier = Config.rocketTier(Hub.str("RocketTier", "Basic"))
+	local tierText = if tier.key == "Basic" then "" else string.format(" %s %s", tier.icon, string.upper(tier.name))
+	local pText = if phase == "build" then string.format("%s %s%s ROCKET %d/%d", pl.icon, pl.name, tierText, filled, total) else I.launch .. " LAUNCHING!"
 	if pText ~= progressText then
 		progressText = pText
 		progress.set(if phase == "build" then filled / total else 1, pText)
@@ -1077,17 +994,20 @@ local function refreshTop()
 	else
 		dropPill.Visible = false
 	end
-	local boostUntil = Hub.num("BoostUntil", 0)
 	local d = data()
 	local personal = d and (tonumber(d.boostUntil) or 0) - os.time() or 0
-	if boostUntil > now then
-		boostPill.Visible = true
-		boostText.Text = string.format("%s 2X SERVER %s", I.fuel, Fmt.time(boostUntil - now))
-	elseif personal > 0 then
+	if personal > 0 then
 		boostPill.Visible = true
 		boostText.Text = string.format("%s 3X STRENGTH %s", I.boost, Fmt.time(personal))
 	else
 		boostPill.Visible = false
+	end
+	-- Starter Pack countdown: never in the first 2 minutes of a session (no offers before minute 2)
+	local starter = Store.starterLeft()
+	local showStarter = starter > 0 and os.clock() - Hub.joinedAt >= T.pillAfter and not Hub.cinematic
+	starterPill.Visible = showStarter
+	if showStarter then
+		starterPill.Text = string.format("%s STARTER %s", I.gift, Fmt.time(starter))
 	end
 	strCounter.set(math.floor(strengthNow() * 10 + 0.5) / 10)
 end
@@ -1158,6 +1078,17 @@ function Hud.init()
 	player:GetAttributeChangedSignal("Popper"):Connect(refreshButtons)
 	Hub.state:GetAttributeChangedSignal("Board"):Connect(refreshBoard)
 	refreshBoard()
+	-- FREE button: "!" count of playtime gifts and quests ready to claim (kit LiveUI)
+	LiveUI.onClaimable(function(n: number)
+		freeBtn.setBadge(if n > 0 then n else nil)
+	end)
+	for _, attr in ipairs({ "RocketTier", "NextTier" }) do
+		Hub.state:GetAttributeChangedSignal(attr):Connect(function()
+			if index.isOpen() then
+				refreshTiers()
+			end
+		end)
+	end
 
 	Hub.on("announce", onAnnounce)
 	Hub.on("reward", onReward)
@@ -1284,7 +1215,22 @@ function Hud.init()
 		end
 		UI.flash("orange", 0.55)
 		UI.confetti(60, { Config.Palette.orange, Config.Palette.gold, Config.Palette.white })
-		UI.toast(string.format("%s %s fueled the server: 2X coins + strength for everyone!", I.fuel, tostring(p.by)), "orange", 4)
+		local parts = tonumber(p.parts)
+		if parts then
+			UI.toast(string.format("%s %s sent %d drones with Legendary parts!", I.drone, tostring(p.by), parts), "orange", 4)
+		else
+			UI.toast(string.format("%s %s fueled the server: 2X coins + strength for everyone!", I.fuel, tostring(p.by)), "orange", 4)
+		end
+	end)
+	Hub.on("welcome", function(p: any)
+		local coins = type(p) == "table" and tonumber(p.coins) or 0
+		UI.banner(string.format("%s FREE WELCOME GIFT! +%s %s", I.gift, Fmt.num(coins or 0), I.coin), "green", 3)
+		UI.confetti(90)
+		Sfx.play("victory", 0.6)
+		UI.fly(UI.center(), coinCounter.frame, 14, I.coin)
+		task.delay(1.5, function()
+			UI.toast(I.gear .. " Spend it on POWER GLOVES in GEAR to lift faster!", "sky", 4)
+		end)
 	end)
 	Hub.on("dropWarn", function()
 		UI.toast(I.box .. " SUPPLY DROP in 15s! Watch the sky!", "gold", 4)
@@ -1311,7 +1257,21 @@ function Hud.init()
 			if p.firstVisit then
 				table.insert(lines, "🆕 NEW PLANET: parts here pay x" .. tostring(pl.coins) .. " coins!")
 			end
-			table.insert(lines, string.format("%s Launches: %d", I.launch, tonumber(p.launches) or 0))
+			local tier = Config.rocketTier(tostring(p.tier))
+			if tier.reward > 1 then
+				table.insert(lines, string.format("%s %s rocket: x%s bonus!", tier.icon, string.upper(tier.name), tostring(tier.reward)))
+			end
+			local credit = tonumber(p.credit) or 1
+			table.insert(lines, string.format("%s Launches: %d%s", I.launch, tonumber(p.launches) or 0, if credit > 1 then string.format(" (+%d)", credit) else ""))
+			local unlocked = tonumber(p.unlocked)
+			if unlocked then
+				local text = string.format("%s FREE UNLOCK: %dx STRENGTH!", I.strength, unlocked)
+				table.insert(lines, text)
+				task.delay(0.6, function()
+					UI.banner(text, "orange", 3)
+					UI.confetti(80)
+				end)
+			end
 			showNotice("MISSION COMPLETE!", pl.icon, table.concat(lines, "\n"), function()
 				UI.fly(UI.center(), coinCounter.frame, 14, I.coin)
 			end)
@@ -1330,6 +1290,9 @@ function Hud.init()
 		refreshTop()
 		if daily.isOpen() then
 			refreshDaily()
+		end
+		if index.isOpen() then
+			refreshOdds()
 		end
 	end)
 	task.spawn(function()

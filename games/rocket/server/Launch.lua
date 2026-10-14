@@ -2,13 +2,18 @@
 -- seat, the crew on the decks), a big countdown, liftoff with fire, smoke and shake (drawn by clients from the
 -- phase times), a warp, and the whole server lands on the next planet with new gravity, a new look and a
 -- bigger rocket. Server owns the timeline and the player positions; clients animate the flight locally.
+-- The rocket's tier multiplies everyone's launch bonus; the next rocket's tier is a bought one (queued) or a free
+-- roll (luck boosts shift it, odds in the Index). Every landing opens a 3-minute ZERO-G TRAINING window.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Tiers = require(Shared:WaitForChild("Tiers"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Mission = require(script.Parent:WaitForChild("Mission"))
 local Rocket = require(script.Parent:WaitForChild("Rocket"))
 local Crew = require(script.Parent:WaitForChild("Crew"))
@@ -22,6 +27,7 @@ local Launch = {}
 local T = Config.Tune
 local running = false
 local summary: { [Player]: { [string]: any } } = {}
+local rng = Random.new()
 
 local function place(player: Player, cf: CFrame, anchored: boolean)
 	local c = player.Character
@@ -89,14 +95,30 @@ end
 local function rewardEveryone(fromPlanet: number, toPlanet: number)
 	local top = Crew.top()
 	local mvp = mvpUid(top)
-	local fromCoins = Config.planet(fromPlanet).coins * Config.missionMult(Mission.mission)
+	local tier = Config.rocketTier(Rocket.tier)
+	local fromCoins = Config.planet(fromPlanet).coins * Config.missionMult(Mission.mission) * tier.reward
 	for _, p in ipairs(Players:GetPlayers()) do
 		local d = Data.get(p)
 		if d then
 			local isMvp = p.UserId == mvp
 			local coins = T.launchBonus * fromCoins * Crew.coinMult(p) * (isMvp and (1 + T.mvpBonus) or 1)
 			coins = Crew.addCoins(p, coins)
-			d.launches = (d.launches or 0) + 1
+			local ladderBefore = Crew.ladderMult(p, d)
+			local credit = Crew.launchMult(p)
+			d.launches = (d.launches or 0) + credit
+			local freeAfter = Config.freeMult(d.launches)
+			local unlocked = if freeAfter > ladderBefore then freeAfter else nil
+			Live.quest(p, "launch", 1)
+			if ((p:GetAttribute("Friends") :: number?) or 0) > 0 then
+				Live.quest(p, "friend", 1) -- "launch a rocket with a friend": a friend is in this server
+			end
+			Live.badge(p, "FirstLaunch")
+			if toPlanet >= 3 then
+				Live.badge(p, "ReachMars")
+			end
+			if toPlanet >= 4 then
+				Live.badge(p, "ReachEuropa")
+			end
 			if isMvp then
 				d.mvps = (d.mvps or 0) + 1
 			end
@@ -119,10 +141,29 @@ local function rewardEveryone(fromPlanet: number, toPlanet: number)
 					contributed = e.weight
 				end
 			end
-			summary[p] = { coins = coins, mvp = isMvp, firstVisit = firstVisit, planet = toPlanet, launches = d.launches, contributed = contributed }
+			summary[p] = {
+				coins = coins,
+				mvp = isMvp,
+				firstVisit = firstVisit,
+				planet = toPlanet,
+				launches = d.launches,
+				credit = credit,
+				contributed = contributed,
+				tier = tier.key,
+				unlocked = unlocked,
+			}
 			Data.dirty(p)
 		end
 	end
+end
+
+-- The next rocket's tier: a bought one first, else a free roll (server luck shifts it toward Galaxy).
+local function nextTier(): (string, string?)
+	local bought = Mission.popTier()
+	if bought then
+		return bought.tier, bought.by
+	end
+	return (Tiers.roll(Config.RocketTiers, rng, Boosts.mult("luck")) :: Config.RocketTier).key, nil
 end
 
 function Launch.start()
@@ -130,6 +171,8 @@ function Launch.start()
 		return
 	end
 	running = true
+	local newTier: string? = nil
+	local newTierBy: string? = nil
 	Haul.clear()
 	Bots.clear()
 	Mission.setPhase("boarding")
@@ -153,7 +196,10 @@ function Launch.start()
 			Mission.setPhase("warp")
 			Mission.setPlanet(to)
 			Crew.resetContrib()
-			Rocket.build(to, Config.sizeClass(#Players:GetPlayers()))
+			local tierKey, tierBy = nextTier()
+			Rocket.build(to, Config.sizeClass(#Players:GetPlayers()), tierKey)
+			newTier = tierKey
+			newTierBy = tierBy
 			Rewards.repaint()
 			local list = Players:GetPlayers()
 			for k, p in ipairs(list) do
@@ -187,6 +233,22 @@ function Launch.start()
 		local pl = Mission.planetInfo()
 		Mission.setPhase("build")
 		Mission.announce(string.format("%s WELCOME TO %s!", pl.icon, pl.name), "sky", "victory")
+		-- Zero-G training: 3x strength gains for everyone for 3 minutes (extendable with products)
+		Boosts.add("train", T.zeroGMult, T.zeroGSeconds, "ZERO-G")
+		task.delay(3.2, function()
+			Mission.announce(string.format("%s ZERO-G TRAINING! %dx strength gains for %d min!", Config.Icons.zerog, T.zeroGMult, T.zeroGSeconds // 60), "purple", "magic")
+		end)
+		local nt = newTier
+		if nt and nt ~= "Basic" then
+			local tier = Config.rocketTier(nt)
+			local by = newTierBy
+			task.delay(6.4, function()
+				local text = if by
+					then string.format("%s %s ROCKET thanks to %s! x%s launch rewards!", tier.icon, string.upper(tier.name), by, tostring(tier.reward))
+					else string.format("%s LUCKY ROLL: %s ROCKET! x%s launch rewards!", tier.icon, string.upper(tier.name), tostring(tier.reward))
+				Mission.announce(text, if nt == "Galaxy" then "purple" else "gold", "reveal")
+			end)
+		end
 		Events.schedule(T.eventEvery * 0.7)
 		Bots.sync()
 		running = false

@@ -1,6 +1,8 @@
 -- Recurring server event: a SUPPLY DROP every few minutes (banner + countdown, a pod falls from the sky and
 -- spills golden Star Crates; each crate hauled to the pad pays big and makes a drone bolt on a part).
--- Also "Fuel the Server" (product): 2x for everyone, drones bolt on parts, the buyer gets a shoutout.
+-- At the top of every hour the HOURLY MEGA DROP: 8 crates plus 10 minutes of 2x coins and 2x luck for everyone.
+-- Also the rocket products: "Fuel the Server" (2x coins + strength for everyone, drones bolt on parts) and
+-- "+N Parts" (drones bolt N Legendary parts on), each with a shoutout for the buyer.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 
@@ -8,7 +10,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Net = require(Shared:WaitForChild("Net"))
 local World = require(Shared:WaitForChild("World"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
 local Mission = require(script.Parent:WaitForChild("Mission"))
+local Rocket = require(script.Parent:WaitForChild("Rocket"))
 local Haul = require(script.Parent:WaitForChild("Haul"))
 local Crew = require(script.Parent:WaitForChild("Crew"))
 
@@ -17,7 +21,7 @@ local Events = {}
 local T = Config.Tune
 local P = Config.Palette
 local rng = Random.new()
-local queued: { string } = {}
+local queued: { { by: string, crates: number } } = {}
 local warned = false
 
 Events.nextDrop = 0
@@ -77,17 +81,21 @@ local function heroPod(at: Vector3): Model
 	return m
 end
 
-function Events.supplyDrop(by: string?): boolean
+-- crates: Star Crates in the pod (default T.crateCount; the hourly mega drop has more).
+function Events.supplyDrop(by: string?, crates: number?): boolean
 	if not Mission.inBuild() then
-		table.insert(queued, by or "")
+		table.insert(queued, { by = by or "", crates = crates or T.crateCount })
 		return false
 	end
+	local n = crates or T.crateCount
 	local area = Mission.area()
 	local spot = area.origin + DROP_SPOTS[rng:NextInteger(1, #DROP_SPOTS)]
 	local fall = 2.6
 	local impact = Mission.now() + fall
 	Mission.fireAll("drop", { pos = spot, t = impact, by = by })
-	if by and by ~= "" then
+	if n > T.crateCount then
+		Mission.announce(string.format("%s HOURLY MEGA DROP! %d STAR CRATES!", Config.Icons.timer, n), "gold", "reveal")
+	elseif by and by ~= "" then
 		Mission.announce(string.format("%s %s called a SUPPLY DROP!", Config.Icons.box, by), "gold", "reveal")
 	else
 		Mission.announce(Config.Icons.box .. " SUPPLY DROP! Grab the Star Crates!", "gold", "reveal")
@@ -100,30 +108,67 @@ function Events.supplyDrop(by: string?): boolean
 		local pod = heroPod(spot)
 		pod.Parent = workspace
 		Debris:AddItem(pod, 60)
-		Haul.spawnCrates(spot, T.crateCount)
+		Haul.spawnCrates(spot, n)
 		Net.event("Fx"):FireAllClients("shockwave", spot + Vector3.new(0, 0.6, 0), P.gold, 30)
 		Net.event("Fx"):FireAllClients("burst", spot + Vector3.new(0, 2, 0), { P.gold, P.white, P.orange }, 26, 1.8)
 	end)
 	return true
 end
 
--- Fuel the Server: 2x coins + strength for everyone, drones bolt on parts, shoutout.
-function Events.fuel(player: Player)
-	Mission.boost(T.fuelBoostSeconds, player.DisplayName)
-	Crew.invalidate(nil)
-	Mission.announce(string.format("%s %s FUELED THE SERVER! 2X for everyone!", Config.Icons.fuel, player.DisplayName), "orange", "cheer")
-	Mission.fireAll("fuel", { by = player.DisplayName, uid = player.UserId, until_ = Mission.boostUntil })
-	local by = player.DisplayName
-	for k = 1, T.fuelBolts do
-		task.delay(0.8 + k * 0.7, function()
-			-- bought mid-launch or with no free slot: the paid drones wait for the next open slot
-			local tries = 0
-			while not Haul.autoBolt(by, "fuel") and tries < 120 do
+-- n drones bolt parts on, one after another. Bought mid-launch, or more parts than open slots: the rest wait
+-- for the next rocket (a few minutes at most), so a paid part is never lost.
+local function drones(by: string, reason: string, n: number)
+	task.spawn(function()
+		task.wait(0.8)
+		local left = n
+		local tries = 0
+		while left > 0 and tries < 600 do
+			if Haul.autoBolt(by, reason) then
+				left -= 1
+				task.wait(T.partsGap)
+			else
 				tries += 1
 				task.wait(1)
 			end
-		end)
+		end
+	end)
+end
+
+-- Fuel the Server: 2x coins + strength for everyone, drones bolt on parts, shoutout.
+function Events.fuel(player: Player)
+	Boosts.add("coins", 2, T.fuelBoostSeconds, player.DisplayName)
+	Boosts.add("strength", 2, T.fuelBoostSeconds, player.DisplayName)
+	Crew.invalidate(nil)
+	Mission.announce(string.format("%s %s FUELED THE SERVER! 2X for everyone!", Config.Icons.fuel, player.DisplayName), "orange", "cheer")
+	Mission.fireAll("fuel", { by = player.DisplayName, uid = player.UserId })
+	drones(player.DisplayName, "fuel", T.fuelBolts)
+end
+
+-- "+N Parts" (n = 0: every open slot right now, i.e. finish the rocket).
+function Events.parts(player: Player, n: number)
+	local count = n
+	if count <= 0 then
+		local filled, total = Rocket.counts()
+		count = math.max(1, total - filled)
 	end
+	local text = if n <= 0
+		then string.format("%s %s is FINISHING THE ROCKET! LAUNCH!", "\u{1F3C1}", player.DisplayName)
+		else string.format("%s %s sent +%d ROCKET PARTS!", Config.Icons.drone, player.DisplayName, count)
+	Mission.announce(text, "orange", "cheer")
+	Mission.fireAll("fuel", { by = player.DisplayName, uid = player.UserId, parts = count })
+	drones(player.DisplayName, "parts", count)
+end
+
+-- Top of every hour (kit Live.onHour): the HOURLY MEGA DROP and 10 minutes of 2x coins + 2x luck for everyone.
+function Events.hourly()
+	local secs = T.hourlyBoostMinutes * 60
+	Boosts.add("coins", 2, secs, "HOURLY EVENT")
+	Boosts.add("luck", 2, secs, "HOURLY EVENT")
+	Crew.invalidate(nil)
+	Mission.announce(string.format("%s HOURLY EVENT! 2X COINS + 2X LUCK for %d min!", Config.Icons.timer, T.hourlyBoostMinutes), "gold", "victory")
+	task.delay(3, function()
+		Events.supplyDrop("HOURLY", T.hourlyCrates)
+	end)
 end
 
 function Events.init()
@@ -141,8 +186,10 @@ function Events.init()
 				end
 			else
 				if #queued > 0 then
-					local by = table.remove(queued, 1)
-					Events.supplyDrop(by)
+					local q = table.remove(queued, 1)
+					if q then
+						Events.supplyDrop(q.by, q.crates)
+					end
 				elseif not warned and now >= Events.nextDrop - T.eventWarn then
 					warned = true
 					Mission.fireAll("dropWarn", { t = Events.nextDrop })
