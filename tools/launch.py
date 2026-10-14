@@ -33,6 +33,12 @@ def key() -> str:
     sys.exit("set ROBLOX_API_KEY or ROBLOX_API_KEY_FILE")
 
 
+class ApiError(Exception):
+    def __init__(self, code: int, text: str):
+        super().__init__(f"{code}: {text}")
+        self.code, self.text = code, text
+
+
 def call(method: str, url: str, body: bytes | None = None, ctype: str | None = None) -> dict:
     headers = {"x-api-key": key()}
     if ctype:
@@ -42,7 +48,7 @@ def call(method: str, url: str, body: bytes | None = None, ctype: str | None = N
         with urllib.request.urlopen(req) as r:
             raw = r.read()
     except urllib.error.HTTPError as e:
-        sys.exit(f"{method} {url} failed {e.code}: {e.read().decode()[:400]}")
+        raise ApiError(e.code, e.read().decode()[:400]) from None
     return json.loads(raw) if raw.strip() else {}
 
 
@@ -84,14 +90,20 @@ def monetize(game: str, meta: dict):
         elif section and re.search(r"\bid = 0\b", line):
             item = line.strip().split(" ", 1)[0]
             fields = {"name": field(line, "name"), "description": field(line, "desc") or "",
-                      "price": str(field(line, "price")), "isForSale": "true"}
-            body, ctype = multipart(fields, ROOT / "art" / game / "shop" / f"{item}.png")
-            if section == "pass":
-                new_id = call("POST", f"{API}/game-passes/v1/universes/{meta['universeId']}/game-passes",
-                              body, ctype)["gamePassId"]
-            else:
-                new_id = call("POST", f"{API}/developer-products/v2/universes/{meta['universeId']}/developer-products",
-                              body, ctype)["productId"]
+                      "price": str(field(line, "price")), "isForSale": "true",
+                      "isRegionalPricingEnabled": "true"}  # regional pricing: more payers at the same top price
+            url = (f"{API}/game-passes/v1/universes/{meta['universeId']}/game-passes" if section == "pass" else
+                   f"{API}/developer-products/v2/universes/{meta['universeId']}/developer-products")
+            image = ROOT / "art" / game / "shop" / f"{item}.png"
+            try:
+                out = call("POST", url, *multipart(fields, image))
+            except ApiError as e:
+                if e.code != 400 or "egional" not in e.text:
+                    raise
+                print(game, "regional pricing not accepted by the API, creating", item, "without it")
+                del fields["isRegionalPricingEnabled"]
+                out = call("POST", url, *multipart(fields, image))
+            new_id = out["gamePassId" if section == "pass" else "productId"]
             lines[i] = re.sub(r"\bid = 0\b", f"id = {new_id}", line, count=1)
             config.write_text("\n".join(lines))  # after every item, so a failure halfway loses nothing
             print(game, "created", section, item, new_id)
@@ -117,7 +129,10 @@ def main():
     if "all" in steps:
         steps = ["monetize", "meta", "publish"]
     for step in steps:
-        {"publish": publish, "monetize": monetize, "meta": set_meta}[step](game, meta)
+        try:
+            {"publish": publish, "monetize": monetize, "meta": set_meta}[step](game, meta)
+        except ApiError as e:
+            sys.exit(f"{game} {step} failed {e}")
 
 
 if __name__ == "__main__":
