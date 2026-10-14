@@ -1,8 +1,9 @@
 --!strict
 -- The pick screen shown before every race: three marbles from your collection (or loaners) as live 3D
--- cards with their stats, the power-up cards dealt for this track (the one that suits the track is
--- marked), the track's features, and a countdown. Every change is sent to the server right away, so a
--- player who never taps READY still races with what they chose.
+-- cards with their stats, a FREE PICK card that races any marble you own (so every marble you collect
+-- can matter), the power-up cards dealt for this track (the one that suits the track is marked), the
+-- track's features, and a countdown. Every change is sent to the server right away, so a player who never
+-- taps READY still races with what they chose.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -13,6 +14,8 @@ local ClientLib = ReplicatedStorage:WaitForChild("ClientLib")
 local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
 local MarbleIcon = require(ClientLib:WaitForChild("MarbleIcon"))
+local State = require(ClientLib:WaitForChild("State"))
+local Store = require(ClientLib:WaitForChild("Store"))
 
 local Picker = {}
 
@@ -56,7 +59,7 @@ UI.gradient(timerBg, UI.lighten(UI.colors.red, 0.1), UI.shade(UI.colors.red, 0.7
 local timer = UI.text(timerBg, "10", { Size = UDim2.fromScale(0.9, 0.8), Position = UDim2.fromScale(0.05, 0.1), ZIndex = 15 })
 
 local marbleRow = UI.frame(sheet, { BackgroundTransparency = 1, Size = UDim2.fromOffset(630, 300), Position = UDim2.new(0, 20, 0, 68), ZIndex = 13 })
-UI.list(marbleRow, 14, true, Enum.HorizontalAlignment.Left)
+UI.list(marbleRow, 10, true, Enum.HorizontalAlignment.Left)
 local right = UI.frame(sheet, { BackgroundTransparency = 1, Size = UDim2.fromOffset(380, 300), Position = UDim2.new(1, -400, 0, 68), ZIndex = 13 })
 local slotsLabel = UI.text(right, "POWER-UP", {
 	Size = UDim2.fromOffset(220, 26),
@@ -67,10 +70,7 @@ local slotsLabel = UI.text(right, "POWER-UP", {
 })
 local slotBtn = UI.button(right, "🔒 +1 SLOT", "purple", { Size = UDim2.fromOffset(140, 30), Position = UDim2.new(1, -140, 0, -2), ZIndex = 14 })
 slotBtn.MouseButton1Click:Connect(function()
-	local p = UI.getPanel("Shop")
-	if p then
-		p.open()
-	end
+	Store.open("Passes")
 end)
 local cardCol = UI.frame(right, { BackgroundTransparency = 1, Size = UDim2.fromOffset(380, 210), Position = UDim2.fromOffset(0, 30), ZIndex = 13 })
 local cl = UI.list(cardCol, 6)
@@ -78,7 +78,7 @@ cl.VerticalAlignment = Enum.VerticalAlignment.Top
 local ready = UI.button(right, "READY!", "green", { Size = UDim2.fromOffset(380, 58), Position = UDim2.new(0, 0, 1, -58), ZIndex = 14 })
 
 -- State ------------------------------------------------------------------------------------------------
-type Offer = { marbles: { { [string]: any } }, cards: { string }, slots: number, hint: string, raceNo: number }
+type Offer = { marbles: { { [string]: any } }, cards: { string }, slots: number, hint: string, raceNo: number, any: boolean? }
 local offer: Offer? = nil
 local endsAt = 0
 local chosenKey = ""
@@ -89,6 +89,8 @@ local lastSent = 0
 local sendQueued = false
 local locked = false
 local token = 0
+local freeKey = "" -- the marble chosen with the free pick ("" = none)
+local freeCard: TextButton? = nil
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -124,6 +126,14 @@ local function refresh()
 		local check = b:FindFirstChild("Check") :: TextLabel?
 		if check then
 			check.Visible = on
+		end
+	end
+	local fc = freeCard
+	if fc then
+		local on = freeKey ~= "" and chosenKey == freeKey
+		local st = fc:FindFirstChild("Sel") :: UIStroke?
+		if st then
+			st.Enabled = on
 		end
 	end
 	for key, b in pairs(powerCards) do
@@ -164,7 +174,7 @@ local function buildMarbleCard(m: { [string]: any }, order: number)
 	b.Name = "Marble" .. order
 	b.AutoButtonColor = false
 	b.Text = ""
-	b.Size = UDim2.fromOffset(196, 296)
+	b.Size = UDim2.fromOffset(170, 296)
 	b.LayoutOrder = order
 	b.BackgroundColor3 = Color3.new(1, 1, 1)
 	b.ZIndex = 14
@@ -176,7 +186,7 @@ local function buildMarbleCard(m: { [string]: any }, order: number)
 	sel.Name = "Sel"
 	sel.Enabled = false
 	UI.juicy(b)
-	MarbleIcon.view(b, id, m.mut, { Size = UDim2.fromOffset(150, 132), Position = UDim2.new(0.5, -75, 0, 4), ZIndex = 15 }, 1.1)
+	MarbleIcon.view(b, id, m.mut, { Size = UDim2.fromOffset(140, 132), Position = UDim2.new(0.5, -70, 0, 4), ZIndex = 15 }, 1.1)
 	local nameL = UI.text(b, MarbleIcon.name(id, m.mut), { Size = UDim2.new(1, -16, 0, 28), Position = UDim2.new(0, 8, 0, 136), ZIndex = 16 })
 	local _ = nameL
 	MarbleIcon.tierText(b, tier, { Size = UDim2.new(0.62, 0, 0, 22), Position = UDim2.new(0, 8, 0, 166), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 16 })
@@ -192,8 +202,8 @@ local function buildMarbleCard(m: { [string]: any }, order: number)
 	statBar(b, Config.Icons.weight, tonumber(m.wt) or 0, 248, "orange")
 	if m.loaner then
 		local tag = UI.text(b, "LOANER", {
-			Size = UDim2.fromOffset(96, 24),
-			Position = UDim2.new(1, -100, 0, 6),
+			Size = UDim2.fromOffset(86, 24),
+			Position = UDim2.new(1, -90, 0, 6),
 			BackgroundTransparency = 0,
 			BackgroundColor3 = UI.colors.purple,
 			ZIndex = 17,
@@ -227,6 +237,126 @@ local function buildMarbleCard(m: { [string]: any }, order: number)
 		send()
 	end)
 	marbleCards[key] = b
+end
+
+-- Free pick -------------------------------------------------------------------------------------------------
+-- A narrow fourth card next to BEST and the others: tap it to race any marble from your collection.
+local chooser = UI.frame(sheet, { Size = UDim2.fromOffset(630, 300), Position = UDim2.new(0, 20, 0, 68), BackgroundColor3 = Color3.fromRGB(46, 40, 78), Visible = false, ZIndex = 30 })
+UI.corner(chooser, 18)
+UI.stroke(chooser, 4)
+UI.text(chooser, "🎯 FREE PICK: ANY MARBLE YOU OWN", { Size = UDim2.new(1, -90, 0, 30), Position = UDim2.fromOffset(14, 8), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 31 })
+local chooserClose = UI.button(chooser, "X", "red", { Size = UDim2.fromOffset(44, 40), Position = UDim2.new(1, -54, 0, 6), ZIndex = 31 })
+chooserClose.MouseButton1Click:Connect(function()
+	chooser.Visible = false
+end)
+local chooserGrid = UI.scroll(chooser, { Size = UDim2.new(1, -20, 1, -58), Position = UDim2.fromOffset(10, 50), ZIndex = 31 })
+UI.grid(chooserGrid, UDim2.fromOffset(110, 118), 8)
+
+-- Effective stats of an owned marble (mirrors the server's Economy.stats).
+local function ownStats(e: { [string]: any }): (number, number, number)
+	local def = Config.MarbleById[tostring(e.id)] or Config.Marbles[1]
+	local k = Config.Level.statPerPoint
+	local cap = Config.Level.statCap
+	return math.min(cap, def.spd + (tonumber(e.spd) or 0) * k), math.min(cap, def.grip + (tonumber(e.grip) or 0) * k), math.min(cap, def.wt + (tonumber(e.wt) or 0) * k)
+end
+
+local buildFreeCard: () -> ()
+
+local function choose(key: string)
+	chosenKey = key
+	local offered = marbleCards[key] ~= nil
+	freeKey = offered and "" or key
+	chooser.Visible = false
+	buildFreeCard()
+	refresh()
+	send()
+	Sfx.play("unlock", 0.4)
+end
+
+local function openChooser()
+	for _, c in ipairs(chooserGrid:GetChildren()) do
+		if c:IsA("GuiObject") then
+			c:Destroy()
+		end
+	end
+	local owned: { [string]: any } = State.get("marbles") or {}
+	local keys: { string } = {}
+	local pow: { [string]: number } = {}
+	for k, e in pairs(owned) do
+		table.insert(keys, k)
+		local sp, gr, wt = ownStats(e)
+		pow[k] = sp * 1.6 + gr + wt * 0.6
+	end
+	table.sort(keys, function(a, b)
+		return pow[a] > pow[b]
+	end)
+	for i, k in ipairs(keys) do
+		local e = owned[k]
+		local id = tostring(e.id)
+		local cell = Instance.new("TextButton")
+		cell.AutoButtonColor = false
+		cell.Text = ""
+		cell.LayoutOrder = i
+		cell.BackgroundColor3 = k == chosenKey and Color3.fromRGB(255, 236, 150) or Color3.fromRGB(240, 242, 250)
+		cell.ZIndex = 32
+		cell.Parent = chooserGrid
+		UI.corner(cell, 14)
+		UI.stroke(cell, 3)
+		UI.juicy(cell)
+		MarbleIcon.flat(cell, id, e.mut, 58, { Position = UDim2.new(0.5, -29, 0, 6), ZIndex = 33 })
+		local n = UI.text(cell, MarbleIcon.name(id, e.mut), { Font = UI.BODY, Size = UDim2.new(1, -8, 0, 22), Position = UDim2.fromOffset(4, 66), TextColor3 = UI.INK, ZIndex = 33 })
+		local ns = n:FindFirstChildOfClass("UIStroke")
+		if ns then
+			ns.Enabled = false
+		end
+		UI.text(cell, string.format("⚡ %d  ·  LVL %d", math.floor(pow[k] + 0.5), tonumber(e.lvl) or 1), { Size = UDim2.new(1, -8, 0, 20), Position = UDim2.fromOffset(4, 90), ZIndex = 33 })
+		cell.MouseButton1Click:Connect(function()
+			choose(k)
+		end)
+	end
+	chooser.Visible = true
+end
+
+buildFreeCard = function()
+	local old = freeCard
+	if old then
+		old:Destroy()
+	end
+	freeCard = nil
+	local o = offer
+	if not (o and o.any) then
+		return
+	end
+	local b = Instance.new("TextButton")
+	b.Name = "FreePick"
+	b.AutoButtonColor = false
+	b.Text = ""
+	b.Size = UDim2.fromOffset(84, 296)
+	b.LayoutOrder = 10
+	b.BackgroundColor3 = Color3.new(1, 1, 1)
+	b.ZIndex = 14
+	b.Parent = marbleRow
+	UI.corner(b, 18)
+	UI.stroke(b, 3.5)
+	UI.gradient(b, UI.lighten(UI.colors.purple, 0.35), UI.shade(UI.colors.purple, 0.8))
+	local sel = UI.stroke(b, 6, Color3.fromRGB(255, 214, 50))
+	sel.Name = "Sel"
+	sel.Enabled = false
+	UI.juicy(b)
+	local e = freeKey ~= "" and (State.get("marbles") or {})[freeKey] or nil
+	if e then
+		local id = tostring(e.id)
+		MarbleIcon.flat(b, id, e.mut, 64, { Position = UDim2.new(0.5, -32, 0, 30), ZIndex = 15 })
+		UI.text(b, MarbleIcon.name(id, e.mut), { Size = UDim2.new(1, -8, 0, 44), Position = UDim2.fromOffset(4, 100), TextWrapped = true, ZIndex = 16 })
+		UI.text(b, "✔", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(34, 34), Position = UDim2.new(0.5, -17, 0, 150), TextColor3 = Color3.fromRGB(120, 255, 120), ZIndex = 16 })
+		UI.text(b, "CHANGE", { Size = UDim2.new(1, -8, 0, 24), Position = UDim2.new(0, 4, 1, -36), ZIndex = 16 })
+	else
+		UI.text(b, "🎯", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(52, 52), Position = UDim2.new(0.5, -26, 0, 40), ZIndex = 16 })
+		UI.text(b, "FREE\nPICK", { Size = UDim2.new(1, -8, 0, 56), Position = UDim2.fromOffset(4, 104), ZIndex = 16 })
+		UI.text(b, "Race any marble you own!", { Font = UI.BODY, Size = UDim2.new(1, -10, 0, 70), Position = UDim2.fromOffset(5, 168), TextWrapped = true, ZIndex = 16 })
+	end
+	b.MouseButton1Click:Connect(openChooser)
+	freeCard = b
 end
 
 local function buildPowerCard(key: string, hint: string, order: number)
@@ -334,10 +464,14 @@ function Picker.show(o: { [string]: any }, ends: number, info: { [string]: any }
 	end
 	table.clear(marbleCards)
 	table.clear(powerCards)
+	freeCard = nil
+	freeKey = ""
+	chooser.Visible = false
 	local marbles = (o.marbles or {}) :: { { [string]: any } }
 	for i, m in ipairs(marbles) do
 		buildMarbleCard(m, i)
 	end
+	buildFreeCard()
 	local hint = tostring(o.hint or "")
 	for i, c in ipairs((o.cards or {}) :: { string }) do
 		buildPowerCard(c, hint, i)
@@ -409,6 +543,7 @@ function Picker.hide()
 		return
 	end
 	offer = nil
+	chooser.Visible = false
 	UI.tween(sheet, 0.25, { Position = UDim2.new(0.5, 30, 1, 400) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	local my = token
 	task.delay(0.26, function()

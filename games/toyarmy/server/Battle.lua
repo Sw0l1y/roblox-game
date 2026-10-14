@@ -2,6 +2,8 @@
 -- A Fight has two sides (att/def). Each volley every living unit hits random enemies; specials:
 -- splash (Bazooka) second target at 50%, heal (Medic) heals the most hurt ally, armor (Tank) takes 30% less,
 -- air (Heli) two targets, rally (General) +20% squad attack, stomp (Robot Dino) three targets.
+-- Counters (Config.Classes): soldiers hit helicopters x1.4, helicopters hit tanks x1.4, tanks hit soldiers x1.4,
+-- and the other way round x0.8.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
@@ -22,6 +24,7 @@ export type Unit = {
 	hp: number,
 	maxHp: number,
 	special: string,
+	class: string, -- "Foot" / "Air" / "Armor" (rock-paper-scissors counters)
 	power: number,
 	gone: boolean?, -- owner left mid-fight
 }
@@ -68,6 +71,7 @@ function Battle.makeUnit(unitKey: string, mut: string, kind: string, owner: Play
 		hp = hp,
 		maxHp = hp,
 		special = def.special,
+		class = def.class,
 		power = atk + hp / 3,
 	}
 end
@@ -184,7 +188,7 @@ function Battle.step(f: Fight, rng: Random): ({ Event }, string?)
 		local start = rng:NextInteger(1, #enemies)
 		for i, mult in ipairs(hits) do
 			local target = enemies[(start + i - 2) % #enemies + 1]
-			local dmg = base * mult
+			local dmg = base * mult * Config.counter(u.class, target.class)
 			if target.special == "armor" then
 				dmg *= 0.7
 			end

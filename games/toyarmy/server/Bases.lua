@@ -123,7 +123,7 @@ local function buildShowcase(b: Base, d: { [string]: any })
 		World.cyl(b.dynamic, p + V(0, h - 0.4, 0), 0.5, 6.8, team.color, { Name = "PodiumTrim", CanTouch = false, CanCollide = false, CanQuery = false })
 		local e = list[i]
 		if e then
-			local m = Toys.build(e.u, { team = b.team, mut = e.m, shadows = true, scale = 1.1 })
+			local m = Toys.build(e.u, { team = b.team, mut = e.m, shadows = true, scale = 1.1, skin = d.skin, tankPaint = d.tankPaint })
 			m:PivotTo(CFrame.lookAt(p + V(0, h, 0), p + V(0, h, -10)))
 			m.Parent = b.dynamic
 		end
@@ -142,7 +142,7 @@ local function signature(b: Base, d: { [string]: any }): string
 		local uy, my = Config.split(y)
 		return Config.power(ux, mx) > Config.power(uy, my)
 	end)
-	return table.concat({ top[1] or "", top[2] or "", top[3] or "", tostring(d.upgrades.box or 0), tostring(Shop.owns(b.player, "pro")) }, "/")
+	return table.concat({ top[1] or "", top[2] or "", top[3] or "", tostring(d.upgrades.box or 0), tostring(Shop.owns(b.player, "pro")), tostring(d.skin), tostring(d.tankPaint) }, "/")
 end
 
 local function refresh(b: Base)

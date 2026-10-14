@@ -1,6 +1,7 @@
--- The HUD: plastic / bags / rank counters, the war score and round timer, the left menu, the right column
--- (daily, free gift, supply drop, luck boost, the cat, auto-deploy, mute), the big bottom buttons (OPEN, DEPLOY,
--- MERGE), the goal bar with a pointing finger and 3D guide beam, the battle feed, rewards and banners.
+-- The HUD: plastic / bags / rank counters, the war score and round timer, the server-boost pill, the left menu
+-- (with STRIKE and FREE), the right column (daily, free gift, luck boost, the cat, auto-deploy, mute, supply drop,
+-- the Starter Pack / Recruit Deal slot), the big bottom buttons (OPEN, DEPLOY with its counter hint, MERGE), the goal
+-- bar with a pointing finger and 3D guide beam, the battle feed, rewards, banners and the (late, rare) offers.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -18,6 +19,7 @@ local Game = require(ClientLib:WaitForChild("Game"))
 local Arena = require(ClientLib:WaitForChild("Arena"))
 local Panels = require(ClientLib:WaitForChild("Panels"))
 local Reveal = require(ClientLib:WaitForChild("Reveal"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 
 local Hud = {}
 
@@ -57,7 +59,9 @@ local score = UI.card(UI.root, "dark", {
 	Position = UDim2.new(0.5, 0, 0, 72),
 	Size = UDim2.fromOffset(380, 40),
 })
-UI.setToastTop(120) -- toasts go under the war score bar
+-- running server boosts ("⚡ 2x PLASTIC 12:04") under the war score; toasts go under both
+LiveUI.boostPill(UI.root, { plastic = "PLASTIC", luck = "LUCK" }, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 116), Size = UDim2.fromOffset(340, 32) })
+UI.setToastTop(154)
 local scoreG = UI.text(score, "GREEN 0", { Size = UDim2.fromOffset(130, 30), Position = UDim2.fromOffset(8, 5), TextColor3 = Config.C.green, TextXAlignment = Enum.TextXAlignment.Left })
 local scoreT = UI.text(score, "0 TAN", { Size = UDim2.fromOffset(130, 30), Position = UDim2.new(1, -138, 0, 5), TextColor3 = Config.C.tan, TextXAlignment = Enum.TextXAlignment.Right })
 local roundText = UI.text(score, "🏆 3:00", { Size = UDim2.fromOffset(110, 28), Position = UDim2.new(0.5, -55, 0, 6) })
@@ -65,14 +69,16 @@ local roundText = UI.text(score, "🏆 3:00", { Size = UDim2.fromOffset(110, 28)
 -- Left menu -----------------------------------------------------------------------------------------------------------------
 -- The side menus are 2-wide grids at left-middle / right-middle: on desktop Roblox's chat window covers the top-left
 -- corner and the player list the top-right one, so both grids sit a little below the centre line there (MID).
-local MID = UI.isMobile and 0 or 24
-local CELL, CELL_GAP = 78, 14
+-- Four rows of the left menu (STRIKE / FREE are the last row) need slightly smaller cells to clear the chat window.
+local MID = UI.isMobile and 0 or 34
+local CELL, CELL_GAP = 72, 12
+local ROWS = 4
 local left = UI.frame(UI.root, {
 	Name = "Left",
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.new(0, 0.5),
 	Position = UDim2.new(0, 14, 0.5, MID),
-	Size = UDim2.fromOffset(2 * CELL + CELL_GAP + 4, 3 * CELL + 2 * CELL_GAP),
+	Size = UDim2.fromOffset(2 * CELL + CELL_GAP + 4, ROWS * CELL + (ROWS - 1) * CELL_GAP),
 })
 -- two per row, pinned: the 4 px of slack keeps a scaled-down frame from rounding to one column
 local leftGrid = UI.grid(left, UDim2.fromOffset(CELL, CELL), CELL_GAP)
@@ -88,15 +94,25 @@ local MENU = {
 	{ "Upgrades", I.base, "BASE", "blue" },
 	{ "Map", I.map, "MAP", "teal" },
 	{ "Shop", I.shop, "SHOP", "pink" },
+	{ "Strikes", I.strike, "STRIKE", "red" },
+	{ "Free", I.free, "FREE", "green" },
 }
 for i, m in ipairs(MENU) do
 	local b = UI.iconButton(left, m[2], m[3], m[4], { LayoutOrder = i, Size = UDim2.fromOffset(CELL, CELL) })
 	b.button.Name = m[1] .. "Button"
 	menu[m[1]] = b
 	b.button.MouseButton1Click:Connect(function()
-		Panels.toggle(m[1])
+		if m[1] == "Free" then
+			LiveUI.open()
+		else
+			Panels.toggle(m[1])
+		end
 	end)
 end
+-- the FREE badge: playtime gifts and finished quests waiting to be claimed
+LiveUI.onClaimable(function(n)
+	menu.Free.setBadge(n > 0 and n or nil)
+end)
 
 -- Right column ------------------------------------------------------------------------------------------------------------------
 -- Six buttons make three rows centred like the left menu; a landed supply drop adds a fourth row underneath (so the
@@ -128,12 +144,17 @@ local autoB = side(5, I.ai, "AUTO", "blue")
 local muteB = side(6, I.mute, "MUSIC", "dark")
 local supplyB = side(7, I.supply, "SUPPLY", "green")
 supplyB.button.Visible = false
+-- the deal slot: the Starter Pack with its countdown (first 10 minutes of a first session), later the 9 R$ deal
+local dealB = side(8, I.starter, "STARTER", "pink")
+dealB.button.Name = "DealButton"
+dealB.button.Visible = false
 
 -- Bottom: goal bar and the three big buttons ----------------------------------------------------------------------------
+-- (high enough to leave room for the counter hint and the mold-press pill above the big buttons)
 local goal = UI.card(UI.root, "dark", {
 	Name = "Goal",
 	AnchorPoint = Vector2.new(0.5, 1),
-	Position = UDim2.new(0.5, 0, 1, -112),
+	Position = UDim2.new(0.5, 0, 1, -142),
 	Size = UDim2.fromOffset(700, 44),
 })
 local goalText = UI.text(goal, "", { Size = UDim2.new(1, -20, 0, 32), Position = UDim2.fromOffset(10, 6), TextColor3 = Config.C.yellow })
@@ -166,6 +187,18 @@ local function badge(b: TextButton): TextLabel
 end
 local openBadge = badge(openBtn)
 local mergeBadge = badge(mergeBtn)
+-- counter hint on the DEPLOY button: your squad's class vs the target's ("💂 vs 🚁 STRONG!")
+local counterPill = UI.text(deployBtn, "", {
+	Font = UI.BODY,
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 0, -4),
+	Size = UDim2.fromOffset(250, 26),
+	BackgroundTransparency = 0,
+	BackgroundColor3 = UI.colors.dark,
+	Visible = false,
+	ZIndex = deployBtn.ZIndex + 4,
+})
+UI.corner(counterPill, 12)
 local pressPill = UI.text(mergeBtn, "", {
 	Font = UI.BODY,
 	AnchorPoint = Vector2.new(0.5, 1),
@@ -254,6 +287,59 @@ local function zoneName(id: string?): string
 	return def.name
 end
 
+-- The class (Config.Classes) with the most power in a list of { unit, power }.
+type Power = { unit: string, power: number }
+local function mainClass(list: { Power }): string?
+	local sum: { [string]: number } = {}
+	local best, bestPower = nil :: string?, 0
+	for _, e in ipairs(list) do
+		local c = Config.classOf(e.unit).key
+		sum[c] = (sum[c] or 0) + e.power
+		if sum[c] > bestPower then
+			best, bestPower = c, sum[c]
+		end
+	end
+	return best
+end
+
+-- "💂 vs 🚁 STRONG!" over the DEPLOY button: the squad it sends (strongest ready toys) against the target's toys.
+local function updateCounter(d: Dict, target: string?, ready: number)
+	local def = target and Config.ZoneById[target]
+	local snap = target and Arena.snapshot(target)
+	if ready <= 0 or not def or def.outpost or not snap or (snap.owner or "") == Game.side() then
+		counterPill.Visible = false
+		return
+	end
+	local enemy: { Power } = {}
+	for _, u in ipairs((snap.units or {}) :: { { any } }) do
+		table.insert(enemy, { unit = tostring(u[2]), power = tonumber(u[7]) or 0 })
+	end
+	local busy = Game.busy()
+	local mine: { Power } = {}
+	for stack in pairs(d.units) do
+		local n = math.min(12, Game.ready(d, stack, busy))
+		local u, m = Config.split(stack)
+		for _ = 1, n do
+			table.insert(mine, { unit = u, power = Config.power(u, m) })
+		end
+	end
+	table.sort(mine, function(a: Power, b: Power)
+		return a.power > b.power
+	end)
+	for i = #mine, Game.squadSize(d) + 1, -1 do
+		table.remove(mine, i)
+	end
+	local a, b = mainClass(mine), mainClass(enemy)
+	if not a or not b then
+		counterPill.Visible = false
+		return
+	end
+	local rel = Config.matchup(a, b)
+	counterPill.Text = Config.Classes[a].glyph .. " vs " .. Config.Classes[b].glyph .. (rel == "strong" and "  STRONG! ✅" or rel == "weak" and "  WEAK! ⚠️" or "  EVEN")
+	counterPill.BackgroundColor3 = rel == "strong" and UI.colors.green or rel == "weak" and UI.colors.red or UI.colors.dark
+	counterPill.Visible = true
+end
+
 local function refresh()
 	local d = Game.d()
 	if not d then
@@ -297,6 +383,7 @@ local function refresh()
 		deployBtn.Text = Game.count(d) > 0 and "⚔️ ALL DEPLOYED" or "⚔️ NO SOLDIERS"
 		UI.recolor(deployBtn, "grey")
 	end
+	updateCounter(d, target, ready)
 	-- right column
 	local daily = d.daily.last == 0 or Config.dayNumber(Game.now()) > Config.dayNumber(d.daily.last)
 	dailyB.setBadge(daily and "!" or nil)
@@ -358,6 +445,11 @@ end
 State.onChange(function()
 	refresh()
 end)
+Arena.onChange(function(id)
+	if id == player:GetAttribute("Target") then
+		refresh()
+	end
+end)
 for _, attr in ipairs({ "Busy", "Target", "SupplyReady" }) do
 	player:GetAttributeChangedSignal(attr):Connect(refresh)
 end
@@ -401,7 +493,8 @@ task.spawn(function()
 	end
 end)
 
--- Timers: round, gift, luck, cat, merge pill -------------------------------------------------------------------------------
+-- Timers: round, gift, luck, cat, merge pill, the deal slot -----------------------------------------------------------------
+local giftToasted = false
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -419,9 +512,33 @@ task.spawn(function()
 			local left = gift - now
 			giftB.label.Text = left > 0 and Fmt.time(left) or "FREE!"
 			giftB.setBadge(left <= 0 and "!" or nil)
+			if left <= 0 and not giftToasted then
+				giftToasted = true
+				UI.toast("🎁 Your FREE gift is ready! Tap GIFT ➡️", "teal", 4)
+				UI.punch(giftB.button, 0.4)
+				Sfx.play("notify", 0.5)
+			elseif left > 0 then
+				giftToasted = false
+			end
 		end
 		local d = Game.d()
 		if d then
+			-- deal slot: Starter Pack countdown (first session, after minute 2), else the 9 R$ deal for new spenders
+			local starter = Game.starterLeft(d)
+			local late = Game.age() >= Config.NoOffersBefore
+			if late and starter > 0 then
+				dealB.button.Visible = true
+				dealB.icon.Text = I.starter
+				dealB.label.Text = Fmt.time(starter)
+				dealB.setBadge("!")
+			elseif late and Game.neverBought(d) then
+				dealB.button.Visible = true
+				dealB.icon.Text = I.deal
+				dealB.label.Text = "R$" .. Config.Products.intro.price .. " DEAL"
+				dealB.setBadge(nil)
+			else
+				dealB.button.Visible = false
+			end
 			local boost = (d.boosts.luck or 0) - now
 			luckB.label.Text = boost > 0 and Fmt.time(boost) or "LUCK"
 			local m1 = d.merging[1]
@@ -525,17 +642,51 @@ luckB.button.MouseButton1Click:Connect(function()
 	Panels.shopTab("BOOSTS")
 end)
 catB.button.MouseButton1Click:Connect(function()
-	local p = Config.Products.callcat
+	Panels.open("Strikes")
+end)
+
+-- The deal slot: the Starter Pack (first 10 minutes of the first session, with its countdown), else the R$9 intro deal.
+local function starterOffer(d: { [string]: any }): boolean
+	local left = Game.starterLeft(d)
+	if left <= 0 then
+		return false
+	end
 	UI.offer({
-		title = "CALL THE CAT!",
-		text = "Wake the cat NOW and send it to swat the enemy army! The whole server will see it.",
-		glyph = I.cat,
-		price = "R$ " .. p.price,
-		color = "orange",
+		title = "STARTER PACK!",
+		text = Config.Products.starter.desc,
+		glyph = I.starter,
+		price = "R$ " .. Config.Products.starter.price,
+		color = "pink",
+		seconds = math.floor(left),
 		onBuy = function()
-			Game.buy("product", "callcat")
+			Game.buy("product", "starter")
 		end,
 	})
+	return true
+end
+
+local function introOffer(d: { [string]: any }): boolean
+	if not Game.neverBought(d) then
+		return false
+	end
+	UI.offer({
+		title = "RECRUIT DEAL!",
+		text = Config.Products.intro.desc .. " Only once!",
+		glyph = I.deal,
+		price = "R$ " .. Config.Products.intro.price,
+		color = "teal",
+		onBuy = function()
+			Game.buy("product", "intro")
+		end,
+	})
+	return true
+end
+
+dealB.button.MouseButton1Click:Connect(function()
+	local d = Game.d()
+	if d and not starterOffer(d) and not introOffer(d) then
+		dealB.button.Visible = false
+	end
 end)
 autoB.button.MouseButton1Click:Connect(function()
 	local d = Game.d()
@@ -711,6 +862,11 @@ Arena.onEnd(function(info)
 	end
 end)
 
+-- Redraw the HUD now (live prices arrived).
+function Hud.refresh()
+	refresh()
+end
+
 -- Cat hooks for CatView
 function Hud.catHooks(): { [string]: (...any) -> () }
 	return {
@@ -729,22 +885,32 @@ function Hud.catHooks(): { [string]: (...any) -> () }
 	}
 end
 
--- Starter pack offer once, after a few minutes of play (never before minute 2).
-task.delay(250, function()
+-- Offers never pop up in the first 2 minutes of a session. The Starter Pack pops up once just after that (only in
+-- the first 10 minutes of the first session; its countdown stays on the deal button), the R$9 intro deal once a
+-- session a few minutes later for players who never bought anything.
+task.spawn(function()
+	while Game.age() < Config.NoOffersBefore + 5 do
+		task.wait(1)
+	end
 	local d = Game.d()
-	if d and not d.starterPack then
-		local p = Config.Products.starter
-		offer("starter", {
-			title = "STARTER PACK!",
-			text = "1,000 plastic, a Medic and 3 Heavy Duffels. Only once!",
-			glyph = "🎒",
-			price = "R$ " .. p.price,
-			color = "pink",
-			seconds = 30,
-			onBuy = function()
-				Game.buy("product", "starter")
-			end,
-		})
+	if d and Game.starterLeft(d) > 30 and not Reveal.isOpen() then
+		offered.starter = os.clock()
+		starterOffer(d)
+	end
+	while Game.age() < 300 do
+		task.wait(2)
+	end
+	d = Game.d()
+	while d and Game.starterLeft(d) > 0 do
+		task.wait(5)
+		d = Game.d()
+	end
+	if d and Game.neverBought(d) then
+		while Reveal.isOpen() or UI.getPanel("__offer") and (UI.getPanel("__offer") :: any).isOpen() do
+			task.wait(2)
+		end
+		offered.intro = os.clock()
+		introOffer(d)
 	end
 end)
 

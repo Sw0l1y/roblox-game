@@ -176,7 +176,11 @@ end)
 
 local function makeToy(p: Packed, side: string, at: CFrame): Toy
 	local unitKey, mut, team, userId = p[2] :: string, p[3] :: string, p[4] :: string, p[6] :: number
-	local m = Toys.build(unitKey, { team = team, mut = mut, ring = true, scale = SCALE })
+	-- the owner's army skin / tank paint (shop passes), read from their player attributes
+	local owner = userId ~= 0 and Players:GetPlayerByUserId(userId) or nil
+	local skin = owner and owner:GetAttribute("Skin") :: string? or nil
+	local paint = owner and owner:GetAttribute("TankPaint") :: string? or nil
+	local m = Toys.build(unitKey, { team = team, mut = mut, ring = true, scale = SCALE, skin = skin, tankPaint = paint })
 	m.Name = "Toy_" .. tostring(p[1])
 	m:PivotTo(at)
 	m.Parent = folder
@@ -698,6 +702,63 @@ local function onSwat(zoneId: string)
 	end
 end
 
+-- A paid strike landed (Zones.strike): knocked toys fly off, hurt ones flash a hit number.
+local function onStrike(zoneId: string, knocked: { number }, hurt: { number }, kind: string)
+	local zv = zones[zoneId]
+	if not zv then
+		return
+	end
+	local center = zv.def.pos
+	local fv: FightView? = nil
+	for _, f in pairs(fights) do
+		if f.zone == zoneId then
+			fv = f
+		end
+	end
+	local function find(id: number): Toy?
+		local t = zv.toys[id]
+		if t then
+			return t
+		end
+		return fv and fv.toys[id] or nil
+	end
+	for _, id in ipairs(knocked) do
+		local t = find(id)
+		if fv then
+			local side = fv.sideOf[id]
+			if side then
+				fv.alive[side][id] = nil
+			end
+		end
+		if t and t.alive then
+			fling(t, center)
+		end
+		zv.toys[id] = nil
+	end
+	local popups = 0
+	for _, id in ipairs(hurt) do
+		local t = find(id)
+		if t and t.alive and popups < 6 then
+			popups += 1
+			Fx.popup(t.model:GetPivot().Position + V(0, 7, 0), "💥", Config.C.orange, 0.8)
+			hop(t, 1)
+		end
+	end
+	local f = fv
+	if f then
+		refreshLabel(f)
+		task.delay(0.8, function()
+			if fights[f.key] == f then
+				addToFight(f, "att", {}, true)
+				addToFight(f, "def", {}, true)
+			end
+		end)
+	end
+	if near(center, 180) then
+		UI.shake(kind == "dog" and 1.2 or 0.7)
+	end
+end
+
 -- The block tower ----------------------------------------------------------------------------------------------------
 type Block = { part: BasePart, home: CFrame, model: Model }
 local blocks: { Block } = {}
@@ -708,7 +769,14 @@ local function buildTower()
 	tf.Name = "BlockTower"
 	tf.Parent = folder
 	local cols = { Config.C.red, Config.C.blue, Config.C.yellow, Config.C.lime, Config.C.purple, Config.C.orange }
-	local letters = { "T", "O", "Y", "A", "R", "M", "Y", "★", "1", "2", "3", "★", "G", "O", "!", "★", "♥", "★" }
+	-- the game's name (Config.Title) spelled on the blocks, then a little cheer
+	local letters: { string } = {}
+	for ch in string.gmatch(string.upper(Config.TitlePlain), "%w") do
+		table.insert(letters, ch)
+	end
+	for _, ch in ipairs({ "★", "1", "2", "3", "★", "G", "O", "!", "★", "♥", "★" }) do
+		table.insert(letters, ch)
+	end
 	local n = 0
 	for level = 0, 8 do
 		for k = 0, 1 do
@@ -902,7 +970,7 @@ function Arena.init()
 			onZone(id, snap)
 		end
 	end)
-	Net.event("Battle").OnClientEvent:Connect(function(kind, a, b, c)
+	Net.event("Battle").OnClientEvent:Connect(function(kind, a, b, c, ...)
 		if kind == "start" then
 			onStart(a :: string, b :: any)
 		elseif kind == "join" then
@@ -913,6 +981,9 @@ function Arena.init()
 			onEnd(a :: string, b :: string, c == true)
 		elseif kind == "swat" then
 			onSwat(a :: string)
+		elseif kind == "strike" and type(b) == "table" and type(c) == "table" then
+			local args = { ... }
+			onStrike(a :: string, b :: any, c :: any, tostring(args[1] or ""))
 		end
 	end)
 	Net.event("Topple").OnClientEvent:Connect(topple)

@@ -2,8 +2,10 @@
 -- hero-mesh slots and UI glyphs. Shared by the server and the client.
 local Config = {}
 
-Config.Name = "Toy Army ⚔️"
-Config.Title = "Deploy the Toy Army! ⚔️"
+-- The game's display name: every banner, sign and letter block reads it, so a rename is this one line.
+Config.Title = "Toy Army ⚔️"
+-- The title without emoji (signs, the letter-block tower): "Toy Army".
+Config.TitlePlain = (string.gsub(string.gsub(Config.Title, "[^%w%s!%-']", ""), "^%s*(.-)%s*$", "%1"))
 Config.Store = "ToyArmy_v1"
 
 local rgb = Color3.fromRGB
@@ -86,6 +88,8 @@ function Config.teamColor(team: string?): Color3
 end
 
 -- Units ------------------------------------------------------------------------------------------------
+-- class: the rock-paper-scissors counter every card shows (Config.Classes): soldiers shoot down helicopters,
+-- helicopters blast tanks, tanks crush soldiers.
 export type UnitDef = {
 	key: string,
 	name: string,
@@ -97,21 +101,62 @@ export type UnitDef = {
 	glyph: string,
 	desc: string,
 	scale: number,
+	class: string,
 }
 Config.Units = {
-	{ key = "Rifleman", name = "Rifleman", tier = "Common", atk = 10, hp = 30, merge = 0, special = "", glyph = "💂", desc = "Pew pew! The classic.", scale = 1 },
-	{ key = "Bazooka", name = "Bazooka", tier = "Uncommon", atk = 34, hp = 100, merge = 4, special = "splash", glyph = "💥", desc = "Blasts two toys at once.", scale = 1 },
-	{ key = "Medic", name = "Medic", tier = "Rare", atk = 105, hp = 330, merge = 12, special = "heal", glyph = "⛑️", desc = "Patches up the squad.", scale = 1.05 },
-	{ key = "Tank", name = "Tank", tier = "Epic", atk = 360, hp = 1150, merge = 30, special = "armor", glyph = "🛡️", desc = "Armored: takes 30% less.", scale = 1 },
-	{ key = "Heli", name = "Helicopter", tier = "Legendary", atk = 1250, hp = 3900, merge = 90, special = "air", glyph = "🚁", desc = "Strafes two targets.", scale = 1 },
-	{ key = "General", name = "Golden General", tier = "Mythic", atk = 4300, hp = 13500, merge = 240, special = "rally", glyph = "🎖️", desc = "Rally: squad +20% attack.", scale = 1.2 },
-	{ key = "Dino", name = "Robot Dino", tier = "Secret", atk = 15500, hp = 50000, merge = 600, special = "stomp", glyph = "🦖", desc = "STOMP: hits three toys.", scale = 1 },
+	{ key = "Rifleman", name = "Rifleman", tier = "Common", atk = 10, hp = 30, merge = 0, special = "", glyph = "💂", desc = "Pew pew! The classic.", scale = 1, class = "Foot" },
+	{ key = "Bazooka", name = "Bazooka", tier = "Uncommon", atk = 34, hp = 100, merge = 4, special = "splash", glyph = "💥", desc = "Blasts two toys at once.", scale = 1, class = "Foot" },
+	{ key = "Medic", name = "Medic", tier = "Rare", atk = 105, hp = 330, merge = 12, special = "heal", glyph = "⛑️", desc = "Patches up the squad.", scale = 1.05, class = "Foot" },
+	{ key = "Tank", name = "Tank", tier = "Epic", atk = 360, hp = 1150, merge = 30, special = "armor", glyph = "🛡️", desc = "Armored: takes 30% less.", scale = 1, class = "Armor" },
+	{ key = "Heli", name = "Helicopter", tier = "Legendary", atk = 1250, hp = 3900, merge = 90, special = "air", glyph = "🚁", desc = "Strafes two targets.", scale = 1, class = "Air" },
+	{ key = "General", name = "Golden General", tier = "Mythic", atk = 4300, hp = 13500, merge = 240, special = "rally", glyph = "🎖️", desc = "Rally: squad +20% attack.", scale = 1.2, class = "Foot" },
+	{ key = "Dino", name = "Robot Dino", tier = "Secret", atk = 15500, hp = 50000, merge = 600, special = "stomp", glyph = "🦖", desc = "STOMP: hits three toys.", scale = 1, class = "Armor" },
 } :: { UnitDef }
 Config.UnitByKey = {} :: { [string]: UnitDef }
 Config.UnitIndex = {} :: { [string]: number }
 for i, u in ipairs(Config.Units) do
 	Config.UnitByKey[u.key] = u
 	Config.UnitIndex[u.key] = i
+end
+
+-- Counters (rock-paper-scissors): a unit hits the class it beats harder and the class that beats it softer.
+export type ClassDef = { key: string, name: string, glyph: string, beats: string }
+Config.Classes = {
+	Foot = { key = "Foot", name = "Soldiers", glyph = "💂", beats = "Air" },
+	Air = { key = "Air", name = "Air", glyph = "🚁", beats = "Armor" },
+	Armor = { key = "Armor", name = "Armor", glyph = "🛡️", beats = "Foot" },
+} :: { [string]: ClassDef }
+Config.ClassOrder = { "Foot", "Air", "Armor" }
+Config.CounterStrong = 1.4
+Config.CounterWeak = 0.8
+
+function Config.classOf(unitKey: string): ClassDef
+	local u = Config.UnitByKey[unitKey]
+	return Config.Classes[u and u.class or "Foot"] or Config.Classes.Foot
+end
+
+-- Damage multiplier when a unit of class `a` hits one of class `b`.
+function Config.counter(a: string, b: string): number
+	local ca, cb = Config.Classes[a], Config.Classes[b]
+	if ca and ca.beats == b then
+		return Config.CounterStrong
+	elseif cb and cb.beats == a then
+		return Config.CounterWeak
+	end
+	return 1
+end
+
+-- "strong" / "weak" / "even" for the counter hint on the DEPLOY button.
+function Config.matchup(a: string, b: string): string
+	local m = Config.counter(a, b)
+	return m > 1 and "strong" or m < 1 and "weak" or "even"
+end
+
+-- "💂 beats 🚁" for a unit card.
+function Config.counterText(unitKey: string): string
+	local c = Config.classOf(unitKey)
+	local beats = Config.Classes[c.beats]
+	return c.glyph .. " beats " .. (beats and beats.glyph or "?")
 end
 
 function Config.nextUnit(key: string): UnitDef?
@@ -171,9 +216,11 @@ Config.RecoverTime = 10 -- knocked-over soldiers stand back up in the toy box af
 Config.DrillCooldown = 16
 Config.ShowPerSide = 8 -- models drawn per side; the rest show as "+N"
 
--- Bags (numeric odds are shown in the shop) ---------------------------------------------------------------------
+-- Bags (odds in % that add up to 100 are shown in BAGS before buying) -------------------------------------------
+-- fixed: what a bag bought with plastic gives instead of a roll to a player under Roblox's paid random item rule
+-- (kit Policy RandomBlocked; plastic is sold for Robux). Shown on the bag before they buy. Worth about one roll.
 export type Odds = { key: string, weight: number }
-export type BagDef = { key: string, name: string, price: number, rank: number, count: number, glyph: string, color: string, odds: { Odds } }
+export type BagDef = { key: string, name: string, price: number, rank: number, count: number, glyph: string, color: string, odds: { Odds }, fixed: { string } }
 Config.Bags = {
 	{
 		key = "Basic", name = "Bag of Soldiers", price = 60, rank = 1, count = 3, glyph = "🎒", color = "green",
@@ -181,6 +228,7 @@ Config.Bags = {
 			{ key = "Rifleman", weight = 8200 }, { key = "Bazooka", weight = 1500 }, { key = "Medic", weight = 260 },
 			{ key = "Tank", weight = 34 }, { key = "Heli", weight = 5 }, { key = "General", weight = 0.8 }, { key = "Dino", weight = 0.2 },
 		},
+		fixed = { "Rifleman", "Rifleman", "Bazooka" },
 	},
 	{
 		key = "Heavy", name = "Heavy Duffel", price = 750, rank = 3, count = 3, glyph = "👜", color = "blue",
@@ -188,6 +236,7 @@ Config.Bags = {
 			{ key = "Bazooka", weight = 6200 }, { key = "Medic", weight = 3000 }, { key = "Tank", weight = 680 },
 			{ key = "Heli", weight = 100 }, { key = "General", weight = 18 }, { key = "Dino", weight = 2 },
 		},
+		fixed = { "Bazooka", "Medic", "Medic" },
 	},
 	{
 		key = "Elite", name = "Elite Crate", price = 9000, rank = 6, count = 3, glyph = "🧰", color = "purple",
@@ -195,18 +244,65 @@ Config.Bags = {
 			{ key = "Medic", weight = 6000 }, { key = "Tank", weight = 3200 }, { key = "Heli", weight = 700 },
 			{ key = "General", weight = 92 }, { key = "Dino", weight = 8 },
 		},
+		fixed = { "Medic", "Tank", "Tank" },
 	},
 	{
 		key = "Mega", name = "Mega Crate", price = 110000, rank = 9, count = 3, glyph = "🎁", color = "gold",
 		odds = {
 			{ key = "Tank", weight = 6000 }, { key = "Heli", weight = 3300 }, { key = "General", weight = 650 }, { key = "Dino", weight = 50 },
 		},
+		fixed = { "Tank", "Heli", "Heli" },
 	},
 } :: { BagDef }
 Config.BagByKey = {} :: { [string]: BagDef }
 for _, b in ipairs(Config.Bags) do
 	Config.BagByKey[b.key] = b
 end
+
+-- "2 Riflemen + 1 Bazooka" for a bag's fixed reward.
+function Config.fixedText(bag: BagDef): string
+	local counts: { [string]: number } = {}
+	local order: { string } = {}
+	for _, k in ipairs(bag.fixed) do
+		if not counts[k] then
+			table.insert(order, k)
+		end
+		counts[k] = (counts[k] or 0) + 1
+	end
+	local parts = {}
+	for _, k in ipairs(order) do
+		local u = Config.UnitByKey[k]
+		local name = u and u.name or k
+		table.insert(parts, counts[k] .. " " .. name .. (counts[k] > 1 and "s" or ""))
+	end
+	return table.concat(parts, " + ")
+end
+
+-- Bag luck: the Lucky Bags upgrade, the player's own Lucky Bags boost and the server-wide luck boost.
+-- Returns the tier luck (kit Tiers.roll) and the mutation chance multiplier. Server rolls and the client's odds
+-- display both use this, so the shown % is always the rolled %.
+function Config.bagLuck(luckyLevel: number, boosted: boolean, serverMult: number): (number, number)
+	local own = boosted and 2 or 1
+	local luck = (1 + 0.06 * luckyLevel) * own * serverMult
+	local mutMult = (1 + 0.03 * luckyLevel) * own * serverMult
+	return luck, mutMult
+end
+
+-- Chance of each mutation result for one toy, as Tiers.percents entries (none, Gold, Glow, Rainbow) so the
+-- shown numbers add up to 100%. Rolled rarest first (Army.rollMut).
+function Config.mutOdds(mutMult: number): { { key: string, weight: number } }
+	local left = 1
+	local out: { { key: string, weight: number } } = {}
+	for i = #Config.Mutations, 1, -1 do
+		local m = Config.Mutations[i]
+		local p = math.min(1, m.chance * mutMult) * left
+		table.insert(out, 1, { key = m.key, weight = p })
+		left -= p
+	end
+	table.insert(out, 1, { key = "", weight = math.max(0, left) })
+	return out
+end
+
 Config.MaxTokens = 60 -- unopened free bags a player can hold
 
 -- Zones (flags on bottle caps). Outposts are each team's drill ground next to its toy boxes. -------------------
@@ -387,8 +483,25 @@ Config.Tut = {
 }
 Config.TutDone = #Config.Tut + 1
 
-export type ShopItem = { id: number, name: string, price: number, glyph: string, desc: string }
--- Money ladder (PROTOCOL §6). ids are 0 until created; the kit simulates purchases in Studio. -----------------------
+export type ShopItem = {
+	id: number,
+	name: string,
+	price: number,
+	glyph: string,
+	desc: string,
+	once: boolean?,
+	random: boolean?,
+	gift: string?,
+	boost: { [string]: any }?,
+	base: number?, -- plastic packs: plastic at rank 1 (times Config.rankReward)
+	intro: boolean?, -- kit Shop: only for players who never bought anything
+	window: number?, -- kit Shop: only in the first `window` seconds of the first session (from firstJoin)
+}
+-- Money ladder (DESIGN.md). ids are 0 until tools/launch.py creates them; the kit simulates purchases in Studio.
+-- Keep every item on ONE line: launch.py reads name / price / desc from it. random = true: a paid random item
+-- (kit Shop refuses it for players under the paid random item rule). gift = "passKey": a gift copy of a pass.
+-- boost = {...}: a server-wide 15-minute boost (kit Boosts) that Army.addPlastic / bag luck multiply by.
+-- intro = true / window = 600: the kit refuses the Recruit Deal after any purchase and the Starter Pack after its window.
 Config.Passes = {
 	x2plastic = { id = 0, name = "2x Plastic", price = 199, glyph = "🧱", desc = "Double plastic from zones, captures and the press. Forever." },
 	autodeploy = { id = 0, name = "Auto-Deploy", price = 149, glyph = "🤖", desc = "Your ready soldiers deploy themselves to the best target." },
@@ -396,22 +509,125 @@ Config.Passes = {
 	bigbox = { id = 0, name = "Mega Toy Box", price = 129, glyph = "📦", desc = "+20 soldier slots in your toy box." },
 	doublemold = { id = 0, name = "Double Mold Press", price = 179, glyph = "🔀", desc = "Run 2 merges at the same time." },
 	pro = { id = 0, name = "Pro Commander", price = 1499, glyph = "👑", desc = "+2 squad size, +25% army power, golden toy box, Rainbow Tank, PRO tag." },
+	skinPumpkin = { id = 0, name = "Pumpkin Army Skin", price = 299, glyph = "🎃", desc = "Halloween! Your whole army turns jack-o'-lantern orange. Equip it in SHOP > SKINS." },
+	skinCamo = { id = 0, name = "Camo Army Skin", price = 499, glyph = "🌿", desc = "Your whole army in jungle camo. Everyone in the war sees it." },
+	tankLava = { id = 0, name = "Lava Tank Paint", price = 699, glyph = "🔥", desc = "Every Tank you own gets red-hot lava paint." },
+	skinChrome = { id = 0, name = "Chrome Army Skin", price = 1299, glyph = "💿", desc = "Shiny mirror-chrome soldiers, tanks and helicopters." },
+	skinGold = { id = 0, name = "Gold Army Skin", price = 2499, glyph = "🏆", desc = "Your whole army in solid shining gold. The ultimate flex." },
 } :: { [string]: ShopItem }
 Config.PassOrder = { "x2plastic", "autodeploy", "bigbox", "doublemold", "vip", "pro" }
 Config.Products = {
+	intro = { id = 0, name = "Recruit Deal", price = 9, once = true, intro = true, glyph = "🎖️", desc = "First purchase only: a Tank and 1,000 plastic for 9 Robux!" },
 	skip = { id = 0, name = "Skip Merge Timers", price = 19, glyph = "⏩", desc = "Finish every merge in your mold press now." },
-	plasticS = { id = 0, name = "Handful of Plastic", price = 25, glyph = "🧱", desc = "1,500 plastic (grows with your rank)." },
-	luck = { id = 0, name = "Lucky Bags (15 min)", price = 39, glyph = "🍀", desc = "x2 bag luck and x2 mutation odds for 15 minutes." },
-	starter = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎒", desc = "1,000 plastic, a Medic and 3 Heavy Duffels." },
-	bags10 = { id = 0, name = "10 Bags of Soldiers", price = 69, glyph = "🎒", desc = "Ten free Bags of Soldiers." },
+	plasticS = { id = 0, name = "Handful of Plastic", price = 25, glyph = "🧱", desc = "1,500 plastic (grows with your rank).", base = 1500 },
+	rubber = { id = 0, name = "Rubber-Band Volley", price = 29, glyph = "🏹", desc = "Strike: 3 enemy toys at your target take a big hit." },
+	luck = { id = 0, name = "Lucky Bags (15 min)", price = 39, random = true, glyph = "🍀", desc = "x2 bag luck and x2 mutation odds for 15 minutes. See the boosted odds in BAGS." },
+	starter = { id = 0, name = "Starter Pack", price = 49, once = true, window = 600, glyph = "🎒", desc = "1,500 plastic, 2 Medics and a GOLD Tank. First 10 minutes only!" },
+	balloon = { id = 0, name = "Water-Balloon Bomb", price = 49, glyph = "🎈", desc = "Strike: soaks every enemy toy at your target." },
+	bags10 = { id = 0, name = "10 Bags of Soldiers", price = 69, random = true, glyph = "🎒", desc = "Ten free Bags of Soldiers. Odds in BAGS." },
 	callcat = { id = 0, name = "Call the Cat!", price = 79, glyph = "🐱", desc = "The cat comes NOW and swats the enemy army. Whole server sees it!" },
-	plasticM = { id = 0, name = "Bucket of Plastic", price = 99, glyph = "🧺", desc = "7,500 plastic (grows with your rank)." },
+	plasticM = { id = 0, name = "Bucket of Plastic", price = 99, glyph = "🧺", desc = "7,500 plastic (grows with your rank).", base = 7500 },
 	tanks = { id = 0, name = "Tank Bundle", price = 99, glyph = "🛡️", desc = "2 Tanks + 1 Gold Tank." },
+	rcplane = { id = 0, name = "RC-Plane Drop", price = 99, glyph = "✈️", desc = "Strike: an RC plane drops a paratrooper squad on your target." },
+	boost2 = { id = 0, name = "2x Plastic for Everyone", price = 99, glyph = "⚡", desc = "15 minutes of 2x plastic for the WHOLE server. Everyone sees your name!", boost = { kind = "plastic", mult = 2, minutes = 15, label = "PLASTIC" } },
+	rockets = { id = 0, name = "Toy-Rocket Barrage", price = 149, glyph = "🚀", desc = "Strike: six toy rockets blast every enemy toy at your target." },
+	luck2 = { id = 0, name = "2x Luck for Everyone", price = 149, random = true, glyph = "🍀", desc = "15 minutes of x2 bag luck for the WHOLE server.", boost = { kind = "luck", mult = 2, minutes = 15, label = "LUCK" } },
 	helis = { id = 0, name = "Heli Bundle", price = 249, glyph = "🚁", desc = "2 Helicopters + 1 Glow Helicopter." },
-	plasticL = { id = 0, name = "Truck of Plastic", price = 299, glyph = "🚚", desc = "30,000 plastic (grows with your rank)." },
+	boost4 = { id = 0, name = "4x Plastic for Everyone", price = 249, glyph = "⚡", desc = "Upgrade a running 2x to 4x plastic for the whole server!", boost = { kind = "plastic", mult = 4, minutes = 15, needs = 2, label = "PLASTIC" } },
+	flashlight = { id = 0, name = "Flashlight Beam", price = 279, glyph = "🔦", desc = "Strike: a giant flashlight knocks over EVERY enemy toy at your target." },
+	plasticL = { id = 0, name = "Truck of Plastic", price = 299, glyph = "🚚", desc = "30,000 plastic (grows with your rank).", base = 30000 },
+	luck4 = { id = 0, name = "4x Luck for Everyone", price = 349, random = true, glyph = "🌈", desc = "Upgrade a running 2x Luck to 4x bag luck for the whole server!", boost = { kind = "luck", mult = 4, minutes = 15, needs = 2, label = "LUCK" } },
+	dog = { id = 0, name = "The Dog", price = 449, glyph = "🐶", desc = "Strike: the dog runs through EVERY enemy zone knocking their toys over!" },
+	boost8 = { id = 0, name = "8x Plastic for Everyone", price = 499, glyph = "⚡", desc = "Upgrade a running 4x to 8x plastic for the whole server!", boost = { kind = "plastic", mult = 8, minutes = 15, needs = 4, label = "PLASTIC" } },
+	plasticXL = { id = 0, name = "Crate of Plastic", price = 499, glyph = "📦", desc = "55,000 plastic (grows with your rank).", base = 55000 },
+	boost16 = { id = 0, name = "16x Plastic Party", price = 999, glyph = "🎉", desc = "Upgrade a running 8x to 16x plastic for the whole server!", boost = { kind = "plastic", mult = 16, minutes = 15, needs = 8, label = "PLASTIC" } },
+	plasticXXL = { id = 0, name = "Warehouse of Plastic", price = 999, glyph = "🏭", desc = "120,000 plastic (grows with your rank).", base = 120000 },
+	plasticFirst = { id = 0, name = "Plastic Factory First-Time Deal", price = 1199, once = true, glyph = "🏷️", desc = "The Plastic Factory 40% off, once: 260,000 plastic (grows with your rank).", base = 260000 },
+	plasticTop = { id = 0, name = "Plastic Factory", price = 1999, glyph = "🏗️", desc = "260,000 plastic (grows with your rank).", base = 260000 },
+	gift_x2plastic = { id = 0, name = "Gift: 2x Plastic", price = 199, gift = "x2plastic", glyph = "🎁", desc = "Give the 2x Plastic pass to a player in this server." },
+	gift_autodeploy = { id = 0, name = "Gift: Auto-Deploy", price = 149, gift = "autodeploy", glyph = "🎁", desc = "Give the Auto-Deploy pass to a player in this server." },
+	gift_vip = { id = 0, name = "Gift: VIP General", price = 299, gift = "vip", glyph = "🎁", desc = "Give the VIP General pass to a player in this server." },
+	gift_bigbox = { id = 0, name = "Gift: Mega Toy Box", price = 129, gift = "bigbox", glyph = "🎁", desc = "Give the Mega Toy Box pass to a player in this server." },
+	gift_doublemold = { id = 0, name = "Gift: Double Mold Press", price = 179, gift = "doublemold", glyph = "🎁", desc = "Give the Double Mold Press pass to a player in this server." },
+	gift_pro = { id = 0, name = "Gift: Pro Commander", price = 1499, gift = "pro", glyph = "🎁", desc = "Give the Pro Commander pass to a player in this server." },
+	gift_skinPumpkin = { id = 0, name = "Gift: Pumpkin Army Skin", price = 299, gift = "skinPumpkin", glyph = "🎁", desc = "Give the Pumpkin Army Skin to a player in this server." },
+	gift_skinCamo = { id = 0, name = "Gift: Camo Army Skin", price = 499, gift = "skinCamo", glyph = "🎁", desc = "Give the Camo Army Skin to a player in this server." },
+	gift_tankLava = { id = 0, name = "Gift: Lava Tank Paint", price = 699, gift = "tankLava", glyph = "🎁", desc = "Give the Lava Tank Paint to a player in this server." },
+	gift_skinChrome = { id = 0, name = "Gift: Chrome Army Skin", price = 1299, gift = "skinChrome", glyph = "🎁", desc = "Give the Chrome Army Skin to a player in this server." },
+	gift_skinGold = { id = 0, name = "Gift: Gold Army Skin", price = 2499, gift = "skinGold", glyph = "🎁", desc = "Give the Gold Army Skin to a player in this server." },
 } :: { [string]: ShopItem }
-Config.ProductOrder = { "skip", "luck", "callcat", "starter", "bags10", "tanks", "helis", "plasticS", "plasticM", "plasticL" }
+-- Shop pages (gift products have no card of their own: each pass card has a 🎁 GIFT button).
+Config.BoostOrder = { "intro", "starter", "skip", "luck", "bags10", "tanks", "helis", "boost2", "boost4", "boost8", "boost16", "luck2", "luck4" }
+Config.PlasticOrder = { "plasticFirst", "plasticS", "plasticM", "plasticL", "plasticXL", "plasticXXL", "plasticTop" }
 Config.LuckBoostSeconds = 15 * 60
+Config.StarterWindow = Config.Products.starter.window or 600 -- Starter Pack: first 10 minutes of the first session (kit Shop enforces `window`)
+Config.NoOffersBefore = 120 -- no offer pop-up in a session's first 2 minutes
+
+-- The gift product for each pass.
+Config.GiftOf = {} :: { [string]: string }
+for key, item in pairs(Config.Products) do
+	if item.gift then
+		Config.GiftOf[item.gift] = key
+	end
+end
+
+-- Army skins (passes; equip one army skin and the tank paint in SHOP > SKINS). Mutations still show over a skin.
+-- kind "army" paints every toy but the Golden General and the Robot Dino; "tank" paints Tanks only.
+export type SkinDef = { key: string, kind: string, main: Color3, dark: Color3, alt: Color3?, material: Enum.Material?, reflect: number? }
+Config.Skins = {
+	skinPumpkin = { key = "skinPumpkin", kind = "army", main = rgb(255, 138, 30), dark = rgb(44, 36, 34) },
+	skinCamo = { key = "skinCamo", kind = "army", main = rgb(96, 116, 56), dark = rgb(92, 70, 46), alt = rgb(60, 78, 38), material = Enum.Material.Fabric },
+	tankLava = { key = "tankLava", kind = "tank", main = rgb(236, 72, 28), dark = rgb(70, 22, 14), alt = rgb(255, 170, 40) },
+	skinChrome = { key = "skinChrome", kind = "army", main = rgb(214, 222, 234), dark = rgb(132, 142, 160), reflect = 0.45 },
+	skinGold = { key = "skinGold", kind = "army", main = rgb(255, 212, 80), dark = rgb(220, 150, 24), material = Enum.Material.Foil, reflect = 0.3 },
+} :: { [string]: SkinDef }
+Config.SkinOrder = { "skinPumpkin", "skinCamo", "tankLava", "skinChrome", "skinGold" }
+
+-- Paid strikes (dev products, STRIKES panel and the CAT button): aimed at a zone your team does not hold.
+-- hits = enemy toys hit (0 = all of them), dmg = share of each one's health knocked off (1 = knocked over).
+-- squad = paratroopers dropped for your team (share of your best squad's power). dog = every enemy zone.
+export type StrikeDef = { key: string, line: string, hits: number, dmg: number, squad: number?, all: boolean?, delay: number }
+Config.Strikes = {
+	rubber = { key = "rubber", line = "3 enemy toys take a big hit", hits = 3, dmg = 0.75, delay = 1.2 },
+	balloon = { key = "balloon", line = "Soaks EVERY enemy toy there", hits = 0, dmg = 0.4, delay = 1.6 },
+	callcat = { key = "callcat", line = "Swats the 2 strongest enemy zones", hits = 0, dmg = 1, delay = 0 },
+	rcplane = { key = "rcplane", line = "Drops a paratrooper squad for your team", hits = 2, dmg = 0.5, squad = 0.9, delay = 2.4 },
+	rockets = { key = "rockets", line = "6 rockets blast EVERY enemy toy there", hits = 0, dmg = 0.8, delay = 2.2 },
+	flashlight = { key = "flashlight", line = "Knocks over EVERY enemy toy there", hits = 0, dmg = 1, delay = 2.0 },
+	dog = { key = "dog", line = "Runs through EVERY enemy zone", hits = 0, dmg = 1, all = true, delay = 2.0 },
+} :: { [string]: StrikeDef }
+Config.StrikeOrder = { "rubber", "balloon", "callcat", "rcplane", "rockets", "flashlight", "dog" }
+
+---------------------------------------------------------------------------------------------------------------
+-- Launch features (kit Live): codes, group gift, playtime gifts, daily quests, badges, invites, friend bonus.
+-- Rewards (Main grants them): plastic (grows with rank, like the plastic packs), bags = { BagKey = n } free bags,
+-- luckMinutes (the player's own Lucky Bags boost). Sized to about one session of progress.
+---------------------------------------------------------------------------------------------------------------
+Config.Live = {
+	codes = { LAUNCH = { reward = { plastic = 1500, bags = { Heavy = 2 }, text = "1,500 plastic + 2 Heavy Duffels" } } },
+	group = { id = 0, reward = { plastic = 2500, bags = { Elite = 1 }, text = "2,500 plastic + an Elite Crate" } },
+	playtime = {
+		{ minutes = 5, reward = { plastic = 300, bags = { Basic = 2 }, text = "300 🧱 + 2 Bags" } },
+		{ minutes = 10, reward = { bags = { Heavy = 2 }, text = "2 Heavy Duffels" } },
+		{ minutes = 30, reward = { plastic = 1000, luckMinutes = 10, text = "10 min Luck + 1,000 🧱" } },
+		{ minutes = 60, reward = { plastic = 3000, bags = { Elite = 1 }, text = "Elite Crate + 3,000 🧱" } },
+	},
+	quests = {
+		{ key = "deploy", text = "Deploy 8 squads", goal = 8, reward = { plastic = 500, text = "500 🧱" } },
+		{ key = "capture", text = "Capture 3 zones", goal = 3, reward = { plastic = 400, bags = { Heavy = 1 }, text = "Heavy Duffel + 400 🧱" } },
+		{ key = "merge", text = "Merge 5 times", goal = 5, reward = { bags = { Basic = 3 }, text = "3 Bags of Soldiers" } },
+		{ key = "bags", text = "Open 6 bags", goal = 6, reward = { plastic = 600, text = "600 🧱" } },
+		{ key = "round", text = "Win a war round", goal = 1, reward = { bags = { Heavy = 1 }, text = "Heavy Duffel" } },
+		{ key = "lost", text = "Grab 2 Lost Soldiers bags", goal = 2, reward = { luckMinutes = 5, text = "5 min Luck" } },
+		{ key = "upgrade", text = "Buy 3 upgrades", goal = 3, reward = { plastic = 800, text = "800 🧱" } },
+		{ key = "friend", text = "Play a round with a friend", goal = 1, reward = { plastic = 1500, bags = { Heavy = 1 }, text = "1,500 🧱 + Heavy Duffel" } },
+	},
+	badges = { Welcome = 0, FirstCapture = 0, FirstTank = 0, RoundWin = 0, Lieutenant = 0, Wins10 = 0, SecretDino = 0 },
+	invite = { reward = { plastic = 2000, bags = { Heavy = 2 }, text = "2,000 plastic + 2 Heavy Duffels" } },
+	friendBonus = 0.1,
+}
+Config.FirstGiftAt = 45 -- seconds: a new player's first free gift (later ones every Config.GiftEvery)
+Config.Hourly = { catTargets = 4, pickups = 8, boost = 2, boostMinutes = 10 }
 
 export type MeshInfo = { mesh: number, texture: number, size: Vector3, prompt: string }
 -- Hero mesh slots: generate in Studio (PROTOCOL §4.3), fill the ids in. 0 = use the primitive build. ---------------
@@ -436,7 +652,11 @@ Config.Icons = {
 	index = "📖",
 	base = "📦",
 	shop = "🛒",
-	daily = "🎁",
+	daily = "📅",
+	free = "🎁",
+	strike = "💥",
+	deal = "🏷️",
+	starter = "🎒",
 	gift = "⏰",
 	supply = "🪂",
 	luck = "🍀",
@@ -481,6 +701,10 @@ Config.Defaults = {
 	vipGeneral = false,
 	proBundle = false,
 	starterPack = false,
+	skin = "", -- equipped army skin (a Config.Skins pass key) or ""
+	tankPaint = "",
+	skinsSeen = {}, -- skins already auto-equipped once (a new skin goes on when you buy it)
+	strikeCredits = {}, -- strikes bought while there was nothing to hit: used later for free
 }
 
 return Config

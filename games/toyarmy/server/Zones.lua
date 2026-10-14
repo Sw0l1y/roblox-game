@@ -600,8 +600,9 @@ function Zones.recall(player: Player, zoneId: string): boolean
 	return n > 0
 end
 
--- The AI commander deploys virtual units the same way.
-function Zones.deployAI(team: string, zoneId: string, squad: { Unit }): boolean
+-- The AI commander deploys virtual units the same way (and the RC-Plane Drop strike its paratroopers: `by` is the
+-- buyer, who joins the fight's rewards as if the squad were theirs).
+function Zones.deployAI(team: string, zoneId: string, squad: { Unit }, by: Player?): boolean
 	local zs = states[zoneId]
 	if not zs or zs.def.outpost or #squad == 0 then
 		return false
@@ -614,6 +615,9 @@ function Zones.deployAI(team: string, zoneId: string, squad: { Unit }): boolean
 		end
 		for _, u in ipairs(squad) do
 			table.insert(list, u)
+		end
+		if by then
+			f.participants[by] = f.participants[by] or (list == f.att and "att" or "def")
 		end
 		send(f, "join", f.key, list == f.att and "att" or "def", Battle.pack(squad))
 		return true
@@ -630,8 +634,79 @@ function Zones.deployAI(team: string, zoneId: string, squad: { Unit }): boolean
 		Zones.publish(zs)
 		return true
 	end
-	startFight(zs, team, squad, nil)
+	startFight(zs, team, squad, by)
 	return true
+end
+
+-- Toys at a zone that are not `team`'s (enemy garrison, wind-up toys, or the other side of a fight).
+function Zones.enemiesAt(zoneId: string, team: string): { Unit }
+	local zs = states[zoneId]
+	local out: { Unit } = {}
+	if not zs or zs.def.outpost then
+		return out
+	end
+	local f = zs.fight
+	local lists: { { Unit } } = { zs.garrison }
+	if f then
+		lists = { f.att, f.def }
+	end
+	for _, list in ipairs(lists) do
+		for _, u in ipairs(list) do
+			if u.hp > 0 and not u.gone and u.team ~= team then
+				table.insert(out, u)
+			end
+		end
+	end
+	return out
+end
+
+-- A paid strike: `hits` random enemy toys at the zone (0 = all of them) lose `dmg` of their health (1 = knocked
+-- over). Mid-fight the fight just carries on with the survivors; knocked-over player toys go home to stand back up.
+-- A garrison knocked flat leaves the flag neutral (like a cat swat). Returns how many toys were knocked over.
+function Zones.strike(zoneId: string, team: string, hits: number, dmg: number, kind: string): number
+	local zs = states[zoneId]
+	if not zs or zs.def.outpost then
+		return 0
+	end
+	local targets = Zones.enemiesAt(zoneId, team)
+	for i = #targets, 2, -1 do
+		local j = rng:NextInteger(1, i)
+		targets[i], targets[j] = targets[j], targets[i]
+	end
+	if hits > 0 then
+		for i = #targets, hits + 1, -1 do
+			table.remove(targets, i)
+		end
+	end
+	local knocked: { number } = {}
+	local hurt: { number } = {}
+	for _, u in ipairs(targets) do
+		u.hp -= u.maxHp * dmg
+		if u.hp <= 0.5 then
+			u.hp = 0
+			table.insert(knocked, u.id)
+		else
+			table.insert(hurt, u.id)
+		end
+	end
+	if not zs.fight then
+		local kept: { Unit } = {}
+		for _, u in ipairs(zs.garrison) do
+			if u.hp > 0 then
+				table.insert(kept, u)
+			elseif u.kind == "P" and u.owner and not u.gone then
+				Army.release(u.owner, u.stack, true)
+			end
+		end
+		zs.garrison = kept
+		if #kept == 0 then
+			zs.owner = nil
+			zs.neutralAt = os.clock()
+		end
+	end
+	battleRemote:FireAllClients("strike", zoneId, knocked, hurt, kind)
+	Zones.publish(zs)
+	return #knocked
 end
 
 -- The cat swats a zone: every toy there flies, the flag goes neutral. Returns how many toys went flying.

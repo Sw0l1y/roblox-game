@@ -3,8 +3,9 @@
 -- ladder, meshes and icons. Shared by server and clients.
 local Config = {}
 
-Config.NAME = "Marble Mayhem"
-Config.TITLE = "Race the Marbles! 🔮"
+-- The game's display name: every in-game banner, pill, sign and billboard reads it, so a rename is one line.
+Config.Title = "Marble Mayhem"
+Config.Tagline = "Race the Marbles!"
 Config.STORE = "Marbles_v1"
 
 local hex = Color3.fromHex
@@ -89,7 +90,23 @@ Config.Tracks = {
 	main = { kind = "main", x = 0, y = 65, z = 14, yaw = 0, endY = 4, length = 1150, width = 16, box = { -235, 235, 12, 880 } },
 	gp = { kind = "gp", x = 0, y = 65, z = 14, yaw = 0, endY = 4, length = 1340, width = 16, box = { -235, 235, 12, 880 } },
 	practice = { kind = "practice", x = -30, y = 65, z = -24, yaw = -math.pi / 2, endY = 4, length = 620, width = 16, box = { -480, -52, -255, 0 } },
+	-- round modifier "Chaos Track": the same courses packed with jumps, splits and boost pads
+	chaos = { kind = "main", mod = "chaos", x = 0, y = 65, z = 14, yaw = 0, endY = 4, length = 1150, width = 16, box = { -235, 235, 12, 880 } },
+	gpchaos = { kind = "gp", mod = "chaos", x = 0, y = 65, z = 14, yaw = 0, endY = 4, length = 1340, width = 16, box = { -235, 235, 12, 880 } },
 }
+
+-- Round modifiers any player can buy for the next race (Chaos Track, Ice Track, Custom Round).
+-- ice: slippery physics (less turn slowdown, wide drifts, slow to change speed, a little faster) on the Ice
+-- theme. bigair: every marble flies off the jumps. chaos: the chaos track plus bigger random bumps.
+Config.RoundMods = {
+	chaos = { name = "CHAOS TRACK", glyph = "🌪️" },
+	ice = { name = "ICE TRACK", glyph = "❄️" },
+	bigair = { name = "BIG AIR", glyph = "🚀" },
+}
+Config.Ice = { turnMult = 0.35, driftMult = 2, accelMult = 0.6, speedMult = 1.1 }
+Config.BigAirPeak = 5
+Config.CustomThemes = { "Classic", "Candy", "Volcano", "Ice", "Space", "Haunted" }
+Config.CustomModes = { "none", "chaos", "ice", "bigair" }
 
 -- Race timing and physics-lite tuning --------------------------------------------------------------------
 Config.Race = {
@@ -152,28 +169,33 @@ function Config.xpNeed(level: number): number
 end
 Config.TuneUp = { cost = 250, xp = 120 }
 
--- Mutations: coin multipliers and pack odds (per pull).
-export type Mutation = { key: string, name: string, mult: number, chance: number, color: Color3, glyph: string }
+-- Mutations: coin multipliers. Every pack pull also rolls PackMutations (percent weights, luck shifts them
+-- toward the rarer end with the same maths as the tier roll, see kit Tiers.weights).
+export type Mutation = { key: string, name: string, mult: number, color: Color3, glyph: string }
 Config.Mutations = {
-	{ key = "gold", name = "Gold", mult = 1.5, chance = 0.04, color = hex("#FFD23F"), glyph = "🟡" },
-	{ key = "rainbow", name = "Rainbow", mult = 2, chance = 0.01, color = hex("#FF7AC8"), glyph = "🌈" },
-	{ key = "cosmic", name = "Cosmic", mult = 3, chance = 0.0025, color = hex("#8C52FF"), glyph = "🌌" },
+	{ key = "gold", name = "Gold", mult = 1.5, color = hex("#FFD23F"), glyph = "🟡" },
+	{ key = "rainbow", name = "Rainbow", mult = 2, color = hex("#FF7AC8"), glyph = "🌈" },
+	{ key = "cosmic", name = "Cosmic", mult = 3, color = hex("#8C52FF"), glyph = "🌌" },
 } :: { Mutation }
+Config.PackMutations = { { key = "none", weight = 94.75 }, { key = "gold", weight = 4 }, { key = "rainbow", weight = 1 }, { key = "cosmic", weight = 0.25 } }
 Config.MutationByKey = {} :: { [string]: Mutation }
 for _, m in ipairs(Config.Mutations) do
 	Config.MutationByKey[m.key] = m
 end
 
--- Shine Machine: pay coins to try a mutation on a marble you own.
+-- Shine Machine: pay coins to try a mutation on a marble you own (luck shifts the odds like packs).
+-- Players under Roblox's paid random item restriction get a fixed GOLD shine for fixedCost instead.
 Config.Shine = {
 	cost = 2000,
 	odds = { { key = "none", weight = 84.4 }, { key = "gold", weight = 12 }, { key = "rainbow", weight = 3 }, { key = "cosmic", weight = 0.6 } },
+	fixedCost = 15000,
+	fixedMut = "gold",
 }
 
 -- Marbles --------------------------------------------------------------------------------------------------
 -- Patterns: cateye (vanes in clear glass), swirl (core + crossing bands), stripes, dots, candy (meridian
 -- bands), eye, planet (core + ring), galaxy (dark core + neon specks), flame (glowing core + embers),
--- gem (glowing faceted core), rainbow.
+-- gem (glowing faceted core), rainbow, pumpkin (ribbed orange core with a glowing jack-o'-lantern face).
 export type MarbleDef = {
 	id: string,
 	name: string,
@@ -186,7 +208,7 @@ export type MarbleDef = {
 	grip: number,
 	wt: number,
 	texture: number, -- AI skin slot (generate_texture on the sphere mesh); 0 = primitive look
-	exclusive: string?, -- "diamond" / "gp" marbles never drop from packs
+	exclusive: string?, -- "diamond" / "gp" / "halloween" marbles never drop from packs
 	order: number,
 }
 
@@ -267,6 +289,7 @@ local rows = {
 	{ "gp_ice", "Glacier GP", "Legendary", "cateye", "#BDEBFF", "#FFFFFF", "#5BB8FF", 6, 8, 4, "gp" },
 	{ "gp_space", "Starlight GP", "Legendary", "galaxy", "#1F1A4A", "#3BE8FF", "#FFFFFF", 7, 6, 5, "gp" },
 	{ "gp_haunted", "Spooky GP", "Legendary", "eye", "#B6FF5A", "#2B2440", "#FF8A1F", 7, 6, 5, "gp" },
+	{ "pumpkin", "Jack-o'-Marble", "Legendary", "pumpkin", "#FF8A1F", "#C2410C", "#FFE53B", 6, 6, 5, "halloween" },
 }
 
 Config.Marbles = {} :: { MarbleDef }
@@ -302,11 +325,14 @@ end
 Config.STARTER = "blue"
 Config.LOANERS = { "red", "mintdrop", "sunny", "ocean", "tango", "grape" }
 
--- Packs: numeric tier odds (percent). Within a tier every pack marble is equally likely.
-export type Pack = { key: string, name: string, price: number, glyph: string, color: string, odds: { { key: string, weight: number } }, desc: string }
+-- Packs: tier odds as percent weights (shown as exact % that add up to 100, live with luck). Within a tier
+-- every pack marble is equally likely. `fixed`: the tier of the fixed marble a player under the paid random
+-- item restriction buys instead of a roll (coins are sold for Robux, so a coin pack is a paid random item).
+export type Pack = { key: string, name: string, price: number, glyph: string, color: string, odds: { { key: string, weight: number } }, desc: string, fixed: string? }
 Config.Packs = {
 	{
 		key = "basic",
+		fixed = "Common",
 		name = "Basic Pack",
 		price = 150,
 		glyph = "🎁",
@@ -316,6 +342,7 @@ Config.Packs = {
 	},
 	{
 		key = "shiny",
+		fixed = "Uncommon",
 		name = "Shiny Pack",
 		price = 750,
 		glyph = "💎",
@@ -325,6 +352,7 @@ Config.Packs = {
 	},
 	{
 		key = "mega",
+		fixed = "Rare",
 		name = "Mega Pack",
 		price = 3000,
 		glyph = "🌟",
@@ -334,6 +362,7 @@ Config.Packs = {
 	},
 	{
 		key = "galaxy",
+		fixed = "Epic",
 		name = "Galaxy Pack",
 		price = 12000,
 		glyph = "🌌",
@@ -355,8 +384,31 @@ Config.PackByKey = {} :: { [string]: Pack }
 for _, p in ipairs(Config.Packs) do
 	Config.PackByKey[p.key] = p
 end
-Config.LuckBoostMult = 2 -- luck while a Luck Boost runs (also doubles mutation chances)
+Config.LuckBoostMult = 2 -- luck while a personal Luck Boost runs (packs, pack mutations and shines)
 Config.LuckyCharmMult = 1.25 -- permanent pass
+-- Server luck boosts (kit Boosts kind "luck") multiply on top of both.
+
+-- One marble of `tier` picked per UTC day (the same on server and every client). salt separates slots.
+function Config.dayPick(tier: string, day: number, salt: number): string
+	local list = Config.MarblesByTier[tier] or Config.MarblesByTier.Common
+	return list[Random.new(day * 131 + salt):NextInteger(1, #list)].id
+end
+
+-- Fixed marble a restricted player gets from a coin pack today.
+function Config.fixedMarble(packKey: string, day: number): string
+	local pack = Config.PackByKey[packKey]
+	return Config.dayPick(pack and pack.fixed or "Common", day, #packKey * 17)
+end
+
+-- Rotating daily deals: a marble of each tier for Robux, new every UTC day (fixed, shown before buying).
+Config.Deals = {
+	{ product = "DealRare", tier = "Rare", salt = 1 },
+	{ product = "DealEpic", tier = "Epic", salt = 2 },
+	{ product = "DealLegendary", tier = "Legendary", salt = 3 },
+	{ product = "DealMythic", tier = "Mythic", salt = 4 },
+}
+Config.StarterMarble = "comet" -- the Epic in the Starter Pack (fixed, so every player may buy it)
+Config.StarterWindow = 600 -- seconds after a player's first join that the Starter Pack is on sale (= its `window`)
 
 -- Power-up cards: pick one per race (two with the pass).
 export type Card = { key: string, name: string, glyph: string, color: string, desc: string, good: string }
@@ -421,11 +473,25 @@ Config.GrandPrix = {
 		{ key = "Haunted", name = "Haunted Halls", marble = "gp_haunted", tint = hex("#ECE0FF"), music = 1836942830 },
 	},
 	runnerUpChance = 0.3,
+	-- Hourly Grand Prix (kit Live.onHour, at :00 UTC): 3x coins and points, the top 3 all take the GP marble,
+	-- and a 10-minute 2x coins boost for the whole server.
+	hourlyMult = 3,
+	hourlyBoost = { mult = 2, minutes = 10 },
 }
+-- Halloween (UTC month/day window): Haunted Halls is the Grand Prix theme and the 🎃 bundle is on sale.
+Config.Halloween = { from = 1001, to = 1102 }
+function Config.isHalloween(now: number): boolean
+	local t = os.date("!*t", now)
+	local md = t.month * 100 + t.day
+	return md >= Config.Halloween.from and md <= Config.Halloween.to
+end
 -- Week index (Saturday rollover) picks the theme.
 function Config.gpTheme(now: number): { [string]: any }
-	local week = math.floor((now - 2 * 86400) / 604800)
 	local list = Config.GrandPrix.themes
+	if Config.isHalloween(now) then
+		return list[#list]
+	end
+	local week = math.floor((now - 2 * 86400) / 604800)
 	return list[(week % #list) + 1]
 end
 
@@ -435,35 +501,90 @@ Config.Trails = {
 	{ key = "flame", name = "Flame Trail", colors = { hex("#FFD23F"), hex("#FF3D00") }, product = "TrailFlame" },
 	{ key = "rainbow", name = "Rainbow Trail", colors = { hex("#FF4040"), hex("#FFD23F"), hex("#3BFF8A"), hex("#3B8BFF"), hex("#B04DFF") }, product = "TrailRainbow" },
 	{ key = "gold", name = "VIP Gold Trail", colors = { hex("#FFF2A8"), hex("#FFB800") }, pass = "VIP" },
+	{ key = "spooky", name = "Spooky Trail", colors = { hex("#FF8A1F"), hex("#8C52FF"), hex("#B6FF5A") }, product = "PumpkinMarble" },
 }
 Config.TrailByKey = {} :: { [string]: { [string]: any } }
 for _, t in ipairs(Config.Trails) do
 	Config.TrailByKey[t.key] = t
 end
 
--- Money ladder (PROTOCOL §6). ids are 0 until created; the kit simulates purchases in Studio.
+-- Money ladder. ids are 0 until tools/launch.py creates them; the kit simulates purchases in Studio.
+-- Keep every item on ONE line (tools/launch.py parses these lines). Product names must be unique.
+-- random = true: a paid random item (or it changes a random roll): kit Shop refuses it for players under
+-- Roblox's paid random item restriction, and the client hides it for them.
 Config.Passes = {
 	CoinsX2 = { id = 0, name = "2x Coins", price = 249, glyph = "💰", desc = "Double coins from every race, forever." },
 	PowerSlot = { id = 0, name = "Extra Power-Up Slot", price = 149, glyph = "🃏", desc = "Pick TWO power-up cards every race." },
 	VIP = { id = 0, name = "VIP", price = 399, glyph = "👑", desc = "Gold trail, +10% coins and a VIP tag." },
 	TripleOpen = { id = 0, name = "Triple Open", price = 199, glyph = "🎰", desc = "Open 3 packs at once." },
-	LuckyCharm = { id = 0, name = "Lucky Charm", price = 299, glyph = "🍀", desc = "+25% pack luck, forever." },
+	LuckyCharm = { id = 0, name = "Lucky Charm", price = 299, glyph = "🍀", random = true, desc = "+25% luck on packs and shines, forever." },
 }
 Config.Products = {
-	StarterPack = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🎒", desc = "2,000 coins + a Mega Pack. Once per player." },
+	IntroEpic = { id = 0, name = "Random Epic Marble", price = 9, once = true, intro = true, random = true, glyph = "🎲", desc = "First-buy deal: one random Epic marble. Once per player." },
+	IntroEpicFixed = { id = 0, name = "First-Buy Epic Marble", price = 9, once = true, intro = true, glyph = "🎁", desc = "First-buy deal: today's Epic marble. Once per player." },
+	StarterPack = { id = 0, name = "Starter Pack", price = 49, once = true, window = 600, glyph = "🎒", desc = "3,000 coins + Comet (Epic marble) + Sparkle Trail. Once!" },
 	CoinsS = { id = 0, name = "1,500 Coins", price = 29, glyph = "💰", desc = "A pocket of coins." },
 	CoinsM = { id = 0, name = "8,000 Coins", price = 99, glyph = "💰", desc = "A bag of coins." },
 	CoinsL = { id = 0, name = "50,000 Coins", price = 449, glyph = "🏦", desc = "A vault of coins." },
-	LuckBoost = { id = 0, name = "Luck Boost (15 min)", price = 39, glyph = "🍀", desc = "2x pack luck and mutation chance for 15 minutes." },
-	GalaxyPack = { id = 0, name = "Galaxy Pack", price = 99, glyph = "🌌", desc = "One Galaxy Pack, opened right away." },
+	CoinsXL = { id = 0, name = "125,000 Coins", price = 999, glyph = "🏦", desc = "A mountain of coins." },
+	CoinsXXL = { id = 0, name = "300,000 Coins", price = 1999, glyph = "👑", desc = "A whole bank of coins. Best value!" },
+	LuckBoost = { id = 0, name = "Luck Boost (15 min)", price = 39, random = true, glyph = "🍀", desc = "2x luck on packs, mutations and shines for 15 minutes." },
+	GalaxyPack = { id = 0, name = "Galaxy Pack", price = 99, random = true, glyph = "🌌", desc = "One Galaxy Pack, opened right away." },
+	DealRare = { id = 0, name = "Daily Rare Marble", price = 49, glyph = "🔵", desc = "Today's Rare marble. New deal every day." },
+	DealEpic = { id = 0, name = "Daily Epic Marble", price = 149, glyph = "🟣", desc = "Today's Epic marble. New deal every day." },
+	DealLegendary = { id = 0, name = "Daily Legendary Marble", price = 599, glyph = "🟡", desc = "Today's Legendary marble. New deal every day." },
+	DealMythic = { id = 0, name = "Daily Mythic Marble", price = 799, glyph = "🔴", desc = "Today's Mythic marble. New deal every day." },
+	ServerCoins2 = { id = 0, name = "2x Coins for Everyone", price = 99, glyph = "⚡", boost = { kind = "coins", mult = 2, minutes = 15, label = "COINS" }, desc = "2x race coins for the whole server for 15 minutes." },
+	ServerCoins4 = { id = 0, name = "4x Coins for Everyone", price = 249, glyph = "⚡", boost = { kind = "coins", mult = 4, minutes = 15, needs = 2, label = "COINS" }, desc = "4x race coins for the whole server. Unlocks while 2x runs." },
+	ServerCoins8 = { id = 0, name = "8x Coins for Everyone", price = 499, glyph = "⚡", boost = { kind = "coins", mult = 8, minutes = 15, needs = 4, label = "COINS" }, desc = "8x race coins for the whole server. Unlocks while 4x runs." },
+	ServerLuck2 = { id = 0, name = "2x Luck for Everyone", price = 149, random = true, glyph = "🍀", boost = { kind = "luck", mult = 2, minutes = 15, label = "LUCK" }, desc = "2x pack and shine luck for the whole server for 15 minutes." },
+	ServerLuck4 = { id = 0, name = "4x Luck for Everyone", price = 349, random = true, glyph = "🍀", boost = { kind = "luck", mult = 4, minutes = 15, needs = 2, label = "LUCK" }, desc = "4x luck for the whole server. Unlocks while 2x luck runs." },
+	StartGP = { id = 0, name = "Start a Grand Prix!", price = 99, glyph = "🏁", desc = "The next race is a Grand Prix for the whole server." },
+	ChaosTrack = { id = 0, name = "Chaos Track", price = 25, glyph = "🌪️", desc = "The next race is a CHAOS TRACK: jumps, splits and bumps everywhere!" },
+	IceTrack = { id = 0, name = "Ice Track", price = 55, glyph = "❄️", desc = "The next race is on slippery ICE. Marbles slide and drift!" },
+	CustomRound = { id = 0, name = "Custom Round", price = 99, glyph = "🎨", desc = "You pick the next race's theme and mode for the whole server." },
+	KeepStreak = { id = 0, name = "Keep My Streak", price = 19, glyph = "🔥", desc = "Missed a day? Keep your daily login streak." },
 	TrailSparkle = { id = 0, name = "Sparkle Trail", price = 15, glyph = "✨", desc = "A sparkly trail behind your marble." },
 	TrailFlame = { id = 0, name = "Flame Trail", price = 35, glyph = "🔥", desc = "Leave fire on the track." },
 	TrailRainbow = { id = 0, name = "Rainbow Trail", price = 49, glyph = "🌈", desc = "Every colour, every race." },
-	StartGP = { id = 0, name = "Start a Grand Prix!", price = 99, glyph = "🏁", desc = "The next race is a Grand Prix for the whole server." },
+	PumpkinMarble = { id = 0, name = "Jack-o'-Marble Bundle", price = 349, once = true, glyph = "🎃", desc = "Halloween only: the glowing Jack-o'-Marble + Spooky Trail." },
 	DiamondMarble = { id = 0, name = "Diamond Marble", price = 1299, glyph = "💎", desc = "The rarest marble. Sparkles. Fast." },
+	GiftCoinsX2 = { id = 0, name = "Gift: 2x Coins", price = 249, gift = "CoinsX2", glyph = "🎁", desc = "Gift the 2x Coins pass to a player in your server." },
+	GiftPowerSlot = { id = 0, name = "Gift: Extra Power-Up Slot", price = 149, gift = "PowerSlot", glyph = "🎁", desc = "Gift the Extra Power-Up Slot pass to a player in your server." },
+	GiftVIP = { id = 0, name = "Gift: VIP", price = 399, gift = "VIP", glyph = "🎁", desc = "Gift the VIP pass to a player in your server." },
+	GiftTripleOpen = { id = 0, name = "Gift: Triple Open", price = 199, gift = "TripleOpen", glyph = "🎁", desc = "Gift the Triple Open pass to a player in your server." },
+	GiftLuckyCharm = { id = 0, name = "Gift: Lucky Charm", price = 299, gift = "LuckyCharm", random = true, glyph = "🎁", desc = "Gift the Lucky Charm pass to a player in your server." },
 }
 Config.LuckBoostSeconds = 900
-Config.NoOffersBefore = 150 -- seconds of play before any purchase popup
+Config.NoOffersBefore = 150 -- seconds of play before any purchase popup (at least 2 minutes, every session)
+Config.OfferGap = 360 -- seconds between purchase popups
+
+-- Launch features (kit Live): codes, group gift, playtime gifts, daily quests, badges, invites, friend bonus.
+-- Reward tables: coins, packs = { packKey = n }, luckMinutes; `text` is what the FREE panel shows.
+-- Quest keys the game reports with Live.quest: race, podium, win, perfect, pack, gp, shine, friend.
+Config.Live = {
+	codes = { LAUNCH = { reward = { coins = 1000, packs = { shiny = 1 }, text = "1,000 coins + Shiny Pack" } } },
+	group = { id = 0, reward = { packs = { mega = 1 }, text = "a Mega Pack" } },
+	playtime = {
+		{ minutes = 5, reward = { coins = 300, text = "300 coins" } },
+		{ minutes = 10, reward = { packs = { basic = 2 }, text = "2 Basic Packs" } },
+		{ minutes = 30, reward = { packs = { shiny = 1 }, luckMinutes = 10, text = "Shiny Pack + 10m Luck" } },
+		{ minutes = 60, reward = { coins = 2000, packs = { mega = 1 }, text = "Mega Pack + 2,000 coins" } },
+	},
+	quests = {
+		{ key = "race", text = "Finish 5 races", goal = 5, reward = { coins = 500, text = "500 coins" } },
+		{ key = "podium", text = "Finish top 3 three times", goal = 3, reward = { packs = { basic = 2 }, text = "2 Basic Packs" } },
+		{ key = "win", text = "Win a race", goal = 1, reward = { coins = 800, text = "800 coins" } },
+		{ key = "perfect", text = "Hit 15 PERFECT boosts", goal = 15, reward = { packs = { shiny = 1 }, text = "Shiny Pack" } },
+		{ key = "pack", text = "Open 5 packs", goal = 5, reward = { coins = 600, text = "600 coins" } },
+		{ key = "gp", text = "Race in a Grand Prix", goal = 1, reward = { packs = { shiny = 1 }, text = "Shiny Pack" } },
+		{ key = "shine", text = "Use the Shine Machine", goal = 1, reward = { coins = 1000, text = "1,000 coins" } },
+		{ key = "friend", text = "Race with a friend in the server", goal = 1, reward = { packs = { mega = 1 }, text = "Mega Pack" } },
+	},
+	badges = { Welcome = 0, FirstRace = 0, FirstWin = 0, Wins10 = 0, GPWin = 0, Legendary = 0, Index30 = 0 },
+	invite = { reward = { packs = { shiny = 1 }, text = "a Shiny Pack" } },
+	friendBonus = 0.1,
+}
 
 -- Hero mesh slot: one sphere mesh; every marble def has its own texture slot (def.texture).
 Config.Meshes = {
@@ -477,7 +598,7 @@ Config.Icons = {
 	trophy = "🏆",
 	marble = "🔮",
 	marbles = "🔮",
-	pack = "🎁",
+	pack = "📦",
 	shine = "✨",
 	league = "🏅",
 	shop = "🛒",

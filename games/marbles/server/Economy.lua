@@ -1,7 +1,11 @@
 --!strict
--- Player economy: the marble collection (levels, stat points, copies), pack rolls with numeric odds,
--- the Shine Machine (mutations), tune-ups, daily login streak, daily league points and rewards,
--- index milestones, race payouts, offline practice earnings and Robux product grants.
+-- Player economy: the marble collection (levels, stat points, copies), pack rolls with % odds and luck,
+-- the Shine Machine (mutations), tune-ups, daily login streak (and Keep Streak), daily league points and
+-- rewards, index milestones, race payouts (server boosts, friend bonus), offline practice earnings, launch
+-- rewards (kit Live) and Robux product grants.
+-- Paid random items: a player under Roblox's paid random item restriction (kit Policy) never gets a roll
+-- they paid for with coins (coins are sold for Robux): coin packs give the pack's fixed marble of the day
+-- and the Shine Machine a fixed Gold shine, both shown before paying. Free packs still roll.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -12,6 +16,9 @@ local Net = require(Shared:WaitForChild("Net"))
 local Fmt = require(Shared:WaitForChild("Fmt"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Policy = require(script.Parent:WaitForChild("Policy"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 
 local Economy = {}
 local rng = Random.new()
@@ -21,6 +28,10 @@ export type Entry = { id: string, mut: string?, lvl: number, xp: number, pts: nu
 export type PackItem = { id: string, mut: string?, tier: string, key: string, new: boolean, dupeXp: number }
 
 Economy.onStartGP = nil :: ((Player) -> ())?
+-- Round modifier bought for the next race: (buyer, { mode = "chaos"|"ice"|"bigair"|"none", theme = string? }).
+Economy.onRoundMod = nil :: ((Player, { [string]: any }) -> ())?
+-- What a player saw in the shop right before buying (deal marble id, custom round choice), set by Main.
+Economy.want = {} :: { [Player]: { [string]: any } }
 
 function Economy.defaults(): { [string]: any }
 	return {
@@ -46,6 +57,7 @@ function Economy.defaults(): { [string]: any }
 		lastOnline = 0,
 		starterBought = false,
 		bestPlace = 0,
+		spent = 0,
 	}
 end
 
@@ -156,6 +168,9 @@ end
 
 function Economy.checkIndex(player: Player, d: { [string]: any })
 	local n = Economy.indexCount(d)
+	if n >= 30 then
+		Live.badge(player, "Index30")
+	end
 	for i, r in ipairs(Config.IndexRewards) do
 		local k = tostring(i)
 		if n >= r.count and not d.indexClaimed[k] then
@@ -192,6 +207,8 @@ end
 
 -- Packs -----------------------------------------------------------------------------------------------
 
+-- Current luck: Lucky Charm pass x personal Luck Boost x server luck boost. The client mirrors this
+-- (Hud.luck) so every odds screen shows the same numbers the roll uses.
 function Economy.luck(player: Player, d: { [string]: any }): number
 	local l = 1
 	if Shop.owns(player, "LuckyCharm") then
@@ -200,31 +217,33 @@ function Economy.luck(player: Player, d: { [string]: any }): number
 	if (d.luckUntil or 0) > os.time() then
 		l *= Config.LuckBoostMult
 	end
-	return l
+	return l * Boosts.mult("luck")
 end
 
+-- One pack pull: tier (pack odds) then a marble of that tier, then a mutation (Config.PackMutations), both
+-- with the same luck maths the odds screens show (kit Tiers.percents).
 function Economy.roll(packKey: string, luck: number): (string, string?)
 	local pack = Config.PackByKey[packKey] or Config.Packs[1]
 	local tier = Tiers.roll(pack.odds, rng, luck)
 	local list = Config.MarblesByTier[tier.key] or Config.MarblesByTier.Common
 	local def = list[rng:NextInteger(1, #list)]
-	local mutLuck = luck >= Config.LuckBoostMult and 2 or 1
-	local r = rng:NextNumber()
-	local acc = 0
-	local mut: string? = nil
-	for i = #Config.Mutations, 1, -1 do
-		local m = Config.Mutations[i]
-		acc += m.chance * mutLuck
-		if r < acc then
-			mut = m.key
-			break
-		end
-	end
-	return def.id, mut
+	local m = Tiers.roll(Config.PackMutations, rng, luck)
+	return def.id, if m.key ~= "none" then m.key else nil
 end
 
--- Open `count` packs (1, or 3 with Triple Open). Free packs in the inventory are used first.
-function Economy.openPack(player: Player, packKey: string, count: number): { [string]: any }
+-- A fixed marble for a restricted player's coin pack: today's, or yesterday's if the shop showed that one
+-- just before midnight.
+local function fixedPick(packKey: string, expect: string?): string
+	local day = Economy.today()
+	if expect and expect == Config.fixedMarble(packKey, day - 1) then
+		return expect
+	end
+	return Config.fixedMarble(packKey, day)
+end
+
+-- Open `count` packs (1, or 3 with Triple Open). Free packs in the inventory are used first (and always
+-- roll). expect: the fixed marble the client showed a restricted player.
+function Economy.openPack(player: Player, packKey: string, count: number, expect: string?): { [string]: any }
 	local d = Data.get(player)
 	local pack = Config.PackByKey[packKey]
 	if not d or not pack then
@@ -232,21 +251,35 @@ function Economy.openPack(player: Player, packKey: string, count: number): { [st
 	end
 	count = (count == 3 and Shop.owns(player, "TripleOpen")) and 3 or 1
 	local free = d.packs[packKey] or 0
+	local blocked = Policy.randomBlocked(player)
 	local items: { PackItem } = {}
 	for _ = 1, count do
+		local paid = false
 		if (d.packs[packKey] or 0) > 0 then
 			d.packs[packKey] -= 1
 		elseif pack.price > 0 and d.coins >= pack.price then
 			d.coins -= pack.price
+			paid = true
 		else
 			break
 		end
-		local id, mut = Economy.roll(packKey, Economy.luck(player, d))
+		local id: string, mut: string?
+		if paid and blocked then
+			id, mut = fixedPick(packKey, expect), nil
+		else
+			id, mut = Economy.roll(packKey, Economy.luck(player, d))
+		end
 		local key, isNew, dupeXp = Economy.addMarble(player, d, id, mut)
 		local def = Config.MarbleById[id]
 		table.insert(items, { id = id, mut = mut, tier = def.tier, key = key, new = isNew, dupeXp = dupeXp })
 		d.packsOpened += 1
 		announce(player, id, mut, "pulled")
+		if (Tiers.index[def.tier] or 1) >= 5 then
+			Live.badge(player, "Legendary")
+		end
+	end
+	if #items > 0 then
+		Live.quest(player, "pack", #items)
 	end
 	if #items == 0 then
 		return { ok = false, err = pack.price > 0 and ("Need " .. Fmt.commas(pack.price) .. " coins!") or "No free pack left!" }
@@ -307,7 +340,9 @@ function Economy.tuneUp(player: Player, key: string): boolean
 end
 
 -- Shine Machine: base marble -> mutated. The first shine is free and always Gold.
-function Economy.shine(player: Player, key: string): { [string]: any }
+-- expectFixed: whether the client showed the fixed Gold shine (paid random restriction) or the odds, so a
+-- player is never charged for a different shine than the one on screen.
+function Economy.shine(player: Player, key: string, expectFixed: boolean?): { [string]: any }
 	local d = Data.get(player)
 	if not d then
 		return { ok = false, err = "Not ready" }
@@ -320,27 +355,30 @@ function Economy.shine(player: Player, key: string): { [string]: any }
 		return { ok = false, err = "Already mutated!" }
 	end
 	local free = d.ftue.shine ~= true
+	local fixed = not free and Policy.randomBlocked(player)
+	local cost = fixed and Config.Shine.fixedCost or Config.Shine.cost
+	if not free and expectFixed ~= nil and expectFixed ~= fixed then
+		return { ok = false, err = "The Shine Machine changed - take another look!" }
+	end
 	if not free then
-		if d.coins < Config.Shine.cost then
-			return { ok = false, err = "Need " .. Fmt.commas(Config.Shine.cost) .. " coins!" }
+		if d.coins < cost then
+			return { ok = false, err = "Need " .. Fmt.commas(cost) .. " coins!" }
 		end
-		d.coins -= Config.Shine.cost
+		d.coins -= cost
 	end
 	local mut: string? = nil
 	if free then
 		mut = "gold"
 		d.ftue.shine = true
+	elseif fixed then
+		mut = Config.Shine.fixedMut
 	else
-		local luck = (d.luckUntil or 0) > os.time() and 2 or 1
-		local odds = {}
-		for _, o in ipairs(Config.Shine.odds) do
-			table.insert(odds, { key = o.key, weight = o.key == "none" and o.weight or o.weight * luck })
-		end
-		local pick = Tiers.roll(odds, rng, 1)
+		local pick = Tiers.roll(Config.Shine.odds, rng, Economy.luck(player, d))
 		if pick.key ~= "none" then
 			mut = pick.key
 		end
 	end
+	Live.quest(player, "shine", 1)
 	Data.dirty(player)
 	if not mut then
 		return { ok = true, mut = nil, key = key }
@@ -371,6 +409,18 @@ end
 
 function Economy.dailyReady(d: { [string]: any }): boolean
 	return d.daily.last ~= Economy.today()
+end
+
+-- On join: a streak of 2+ days that was just missed can be kept today with the Keep Streak product.
+function Economy.checkStreak(d: { [string]: any })
+	local day = Economy.today()
+	local dl = d.daily
+	if dl.broken and dl.broken.day ~= day then
+		dl.broken = nil
+	end
+	if (dl.last or 0) > 0 and dl.last < day - 1 and (dl.streak or 0) >= 2 and not dl.broken then
+		dl.broken = { streak = dl.streak, day = day }
+	end
 end
 
 function Economy.claimDaily(player: Player): { [string]: any }?
@@ -425,6 +475,7 @@ end
 
 -- Race payout -------------------------------------------------------------------------------------------
 
+-- Race coin multiplier: mutation x 2x Coins pass x VIP x server coin boost x friends in the server.
 function Economy.coinMult(player: Player, mut: string?): number
 	local m = 1
 	local mm = mut and Config.MutationByKey[mut]
@@ -437,10 +488,11 @@ function Economy.coinMult(player: Player, mut: string?): number
 	if Shop.owns(player, "VIP") then
 		m *= Config.Payout.vipMult
 	end
-	return m
+	return m * Boosts.mult("coins") * Live.friendMult(player)
 end
 
--- info: place, perfects, kind ("main"/"practice"/"gp"), key (marble key raced), owned (not a loaner), mut
+-- info: place, perfects, kind ("main"/"practice"/"gp"), hourly (the hourly Grand Prix), key (marble key
+-- raced), owned (not a loaner), mut
 function Economy.raceReward(player: Player, info: { [string]: any }): { [string]: any }?
 	local d = Data.get(player)
 	if not d then
@@ -448,11 +500,12 @@ function Economy.raceReward(player: Player, info: { [string]: any }): { [string]
 	end
 	local P = Config.Payout
 	local place = math.clamp(info.place, 1, #P.coins)
-	local kindMult = info.kind == "practice" and P.practiceMult or (info.kind == "gp" and P.gpMult or 1)
+	local gpMult = info.hourly and Config.GrandPrix.hourlyMult or P.gpMult
+	local kindMult = info.kind == "practice" and P.practiceMult or (info.kind == "gp" and gpMult or 1)
 	local mult = Economy.coinMult(player, info.mut)
 	local coins = math.floor((P.coins[place] + info.perfects * P.perfectCoins) * kindMult * mult + 0.5)
 	local xp = math.floor((P.xp[place] + info.perfects * P.perfectXp) * (info.kind == "gp" and 1.5 or 1))
-	local league = info.kind == "practice" and 1 or P.league[place] * (info.kind == "gp" and 2 or 1)
+	local league = info.kind == "practice" and 1 or P.league[place] * (info.kind == "gp" and (info.hourly and 3 or 2) or 1)
 	d.coins += coins
 	local ups = 0
 	if info.owned then
@@ -475,6 +528,30 @@ function Economy.raceReward(player: Player, info: { [string]: any }): { [string]
 	d.ftue.raced = true
 	if not d.ftue.welcome and (d.packs.welcome or 0) == 0 then
 		d.packs.welcome = 1
+	end
+	-- launch quests and badges
+	Live.badge(player, "FirstRace")
+	Live.quest(player, "race", 1)
+	if place <= 3 then
+		Live.quest(player, "podium", 1)
+	end
+	if place == 1 then
+		Live.quest(player, "win", 1)
+		if info.kind ~= "practice" then
+			Live.badge(player, "FirstWin")
+			if d.wins >= 10 then
+				Live.badge(player, "Wins10")
+			end
+		end
+	end
+	if info.perfects > 0 then
+		Live.quest(player, "perfect", info.perfects)
+	end
+	if info.kind == "gp" then
+		Live.quest(player, "gp", 1)
+	end
+	if (tonumber(player:GetAttribute("Friends")) or 0) > 0 then
+		Live.quest(player, "friend", 1)
 	end
 	Data.dirty(player)
 	return { coins = coins, xp = xp, league = league, levelUps = ups, place = place, mult = mult, kindMult = kindMult, firstRace = firstRace, owned = info.owned, key = info.key }
@@ -501,7 +578,47 @@ function Economy.offline(d: { [string]: any }): (number, number)
 	return coins, math.floor(mins)
 end
 
+-- Launch rewards (kit Live: codes, group, playtime, quests, invites): coins, packs, luck minutes.
+function Economy.liveGrant(player: Player, d: { [string]: any }, reward: { [string]: any }, _source: string)
+	if type(reward.coins) == "number" then
+		d.coins += reward.coins
+	end
+	if type(reward.packs) == "table" then
+		for key, n in pairs(reward.packs :: { [string]: number }) do
+			if Config.PackByKey[key] then
+				d.packs[key] = (d.packs[key] or 0) + n
+			end
+		end
+	end
+	if type(reward.luckMinutes) == "number" then
+		d.luckUntil = math.max(os.time(), d.luckUntil or 0) + reward.luckMinutes * 60
+	end
+	Data.dirty(player)
+end
+
 -- Robux products -----------------------------------------------------------------------------------------
+
+local function giveMarble(player: Player, d: { [string]: any }, id: string, verb: string)
+	Economy.addMarble(player, d, id, nil)
+	local def = Config.MarbleById[id]
+	Shop.notify(player, string.format("%s %s!", verb, def and def.name or id), "purple")
+	announce(player, id, nil, "got")
+end
+
+-- Today's deal marble for a deal product; yesterday's if that is what the shop showed just before midnight.
+local function dealPick(player: Player, product: string): string?
+	for _, deal in ipairs(Config.Deals) do
+		if deal.product == product then
+			local day = Economy.today()
+			local want = Economy.want[player] and Economy.want[player][product]
+			if want and want == Config.dayPick(deal.tier, day - 1, deal.salt) then
+				return want
+			end
+			return Config.dayPick(deal.tier, day, deal.salt)
+		end
+	end
+	return nil
+end
 
 function Economy.productGrants(): { [string]: (Player, { [string]: any }) -> boolean }
 	local function trail(key: string): (Player, { [string]: any }) -> boolean
@@ -512,26 +629,61 @@ function Economy.productGrants(): { [string]: (Player, { [string]: any }) -> boo
 			return true
 		end
 	end
+	local function coins(n: number): (Player, { [string]: any }) -> boolean
+		return function(_player, d)
+			d.coins += n
+			return true
+		end
+	end
+	local function deal(product: string): (Player, { [string]: any }) -> boolean
+		return function(player, d)
+			local id = dealPick(player, product)
+			if id then
+				giveMarble(player, d, id, "Daily deal:")
+			end
+			return true
+		end
+	end
+	local function roundMod(mode: string): (Player, { [string]: any }) -> boolean
+		return function(player, _d)
+			local choice: { [string]: any } = { mode = mode }
+			if mode == "custom" then
+				local want = Economy.want[player] and Economy.want[player].CustomRound
+				choice = type(want) == "table" and table.clone(want) or { mode = "chaos", theme = "Classic" }
+			end
+			local cb = Economy.onRoundMod
+			if cb then
+				cb(player, choice)
+			end
+			return true
+		end
+	end
 	return {
+		IntroEpic = function(player, d)
+			local list = Config.MarblesByTier.Epic
+			giveMarble(player, d, list[rng:NextInteger(1, #list)].id, "🎲 Random Epic:")
+			return true
+		end,
+		IntroEpicFixed = function(player, d)
+			giveMarble(player, d, Config.dayPick("Epic", Economy.today(), 9), "🎁 First-buy Epic:")
+			return true
+		end,
 		StarterPack = function(player, d)
-			d.coins += 2000
-			d.packs.mega = (d.packs.mega or 0) + 1
+			d.coins += 3000
+			Economy.addMarble(player, d, Config.StarterMarble, nil)
+			d.trails.sparkle = true
+			if d.trail == "" then
+				d.trail = "sparkle"
+			end
 			d.starterBought = true
-			Shop.notify(player, "🎒 Starter Pack: 2,000 coins + a Mega Pack!", "green")
+			Shop.notify(player, "🎒 Starter Pack: 3,000 coins + Comet + Sparkle Trail!", "green")
 			return true
 		end,
-		CoinsS = function(_player, d)
-			d.coins += 1500
-			return true
-		end,
-		CoinsM = function(_player, d)
-			d.coins += 8000
-			return true
-		end,
-		CoinsL = function(_player, d)
-			d.coins += 50000
-			return true
-		end,
+		CoinsS = coins(1500),
+		CoinsM = coins(8000),
+		CoinsL = coins(50000),
+		CoinsXL = coins(125000),
+		CoinsXXL = coins(300000),
 		LuckBoost = function(player, d)
 			d.luckUntil = math.max(os.time(), d.luckUntil or 0) + Config.LuckBoostSeconds
 			Shop.notify(player, "🍀 Luck Boost active for 15 minutes!", "green")
@@ -541,6 +693,10 @@ function Economy.productGrants(): { [string]: (Player, { [string]: any }) -> boo
 			d.packs.galaxy = (d.packs.galaxy or 0) + 1
 			return true
 		end,
+		DealRare = deal("DealRare"),
+		DealEpic = deal("DealEpic"),
+		DealLegendary = deal("DealLegendary"),
+		DealMythic = deal("DealMythic"),
 		TrailSparkle = trail("sparkle"),
 		TrailFlame = trail("flame"),
 		TrailRainbow = trail("rainbow"),
@@ -549,6 +705,33 @@ function Economy.productGrants(): { [string]: (Player, { [string]: any }) -> boo
 			if cb then
 				cb(player)
 			end
+			return true
+		end,
+		ChaosTrack = roundMod("chaos"),
+		IceTrack = roundMod("ice"),
+		CustomRound = roundMod("custom"),
+		KeepStreak = function(player, d)
+			local dl = d.daily
+			local b = dl.broken
+			if b then
+				if dl.last == Economy.today() then
+					dl.streak = b.streak + 1 -- already claimed today on a fresh streak: carry on from the old one
+				else
+					dl.last = Economy.today() - 1
+					dl.streak = b.streak
+				end
+				dl.broken = nil
+				Shop.notify(player, "🔥 Streak saved: " .. dl.streak .. " days!", "orange")
+			else
+				d.coins += 500
+				Shop.notify(player, "🔥 Your streak was safe already: here's 500 coins!", "orange")
+			end
+			return true
+		end,
+		PumpkinMarble = function(player, d)
+			giveMarble(player, d, "pumpkin", "🎃 Happy Halloween:")
+			d.trails.spooky = true
+			d.trail = "spooky"
 			return true
 		end,
 		DiamondMarble = function(player, d)

@@ -538,7 +538,7 @@ local function southWall()
 	end
 	ball(V(22, 54, D - 3.2), V(4, 4, 4), C.gold)
 	-- title banner above the door: the landmark text
-	World.sign(decor, CF(0, 136, D - 3) * ANG(0, RAD(180), 0), Vector2.new(110, 20), "⚔️ TOY ARMY HQ ⚔️", C.yellow, C.ink)
+	World.sign(decor, CF(0, 136, D - 3) * ANG(0, RAD(180), 0), Vector2.new(110, 20), "⚔️ " .. string.upper(Config.TitlePlain) .. " HQ ⚔️", C.yellow, C.ink)
 	-- bunting: green pennants over the green bases, tan over the tan bases
 	for _, side in ipairs({ -1, 1 }) do
 		local col = side < 0 and C.green or C.tan

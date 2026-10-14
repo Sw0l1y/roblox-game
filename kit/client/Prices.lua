@@ -8,7 +8,7 @@ local Prices = {}
 local listeners: { () -> () } = {}
 
 -- passes / products: the game's Config.Passes / Config.Products (items with `id` and `price`).
-function Prices.sync(passes: { [string]: any }, products: { [string]: any })
+function Prices.sync(passes: any, products: any)
 	task.spawn(function()
 		local changed = false
 		for _, set in ipairs({ { passes, Enum.InfoType.GamePass }, { products, Enum.InfoType.Product } }) do

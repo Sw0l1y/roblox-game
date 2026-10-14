@@ -74,7 +74,7 @@ local function card(r: Result, order: number): Frame
 	local holder = UI.frame(c, { BackgroundTransparency = 1, Size = UDim2.new(1, -20, 0, 180), Position = UDim2.fromOffset(10, 10), ZIndex = 33 })
 	Game.viewport(holder, r.unit, r.mut, { ZIndex = 34 })
 	local name = UI.text(c, Config.unitName(r.unit, r.mut), { Size = UDim2.new(1, -16, 0, 40), Position = UDim2.new(0, 8, 0, 190), ZIndex = 35 })
-	local tier = UI.text(c, string.upper(t.name), { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 30), Position = UDim2.new(0, 8, 0, 232), ZIndex = 35, TextColor3 = UI.lighten(t.color, 0.4) })
+	local tier = UI.text(c, string.upper(t.name) .. "  ·  " .. Config.counterText(r.unit), { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 30), Position = UDim2.new(0, 8, 0, 232), ZIndex = 35, TextColor3 = UI.lighten(t.color, 0.4) })
 	if t.rainbow or r.mut == "Rainbow" then
 		UI.rainbow(name)
 	end
@@ -195,7 +195,7 @@ function Reveal.merged(r: Result)
 	local box = UI.frame(holder, { BackgroundTransparency = 1, Size = UDim2.new(1, -20, 0, 170), Position = UDim2.fromOffset(10, 48), ZIndex = 29 })
 	Game.viewport(box, r.unit, r.mut, { ZIndex = 30 })
 	local name = UI.text(holder, Config.unitName(r.unit, r.mut), { Size = UDim2.new(1, -16, 0, 38), Position = UDim2.new(0, 8, 0, 222), ZIndex = 30 })
-	UI.text(holder, string.upper(t.name) .. (r.new and "  ·  NEW!" or ""), { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 28), Position = UDim2.new(0, 8, 0, 262), ZIndex = 30, TextColor3 = UI.lighten(t.color, 0.4) })
+	UI.text(holder, string.upper(t.name) .. "  ·  " .. Config.counterText(r.unit) .. (r.new and "  ·  NEW!" or ""), { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 28), Position = UDim2.new(0, 8, 0, 262), ZIndex = 30, TextColor3 = UI.lighten(t.color, 0.4) })
 	if t.rainbow or r.mut == "Rainbow" then
 		UI.rainbow(name)
 	end

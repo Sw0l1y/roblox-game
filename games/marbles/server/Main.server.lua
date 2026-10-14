@@ -1,7 +1,8 @@
 --!strict
--- Marble Mayhem server: race cycle (pick -> countdown -> race -> results), warm-up heats for players who
--- join mid-race, bots so every race has at least 8 marbles, payouts, podium, daily league, the Grand Prix
--- server event, remotes for packs/upgrades/shine/daily/league, and Studio debug commands.
+-- Marble Mayhem server: race cycle (pick -> countdown -> race -> results), warm-up heats for new players and
+-- players who join mid-race, bots so every race has at least 8 marbles, payouts, podium, daily league, the
+-- Grand Prix server event (and its hourly form), round modifiers players buy for the next race, launch
+-- features (kit Live), remotes for packs/upgrades/shine/daily/league, and Studio debug commands.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -14,6 +15,8 @@ local Track = require(Shared:WaitForChild("Track"))
 
 local Data = require(script.Parent:WaitForChild("Lib"):WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Lib"):WaitForChild("Shop"))
+local Live = require(script.Parent:WaitForChild("Lib"):WaitForChild("Live"))
+local Boosts = require(script.Parent:WaitForChild("Lib"):WaitForChild("Boosts"))
 local Look = require(script.Parent:WaitForChild("Lib"):WaitForChild("Look"))
 local Assets = require(script.Parent:WaitForChild("Lib"):WaitForChild("Assets"))
 local Economy = require(script.Parent:WaitForChild("Lib"):WaitForChild("Economy"))
@@ -43,7 +46,8 @@ local gpRemote = Net.event("GP")
 local teaseRemote = Net.event("Tease")
 local offlineRemote = Net.event("Offline")
 local announceRemote = Net.event("Announce")
-Net.event("Open")
+local wantRemote = Net.event("Want")
+local openRemote = Net.event("Open")
 Net.event("Fx")
 
 local function now(): number
@@ -91,13 +95,15 @@ Data.init({
 })
 Shop.init({ passes = Config.Passes :: any, products = Config.Products :: any, grants = Economy.productGrants() })
 Shop.onPass(Economy.onPass)
+Live.init({ config = Config.Live, grant = Economy.liveGrant })
 League.init()
 League.onBoard(function(rows)
 	Lobby.setBoard(rows)
 end)
 
 -- Server state -----------------------------------------------------------------------------------------------
-type Offer = { marbles: { { [string]: any } }, cards: { string }, slots: number, hint: string, raceNo: number }
+-- any: the player may also race any marble from their collection (the free pick).
+type Offer = { marbles: { { [string]: any } }, cards: { string }, slots: number, hint: string, raceNo: number, any: boolean }
 type Pick = { key: string, cards: { string }, ready: boolean }
 
 local S = {
@@ -119,8 +125,28 @@ local S = {
 	practiceSeed = rng:NextInteger(1, 1000000000),
 	minRacers = RC.minRacers,
 	nextTd = nil :: Track.TrackData?,
+	hourlyNext = false,
+	-- round modifiers bought for the next race: mode flags, a theme and who bought them
+	pendingMods = {} :: { [string]: boolean },
+	pendingTheme = nil :: string?,
+	pendingBy = {} :: { string },
+	-- FTUE timings (seconds after data load) per player, for the sim and Studio `state`
+	ftueT = {} :: { [Player]: { [string]: number } },
 }
 local teaseRaces: { [number]: boolean } = {}
+
+local function ftueMark(player: Player, what: string, at: number?)
+	local f = S.ftueT[player]
+	if f and not f[what] then
+		f[what] = (at or now()) - f.join
+	end
+end
+
+-- In a warm-up heat or about to start one: the main race leaves them out (they get the next pick).
+local function inHeat(p: Player): boolean
+	local f = S.forming
+	return Race.isRacing(p.UserId, "practice") or (f ~= nil and table.find(f.players, p) ~= nil)
+end
 
 local function gpInfo(): { [string]: any }
 	local th = Config.gpTheme(os.time())
@@ -212,7 +238,7 @@ local function makeOffer(player: Player, d: { [string]: any }): Offer
 	if not table.find(dealt, hint) then
 		dealt[3] = hint
 	end
-	return { marbles = opts, cards = dealt, slots = Shop.owns(player, "PowerSlot") and 2 or 1, hint = hint, raceNo = S.raceNo }
+	return { marbles = opts, cards = dealt, slots = Shop.owns(player, "PowerSlot") and 2 or 1, hint = hint, raceNo = S.raceNo, any = #keys > 1 }
 end
 
 local function sendOffer(player: Player)
@@ -251,6 +277,11 @@ pickRemote.OnServerEvent:Connect(function(player, key, cards, ready)
 		if m.key == key then
 			okKey = true
 		end
+	end
+	-- the free pick: any marble the player owns
+	local d = Data.get(player)
+	if not okKey and offer.any and d and d.marbles[key] then
+		okKey = true
 	end
 	if not okKey then
 		return
@@ -377,14 +408,17 @@ local function handleResults(race: Race.RaceT)
 			local player = Players:GetPlayerByUserId(r.userId)
 			local d = player and Data.get(player)
 			if player and d then
-				local info = Economy.raceReward(player, { place = r.place, perfects = r.perfects, kind = race.kind, key = r.key, owned = r.owned, mut = r.mut })
+				local info = Economy.raceReward(player, { place = r.place, perfects = r.perfects, kind = race.kind, hourly = race.hourly, key = r.key, owned = r.owned, mut = r.mut })
 				if info then
-					-- Grand Prix prize: the week's limited marble
-					if gp and (r.place == 1 or (r.place <= 3 and rng:NextNumber() < Config.GrandPrix.runnerUpChance)) then
+					ftueMark(player, "reward")
+					info.hourly = race.hourly
+					-- Grand Prix prize: the week's limited marble (the hourly GP gives it to the whole podium)
+					if gp and (r.place == 1 or (r.place <= 3 and (race.hourly or rng:NextNumber() < Config.GrandPrix.runnerUpChance))) then
 						Economy.addMarble(player, d, theme.marble, nil)
 						info.gpMarble = theme.marble
 						if r.place == 1 then
 							d.gpWins += 1
+							Live.badge(player, "GPWin")
 						end
 						local def = Config.MarbleById[theme.marble]
 						announceRemote:FireAllClients(string.format("🏁 %s won the %s GP marble: %s!", player.DisplayName, theme.name, def and def.name or "?"), "Legendary", nil)
@@ -485,6 +519,9 @@ startPractice = function()
 	end
 	local race = Race.create("practice", S.practiceSeed, "Classic", specs, RC.countdown, { rookie = rookie })
 	S.practice = race
+	for _, p in ipairs(forming.players) do
+		ftueMark(p, "go", race.goTime)
+	end
 	race.onDone = function(r)
 		handleResults(r)
 		-- heat over while the main race is still picking: deal this player in
@@ -515,7 +552,8 @@ startPractice = function()
 	end
 end
 
--- Join flow: race within 10 s of spawning.
+-- Join flow: race within 10 s of spawning. A brand-new player always starts with a short warm-up heat
+-- (racing ~7 s after loading, coins and the free Welcome Pack ~30 s in; the main track takes ~40 s).
 local function joinFlow(player: Player)
 	if not player.Parent then
 		return
@@ -530,10 +568,12 @@ end
 
 Data.onLoaded(function(player, d)
 	S.joined[player] = os.clock()
+	S.ftueT[player] = { join = now() }
 	if next(d.marbles) == nil then
 		Economy.addMarble(player, d, Config.STARTER, nil)
 	end
 	Economy.leagueFresh(d)
+	Economy.checkStreak(d)
 	local coins, mins = Economy.offline(d)
 	Data.dirty(player)
 	if coins > 0 then
@@ -543,7 +583,19 @@ Data.onLoaded(function(player, d)
 			end
 		end)
 	end
-	task.delay(1, joinFlow, player)
+	local broken = d.daily.broken
+	if type(broken) == "table" then
+		task.delay(20, function()
+			if player.Parent then
+				Shop.notify(player, string.format("🔥 You missed a day! Keep your %d-day streak in 📅 Daily.", tonumber(broken.streak) or 0), "orange")
+			end
+		end)
+	end
+	if d.races == 0 and not (S.practice and not S.practice.done) then
+		requestPractice(player) -- right away, so a main pick starting now leaves them out
+	else
+		task.delay(1, joinFlow, player)
+	end
 end)
 Data.onLeaving(function(player, d)
 	d.lastOnline = os.time()
@@ -553,6 +605,8 @@ Players.PlayerRemoving:Connect(function(p)
 	S.offers[p] = nil
 	S.picks[p] = nil
 	S.queue[p] = nil
+	S.ftueT[p] = nil
+	Economy.want[p] = nil
 end)
 
 -- Main race cycle -------------------------------------------------------------------------------------------------
@@ -572,27 +626,54 @@ local function mainLoop()
 		S.raceNo += 1
 		local t = now()
 		local gp = S.forceGp or t >= S.gpAt
+		local hourly = gp and S.hourlyNext
 		if gp then
 			S.forceGp = false
+			S.hourlyNext = false
 			S.gpAt = t + Config.GrandPrix.interval
 			broadcastGp()
 		end
 		local kind = gp and "gp" or "main"
 		local theme = gp and gpInfo().key or "Classic"
+		-- round modifiers bought for this race
+		local mods = S.pendingMods
+		S.pendingMods = {}
+		if S.pendingTheme and not gp then
+			theme = S.pendingTheme :: string
+		elseif mods.ice and not gp then
+			theme = "Ice"
+		end
+		S.pendingTheme = nil
+		S.pendingBy = {}
+		ReplicatedStorage:SetAttribute("NextMods", "")
+		local trackKey = mods.chaos and (gp and "gpchaos" or "chaos") or kind
 		local seed = rng:NextInteger(1, 1000000000)
-		local td = Track.generate(seed, (Config.Tracks :: any)[kind])
+		local td = Track.generate(seed, (Config.Tracks :: any)[trackKey])
 		S.nextTd = td
 		S.offers, S.picks = {}, {}
 		local pickT = fresh and RC.firstPickTime or RC.pickTime
 		fresh = false
-		setPhase("pick", t + pickT, { kind = kind, seed = seed, theme = theme, gp = gp, features = Track.describe(td), raceNo = S.raceNo })
-		if gp then
+		local features = Track.describe(td)
+		local modNames: { string } = {}
+		for _, mk in ipairs({ "chaos", "ice", "bigair" }) do
+			if mods[mk] then
+				local m = (Config.RoundMods :: any)[mk]
+				table.insert(modNames, m.glyph .. " " .. m.name)
+			end
+		end
+		for i = #modNames, 1, -1 do
+			table.insert(features, 1, modNames[i])
+		end
+		setPhase("pick", t + pickT, { kind = kind, seed = seed, theme = theme, gp = gp, hourly = hourly, track = trackKey, mods = modNames, features = features, raceNo = S.raceNo })
+		if hourly then
+			announceRemote:FireAllClients("⏰ HOURLY GRAND PRIX: " .. gpInfo().name .. "! 3x coins, the whole podium wins the GP marble!", "GP", nil)
+		elseif gp then
 			local th = gpInfo()
 			announceRemote:FireAllClients("🏁 GRAND PRIX: " .. th.name .. "! 2x coins & points!", "GP", nil)
 		end
 		for _, p in ipairs(Players:GetPlayers()) do
-			-- players still in a warm-up heat get their offer when it ends (startPractice onDone)
-			if Data.get(p) and not Race.isRacing(p.UserId, "practice") then
+			-- players in (or about to start) a warm-up heat get their offer when it ends (startPractice onDone)
+			if Data.get(p) and not inHeat(p) then
 				sendOffer(p)
 			end
 		end
@@ -605,7 +686,7 @@ local function mainLoop()
 		for _, p in ipairs(Players:GetPlayers()) do
 			local d = Data.get(p)
 			-- one race at a time: someone still rolling in a warm-up heat watches this one
-			if d and not Race.isRacing(p.UserId, "practice") then
+			if d and not inHeat(p) then
 				local offer = S.offers[p]
 				local pick = S.picks[p] or (offer and defaultPick(offer)) or nil
 				local sp = playerSpec(p, d, pick)
@@ -625,8 +706,14 @@ local function mainLoop()
 		for _, b in ipairs(botSpecs(nBots, specs, false, tease)) do
 			table.insert(specs, b)
 		end
-		local race = Race.create(kind, seed, theme, specs, RC.countdown, { gp = gp, clip = S.clipNext, td = td })
+		local race = Race.create(kind, seed, theme, specs, RC.countdown, { gp = gp, hourly = hourly, clip = S.clipNext, td = td, track = trackKey, mods = mods })
 		S.clipNext = false
+		for _, sp in ipairs(specs) do
+			local p = not sp.bot and Players:GetPlayerByUserId(sp.userId) or nil
+			if p then
+				ftueMark(p, "go", race.goTime)
+			end
+		end
 		if tease then
 			teaseRaces[race.id] = true
 		end
@@ -668,6 +755,71 @@ Economy.onStartGP = function(player: Player)
 	announceRemote:FireAllClients("🏁 " .. player.DisplayName .. " started a GRAND PRIX! Next race!", "GP", nil)
 end
 
+-- Round modifiers: they apply to the next race whose pick hasn't started (the one after this pick).
+local function nextModsText(): string
+	local parts: { string } = {}
+	for _, mk in ipairs({ "chaos", "ice", "bigair" }) do
+		if S.pendingMods[mk] then
+			local m = (Config.RoundMods :: any)[mk]
+			table.insert(parts, m.glyph .. " " .. m.name)
+		end
+	end
+	if S.pendingTheme then
+		table.insert(parts, "🎨 " .. string.upper(S.pendingTheme :: string))
+	end
+	return table.concat(parts, " · ")
+end
+
+local function addRoundMod(player: Player, choice: { [string]: any })
+	local mode = tostring(choice.mode or "none")
+	if (Config.RoundMods :: any)[mode] then
+		S.pendingMods[mode] = true
+	end
+	local theme = choice.theme
+	if type(theme) == "string" and table.find(Config.CustomThemes, theme) and theme ~= "Classic" then
+		S.pendingTheme = theme
+	end
+	table.insert(S.pendingBy, player.DisplayName)
+	local text = nextModsText()
+	ReplicatedStorage:SetAttribute("NextMods", text)
+	local when = S.phase == "pick" and "the race after this one" or "the next race"
+	announceRemote:FireAllClients(string.format("%s set %s: %s!", player.DisplayName, when, text), "Epic", nil)
+end
+Economy.onRoundMod = addRoundMod
+
+-- What the buyer saw right before a purchase: a deal marble id, or the Custom Round's theme and mode.
+wantRemote.OnServerEvent:Connect(function(player, product, value)
+	if type(product) ~= "string" or not Net.allow(player, "want", 0.1) then
+		return
+	end
+	local w = Economy.want[player] or {}
+	Economy.want[player] = w
+	if product == "CustomRound" and type(value) == "table" then
+		local mode = (value :: any).mode
+		local theme = (value :: any).theme
+		w.CustomRound = {
+			mode = (type(mode) == "string" and table.find(Config.CustomModes, mode)) and mode or "none",
+			theme = (type(theme) == "string" and table.find(Config.CustomThemes, theme)) and theme or "Classic",
+		}
+	elseif type(value) == "string" and Config.MarbleById[value] then
+		w[product] = value
+	end
+end)
+
+-- Hourly event at :00 UTC: the next race is an HOURLY Grand Prix, plus 10 minutes of 2x coins for everyone.
+local function startHourly()
+	S.hourlyNext = true
+	S.forceGp = true
+	S.gpAt = now()
+	broadcastGp()
+	local hb = Config.GrandPrix.hourlyBoost
+	Boosts.add("coins", hb.mult, hb.minutes * 60, "the Hourly Grand Prix")
+	announceRemote:FireAllClients("⏰ HOURLY GRAND PRIX next race! 3x coins + 2x coins for everyone for 10 min!", "GP", nil)
+end
+Live.onHour(function(_hour)
+	startHourly()
+end)
+
 -- Client requests -----------------------------------------------------------------------------------------------
 
 syncFunc.OnServerInvoke = function(player: Player)
@@ -685,18 +837,18 @@ syncFunc.OnServerInvoke = function(player: Player)
 	}
 end
 
-openPackFunc.OnServerInvoke = function(player, packKey, count)
+openPackFunc.OnServerInvoke = function(player, packKey, count, expect)
 	if type(packKey) ~= "string" or not Net.allow(player, "pack", 0.6) then
 		return { ok = false, err = "Slow down!" }
 	end
-	return Economy.openPack(player, packKey, type(count) == "number" and count or 1)
+	return Economy.openPack(player, packKey, type(count) == "number" and count or 1, type(expect) == "string" and expect or nil)
 end
 
-shineFunc.OnServerInvoke = function(player, key)
+shineFunc.OnServerInvoke = function(player, key, fixed)
 	if type(key) ~= "string" or not Net.allow(player, "shine", 0.8) then
 		return { ok = false, err = "Slow down!" }
 	end
-	return Economy.shine(player, key)
+	return Economy.shine(player, key, if type(fixed) == "boolean" then fixed else nil)
 end
 
 upgradeRemote.OnServerEvent:Connect(function(player, key, stat)
@@ -774,7 +926,7 @@ end
 
 Debug.init({
 	help = function()
-		return "give [player] [coins|xp|league] <n>, marble [player] <id> [mut], pack [player] <pack> [n], event|gp, clip, skip, state, reset [player], practice [player], level [player] <lvl>, daily [player], offline [player] <hours>, ftue [player], bots <n>, luck [player]"
+		return "give [player] [coins|xp|league] <n>, marble [player] <id> [mut], pack [player] <pack> [n], event|gp, hourly, clip, skip, state, reset [player], practice [player], level [player] <lvl>, daily [player], offline [player] <hours>, ftue [player], bots <n>, luck [player], boost <coins|luck> <mult> [min], mod <chaos|ice|bigair> [theme], blocked [player] [on|off], starter [player], streak [player], open [player] <panel>"
 	end,
 	give = function(args)
 		local p = findPlayer(args)
@@ -864,17 +1016,24 @@ Debug.init({
 				for _ in pairs(d.marbles) do
 					n += 1
 				end
-				table.insert(ps, string.format("%s: %s coins, %d marbles, %d races, %d wins, league %d", p.Name, Fmt.num(d.coins), n, d.races, d.wins, d.league.pts))
+				local f = S.ftueT[p] or {}
+				local function sec(k: string): string
+					return f[k] and string.format("%.1fs", f[k]) or "-"
+				end
+				table.insert(ps, string.format("%s: %s coins, %d marbles, %d races, %d wins, league %d, ftue go %s reward %s", p.Name, Fmt.num(d.coins), n, d.races, d.wins, d.league.pts, sec("go"), sec("reward")))
 			end
 		end
 		return string.format(
-			"phase=%s ends in %.1fs raceNo=%d main=%s practice=%s gpIn=%ds | %s",
+			"phase=%s ends in %.1fs raceNo=%d main=%s practice=%s gpIn=%ds boosts coins x%g luck x%g next mods=[%s] | %s",
 			S.phase,
 			math.max(0, S.endsAt - now()),
 			S.raceNo,
 			main and string.format("#%d %s t=%.1f (%d marbles)", main.id, main.kind, main.sim.t, #main.sim.entrants) or "none",
 			practice and string.format("#%d t=%.1f", practice.id, practice.sim.t) or "none",
 			math.floor(math.max(0, S.gpAt - now())),
+			Boosts.mult("coins"),
+			Boosts.mult("luck"),
+			nextModsText(),
 			table.concat(ps, " | ")
 		)
 	end,
@@ -965,6 +1124,67 @@ Debug.init({
 		d.luckUntil = os.time() + Config.LuckBoostSeconds
 		Data.dirty(p)
 		return "luck boost on"
+	end,
+	hourly = function()
+		startHourly()
+		return "hourly Grand Prix next race + 10 min 2x coins"
+	end,
+	boost = function(args)
+		local kind = args[1] == "luck" and "luck" or "coins"
+		local m = Boosts.add(kind, tonumber(args[2]) or 2, (tonumber(args[3]) or 15) * 60, "Studio")
+		return string.format("server %s boost x%g", kind, m)
+	end,
+	mod = function(args)
+		local p = Players:GetPlayers()[1]
+		if not p then
+			return "no player"
+		end
+		addRoundMod(p, { mode = args[1] or "chaos", theme = args[2] })
+		return "next race: " .. nextModsText()
+	end,
+	blocked = function(args)
+		local p = findPlayer(args)
+		if not p then
+			return "no player"
+		end
+		local on = args[1] ~= "off"
+		p:SetAttribute("RandomBlocked", on)
+		return p.Name .. " paid random items restricted: " .. tostring(on)
+	end,
+	starter = function(args)
+		local p = findPlayer(args)
+		local d = p and Data.get(p)
+		if not p or not d then
+			return "no player"
+		end
+		d.firstJoin = os.time()
+		d.sessions = 1
+		d.starterBought = false
+		d.bought = nil
+		d.spent = 0
+		Data.dirty(p)
+		return "starter pack window restarted (10 min) and first-buy offer back"
+	end,
+	streak = function(args)
+		local p = findPlayer(args)
+		local d = p and Data.get(p)
+		if not p or not d then
+			return "no player"
+		end
+		d.daily.last = Economy.today() - 3
+		d.daily.streak = 5
+		d.daily.broken = nil
+		Economy.checkStreak(d)
+		Data.dirty(p)
+		return "5-day streak broken: Keep Streak offer in Daily"
+	end,
+	open = function(args)
+		local p = findPlayer(args)
+		if not p or not args[1] then
+			return "usage: open [player] <Packs|Odds|Shine|Daily|Shop|CustomRound|Marbles|League>"
+		end
+		openRemote:FireClient(p, args[1])
+		return "opened " .. args[1] .. " for " .. p.Name
 	end,
 })
 

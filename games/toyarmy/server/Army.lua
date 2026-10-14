@@ -10,6 +10,9 @@ local Tiers = require(Shared:WaitForChild("Tiers"))
 local Fmt = require(Shared:WaitForChild("Fmt"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Policy = require(script.Parent:WaitForChild("Policy"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Battle = require(script.Parent:WaitForChild("Battle"))
 
 local Army = {}
@@ -27,7 +30,7 @@ local mergedRemote = Net.event("Merged")
 local announceRemote = Net.event("Announce")
 local feedRemote = Net.event("Feed")
 
-local hooks: { [string]: { (Player, Dict, any) -> () } } = { bag = {}, merge = {}, upgrade = {}, rank = {} }
+local hooks: { [string]: { (Player, Dict, any) -> () } } = { bag = {}, merge = {}, upgrade = {}, rank = {}, unit = {} }
 
 function Army.on(event: string, cb: (Player, Dict, any) -> ())
 	table.insert(hooks[event], cb)
@@ -239,10 +242,14 @@ function Army.addUnits(player: Player, d: Dict, unitKey: string, mut: string, n:
 	d.units[stack] = (d.units[stack] or 0) + n
 	local new = not d.index[stack]
 	if new then
+		local firstOfKind = not d.index[unitKey]
 		d.index[stack] = true
 		d.index[unitKey] = true
 		local def = Config.UnitByKey[unitKey]
 		Army.addXp(player, d, Config.Xp.discover * (Tiers.index[def and def.tier or "Common"] or 1))
+		if firstOfKind then
+			fire("unit", player, d, unitKey)
+		end
 	end
 	Data.dirty(player)
 	return new
@@ -252,19 +259,30 @@ end
 
 export type PlasticOpts = { pos: Vector3?, kind: string?, raw: boolean? }
 
--- Adds plastic with pass multipliers (2x Plastic, VIP +10%, Roblox Premium +10%) unless raw. Returns the amount added.
+-- Plastic multiplier from passes, Premium, friends in the server and the server-wide plastic boost.
+function Army.plasticMult(player: Player): number
+	local a = 1
+	if Shop.owns(player, "x2plastic") then
+		a *= 2
+	end
+	if Shop.owns(player, "vip") then
+		a *= 1.1
+	end
+	if player.MembershipType == Enum.MembershipType.Premium then
+		a *= 1.1 -- Roblox Premium perk
+	end
+	return a * Live.friendMult(player) * Boosts.mult("plastic")
+end
+
+-- Adds plastic with every multiplier (Army.plasticMult) unless raw. Offline earnings skip the live server boost.
+-- Returns the amount added.
 function Army.addPlastic(player: Player, d: Dict, amount: number, opts: PlasticOpts?): number
 	local o: PlasticOpts = opts or {}
 	local a = amount
 	if not o.raw then
-		if Shop.owns(player, "x2plastic") then
-			a *= 2
-		end
-		if Shop.owns(player, "vip") then
-			a *= 1.1
-		end
-		if player.MembershipType == Enum.MembershipType.Premium then
-			a *= 1.1 -- Roblox Premium perk
+		a *= Army.plasticMult(player)
+		if o.kind == "offline" then
+			a /= Boosts.mult("plastic")
 		end
 	end
 	a = math.floor(a + 0.5)
@@ -306,11 +324,9 @@ end
 
 -- Bags ----------------------------------------------------------------------------------------------------
 
-local function luckOf(player: Player, d: Dict): (number, number)
-	local boosted = (d.boosts.luck or 0) > os.time()
-	local luck = (1 + 0.06 * (d.upgrades.lucky or 0)) * (boosted and 2 or 1)
-	local mutMult = (1 + 0.03 * (d.upgrades.lucky or 0)) * (boosted and 2 or 1)
-	return luck, mutMult
+-- Same maths as the client's odds display (Config.bagLuck).
+local function luckOf(_player: Player, d: Dict): (number, number)
+	return Config.bagLuck(d.upgrades.lucky or 0, (d.boosts.luck or 0) > os.time(), Boosts.mult("luck"))
 end
 
 local function rollMut(mult: number): string
@@ -339,6 +355,8 @@ local function announce(player: Player, unitKey: string, mut: string)
 end
 
 -- Open one bag (with plastic, or a free bag token). Returns ok, reason.
+-- A bag bought with plastic (sold for Robux) is a paid random item: a player under Roblox's paid random item rule
+-- gets the bag's fixed reward instead (Config.Bags[].fixed, shown on the bag before buying). Free bags still roll.
 function Army.openBag(player: Player, bagKey: string, useToken: boolean): (boolean, string?)
 	local d = Data.get(player)
 	local bag = Config.BagByKey[bagKey]
@@ -369,10 +387,13 @@ function Army.openBag(player: Player, bagKey: string, useToken: boolean): (boole
 	local luck, mutMult = luckOf(player, d)
 	local results: { Result } = {}
 	local firstBag = (d.stats.bags or 0) == 0
+	local fixed = not useToken and Policy.randomBlocked(player)
 	for i = 1, bag.count do
 		local unitKey: string = "Rifleman"
 		local mut: string = ""
-		if firstBag then
+		if fixed then
+			unitKey = bag.fixed[i] or bag.fixed[#bag.fixed]
+		elseif firstBag then
 			if i == 2 then
 				mut = "Gold"
 			end

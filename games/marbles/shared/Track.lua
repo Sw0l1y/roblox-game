@@ -79,6 +79,7 @@ export type Opts = {
 	width: number,
 	box: { number }, -- {minX, maxX, minZ, maxZ} every sample must stay inside
 	theme: string?,
+	mod: string?, -- "chaos": the specials list is packed with jumps, splits and boost pads
 }
 
 local PI = math.pi
@@ -443,7 +444,9 @@ local function generateOnce(seed: number, o: Opts): TrackData?
 	end
 
 	local specials: { string }
-	if kind == "practice" then
+	if o.mod == "chaos" then
+		specials = { "jump", "split", "jump", "pads", "funnel", "jump", "wave", "pads", "split" }
+	elseif kind == "practice" then
 		specials = { "jump", rng:NextNumber() < 0.5 and "stairs" or "wave", "pads" }
 	elseif kind == "gp" then
 		specials = { "jump", "funnel", "split", "stairs", "jump", "wave", "pads" }

@@ -9,7 +9,15 @@ the command applies to every player.
 | Command | What it does |
 |---|---|
 | `help` | lists every command |
-| `state` | one line: every zone (owner, garrison size, power, `*` = fighting), each player's side, plastic, units, busy, tutorial step and rank, the cat's status, the AI modes |
+| `state` | one line: every zone (owner, garrison size, power, `*` = fighting), each player's side, plastic, units, busy, tutorial step, rank, FTUE timings and `randomBlocked`, the cat's status, server boosts, strikes fired, the AI modes |
+| `ftue [p]` | seconds from join to first deploy, first reward, when the free gift is ready and when it was claimed |
+| `hourly` | the hourly event now: HOURLY MEGA CAT + 10 min server 2x plastic |
+| `strike rockets [zone] [p]` | fires a paid strike for that player (`rubber`, `balloon`, `callcat`, `rcplane`, `rockets`, `flashlight`, `dog`) at the zone or the auto-picked target |
+| `boost plastic 4 [min]` · `boost luck 2` | a server-wide boost (as if bought) |
+| `skin skinGold [p]` · `skin none` | equips an army skin / tank paint (`skinPumpkin`, `skinCamo`, `skinChrome`, `skinGold`, `tankLava`) |
+| `pass skinChrome [p]` | grants a pass (simulated purchase in Studio) |
+| `policy on [p]` · `policy off` | pretend the paid random item rule applies (`RandomBlocked`) |
+| `bag Basic [p]` | buys a bag with plastic and lists what came out (fixed contents while `policy on`) |
 | `give 1000000` · `give xp 500` · `give bags 10` | plastic (raw, no multipliers), XP, or free Bags of Soldiers |
 | `give unit Tank Gold 3` | add units (`Rifleman`, `Bazooka`, `Medic`, `Tank`, `Heli`, `General`, `Dino`; mutation `Gold`, `Glow`, `Rainbow` or none) |
 | `event` / `cat` | the house cat wakes up now and runs its full route (jump off the bed, walk, swat the two busiest zones) |
@@ -28,6 +36,7 @@ the command applies to every player.
 | `reset [p]` | wipes the save and starts the FTUE again (passes are kept) |
 
 Headless sim: `node tools/sim/run.mjs toyarmy --debug "give 1000000;give unit Tank Gold 3;event;clip;round;supply;merge;rank 5;ai act;topple;daily;call;zone rug Tan;deploy rug;state"`.
+Launch features: `--debug "give 1000000;strike rubber;strike balloon;strike rcplane;strike rockets;strike flashlight;strike dog;hourly;boost luck 4;skin skinGold;policy on;bag Basic;ftue;state"`.
 
 ## First session (new player: run `reset`, then rejoin)
 - [ ] You spawn on your team's glowing pad beside your Outpost flag (Green on the west side, Tan on the east), facing it. Warm afternoon light, sunbeams through the window, the cat asleep on the bed.
@@ -38,7 +47,8 @@ Headless sim: `node tools/sim/run.mjs toyarmy --debug "give 1000000;give unit Ta
 - [ ] "Capture The Rug!": the beam moves to the rug flag; the squad hops in from your side and fights the wind-up guards; capture → "🚩 VICTORY! ZONE CAPTURED!", confetti, the flag turns your colour, your soldiers stay on as the garrison (★ over your own).
 - [ ] 2:30: "🪂 A SUPPLY DROP landed!" toast, SUPPLY button on the right → a guaranteed Tank. "Deploy your Tank at the Block Tower!" → capturing it topples the letter-block tower.
 - [ ] "Upgrade your Toy Box!" (finger on BASE) → "🎖️ BASIC TRAINING COMPLETE!" + a Heavy Duffel.
-- [ ] No purchase pop-up before minute 2; after that each offer (starter, tanks after a defeat, call the cat when losing a round) at most once per 10 min.
+- [ ] The ⏰ gift on the right is ready at 0:45 (toast "free gift ready"); `ftue` shows deploy < 10 s and first reward < 30 s when you press DEPLOY right away.
+- [ ] No purchase pop-up before minute 2. At ~2:05 the STARTER PACK pops up once ("Ends in" countdown); the 🎒 deal button on the right keeps counting down until minute 10 of the first session, then disappears (never again on later sessions). Players who never bought anything then see the R$9 RECRUIT DEAL (🏷️ button, one pop-up per session). Other offers (tanks after a defeat, call the cat when losing a round) at most once per 10 min.
 
 ## The cat (run `event`)
 - [ ] 25 s before a natural visit: "🐱 THE CAT IS WAKING UP!" banner; the CAT timer on the right counts down.
@@ -56,10 +66,14 @@ Headless sim: `node tools/sim/run.mjs toyarmy --debug "give 1000000;give unit Ta
 
 ## Menus and economy
 - [ ] TOY BOX: count / capacity / power / squad size, mold press with progress bar and ⏩ SKIP (R$19), one row per unit kind with the real model, deployed / getting-up counts and MERGE when 3 are ready.
-- [ ] BAGS: 4 bags with exact odds (Secret shows "??? SECRET"), rank locks, BUY (plastic) / OPEN FREE (n), luck line with the boost timer.
+- [ ] BAGS: 4 bags, each toy's % (sums to 100; Secret shows "??? SECRET" with its %), a 🍀 boosted % under each while any luck applies (`boost luck 4`: numbers change within 1 s), mutation % line, rank locks, BUY (plastic) / OPEN FREE (n), luck line with the boost timer. `policy on`: BUY says BUY (FIXED) and "BUY gives exactly: …"; `bag Basic` returns exactly that.
 - [ ] BASE (upgrades): 5 upgrades with level and cost; the Plastic Press raises offline income; Bigger Box raises capacity.
-- [ ] INDEX: 28 cells; undiscovered ones are dark silhouettes; found count updates when a new toy arrives.
-- [ ] SHOP: PASSES (6 + the Roblox Premium line), BOOSTS, PLASTIC; owned passes say OWNED ✅. In Studio purchases are simulated.
+- [ ] INDEX: 28 cells with the counter class glyph and the best bag % (mutations: their %); undiscovered ones are dark silhouettes; the Dino stays "???"; found count updates when a new toy arrives.
+- [ ] Counters: TOY BOX header legend "💂 > 🚁 > 🛡️ > 💂", every row says what it beats; the DEPLOY button shows STRONG / WEAK / EVEN vs its target.
+- [ ] SHOP: PASSES (each with a 🎁 gift button that opens the player picker), SKINS (3D preview, BUY / EQUIP / EQUIPPED; the skin shows on your soldiers on the field and in the toy box), BOOSTS (server boosts say NEEDS nx ON until the lower one is running; Starter Pack only in its window with "Ends in"; Recruit Deal only if you never bought), PLASTIC (amounts scale with rank). `policy on`: Lucky Bags, 10 Bags and the luck boosts disappear. Owned passes say OWNED ✅. In Studio purchases are simulated.
+- [ ] STRIKE (left menu): enemy zones as target buttons (strongest pre-selected), 7 strike cards with prices. Each strike draws for everyone and knocks toys over when it lands (`strike dog`: the dog runs in from the door to every enemy zone, WOOF!). A strike with no target is saved and the card says USE FREE (n).
+- [ ] 🎁 FREE (left menu): codes (`LAUNCH`), group gift ("coming soon" while id 0), playtime gifts 5/10/30/60, 3 quests; the "!" badge appears when something is claimable. A bought server boost shows as a pill under the top bar.
+- [ ] `hourly`: "HOURLY MEGA CAT! 2x PLASTIC" banner, the cat swats 4 zones and drops 8 bags, plastic pill x2 for 10 min.
 - [ ] Your toy box at the south wall shows your 3 strongest soldiers and an army-size sign; it turns gold with Pro Commander.
 - [ ] Head tag shows rank; VIP / PRO get 🎖️ / 👑 in the tag and in chat.
 - [ ] DAILY: 7 days, today's card highlighted, CLAIM pays plastic + bags; the 🎁 button shows "!" when ready. GIFT: a free bag every 10 min online.

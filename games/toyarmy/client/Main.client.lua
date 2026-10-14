@@ -1,5 +1,5 @@
--- Toy Army ⚔️ client: music, the arena (garrisons, battles, the block tower), the house cat, the HUD and menus,
--- and chat tags for VIP / Pro Commanders.
+-- Toy Army client: music, the arena (garrisons, battles, the block tower), the house cat, paid strikes, the HUD and
+-- menus, live Robux prices, the FREE menu (codes, gifts, quests) and chat tags for VIP / Pro Commanders.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
@@ -10,11 +10,24 @@ local Sfx = require(ClientLib:WaitForChild("Sfx"))
 local Arena = require(ClientLib:WaitForChild("Arena"))
 local CatView = require(ClientLib:WaitForChild("CatView"))
 local Hud = require(ClientLib:WaitForChild("Hud"))
+local Panels = require(ClientLib:WaitForChild("Panels"))
+local StrikeView = require(ClientLib:WaitForChild("StrikeView"))
+local Prices = require(ClientLib:WaitForChild("Prices"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 
 Sfx.music(Config.Music, 0.2)
 Arena.init()
 CatView.init(Hud.catHooks())
+StrikeView.init()
 Hud.init()
+LiveUI.init(Config.Live)
+
+-- Live prices (regional pricing / price tests): redraw whatever shop page is open when they arrive.
+Prices.onChange(function()
+	Panels.refresh()
+	Hud.refresh()
+end)
+Prices.sync(Config.Passes, Config.Products)
 
 -- Chat tags: [PRO] / [VIP] in front of their names.
 pcall(function()

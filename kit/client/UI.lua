@@ -850,7 +850,7 @@ function UI.offer(o: { [string]: any })
 		task.spawn(function()
 			local t = tonumber(o.seconds) or 0
 			while t > 0 and panel.isOpen() do
-				timer.Text = "Ends in " .. t .. "s"
+				timer.Text = "Ends in " .. (t >= 60 and string.format("%d:%02d", t // 60, t % 60) or t .. "s")
 				task.wait(1)
 				t -= 1
 			end

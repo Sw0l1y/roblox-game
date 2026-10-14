@@ -15,11 +15,17 @@ local Zones = require(script.Parent:WaitForChild("Zones"))
 local Cat = require(script.Parent:WaitForChild("Cat"))
 local Commander = require(script.Parent:WaitForChild("Commander"))
 local Battle = require(script.Parent:WaitForChild("Battle"))
+local Strikes = require(script.Parent:WaitForChild("Strikes"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Shop = require(script.Parent:WaitForChild("Shop"))
 
 local Debug = {}
 
 export type Ctx = {
 	round: () -> string,
+	hourly: () -> string,
+	ftue: (Player) -> string,
+	skin: (Player, string) -> (),
 	supply: (Player) -> (),
 	refresh: (Player) -> (),
 }
@@ -69,7 +75,7 @@ local function properMut(s: string?): string
 end
 
 local function run(ctx: Ctx, cmd: string): string
-	local args = {}
+	local args: { string } = {}
 	for w in string.gmatch(cmd, "%S+") do
 		table.insert(args, w)
 	end
@@ -155,10 +161,11 @@ local function run(ctx: Ctx, cmd: string): string
 		for _, p in ipairs(Players:GetPlayers()) do
 			local d = Data.get(p)
 			if d then
-				table.insert(lines, string.format("%s[%s] plastic=%s units=%d busy=%d tut=%d rank=%d", p.Name, tostring(p:GetAttribute("Side")), Fmt.num(d.plastic), Army.count(d), Army.busyCount(p), d.tut, Army.rank(d)))
+				table.insert(lines, string.format("%s[%s] plastic=%s units=%d busy=%d tut=%d rank=%d ftue[%s]%s", p.Name, tostring(p:GetAttribute("Side")), Fmt.num(d.plastic), Army.count(d), Army.busyCount(p), d.tut, Army.rank(d), ctx.ftue(p), p:GetAttribute("RandomBlocked") == true and " randomBlocked" or ""))
 			end
 		end
 		table.insert(lines, Cat.status())
+		table.insert(lines, string.format("boosts plastic x%d luck x%d, strikes fired %d", Boosts.mult("plastic"), Boosts.mult("luck"), Strikes.count()))
 		table.insert(lines, "ai " .. (Commander.isEnabled() and "on" or "off") .. " green=" .. tostring(Commander.mode("Green")) .. " tan=" .. tostring(Commander.mode("Tan")))
 		return table.concat(lines, " | ")
 	elseif c == "ai" then
@@ -175,7 +182,7 @@ local function run(ctx: Ctx, cmd: string): string
 		return table.concat(out, ", ")
 	elseif c == "zone" then
 		local id = args[2] or "rug"
-		local team = args[3]
+		local team: string? = args[3]
 		if team and (team == "none" or team == "-") then
 			team = nil
 		elseif team then
@@ -243,8 +250,83 @@ local function run(ctx: Ctx, cmd: string): string
 		end
 		local ok, why = Zones.deploy(p, args[2] or "rug")
 		return tostring(ok) .. " " .. tostring(why)
+	elseif c == "hourly" then
+		return ctx.hourly()
+	elseif c == "strike" then
+		-- strike <key> [zone] [p]: fire a paid strike for free (rubber, balloon, callcat, rcplane, rockets, flashlight, dog)
+		local key = args[2] or "rockets"
+		if not Config.Strikes[key] then
+			return "strike <rubber|balloon|callcat|rcplane|rockets|flashlight|dog> [zone] [player]"
+		end
+		local ps = findPlayers(args[4] or args[3])
+		local p = ps[1]
+		if not p then
+			return "no player"
+		end
+		local zone = args[3] and Config.ZoneById[args[3]] and args[3] or nil
+		return Strikes.fire(p, key, zone) and ("fired " .. key .. " for " .. p.Name) or "nothing to hit"
+	elseif c == "boost" then
+		-- boost plastic|luck <mult> [minutes]
+		local kind = args[2] == "luck" and "luck" or "plastic"
+		local m = Boosts.add(kind, tonumber(args[3]) or 2, (tonumber(args[4]) or 15) * 60, "Debug")
+		return kind .. " boost x" .. m
+	elseif c == "skin" then
+		-- skin <skinKey|none> [p]: equip (owning the pass is not checked)
+		local key = args[2] or ""
+		if key == "none" then
+			key = ""
+		end
+		for _, p in ipairs((findPlayers(args[3]))) do
+			ctx.skin(p, key)
+		end
+		return "skin " .. (key == "" and "none" or key)
+	elseif c == "policy" then
+		-- policy on|off [p]: pretend the paid random item rule applies (on) or not (off)
+		local on = args[2] ~= "off"
+		for _, p in ipairs((findPlayers(args[3]))) do
+			p:SetAttribute("RandomBlocked", on)
+		end
+		return "RandomBlocked " .. tostring(on)
+	elseif c == "pass" then
+		-- pass <key> [p]: grant a pass (Studio test)
+		local key = args[2] or ""
+		if not Config.Passes[key] then
+			return "pass <key> [player]"
+		end
+		for _, p in ipairs((findPlayers(args[3]))) do
+			Shop.prompt(p, "pass", key)
+		end
+		return "pass " .. key
+	elseif c == "bag" then
+		-- bag <Key> [p]: buy a bag with plastic and list what came out (fixed contents while RandomBlocked)
+		local key = args[2] or "Basic"
+		if not Config.BagByKey[key] then
+			return "bag <Basic|Heavy|Elite|Mega> [player]"
+		end
+		local out = {}
+		for _, p in ipairs((findPlayers(args[3]))) do
+			local d = Data.get(p)
+			local before = d and table.clone(d.units) or {}
+			local ok, msg = Army.openBag(p, key, false)
+			local got = {}
+			for stack, n in pairs(d and d.units or {}) do
+				local diff = n - (before[stack] or 0)
+				if diff > 0 then
+					table.insert(got, stack .. " x" .. diff)
+				end
+			end
+			table.sort(got)
+			table.insert(out, p.Name .. (ok and (": " .. table.concat(got, ", ")) or (" refused: " .. tostring(msg))))
+		end
+		return table.concat(out, " | ")
+	elseif c == "ftue" then
+		local out = {}
+		for _, p in ipairs((findPlayers(args[2]))) do
+			table.insert(out, p.Name .. ": " .. ctx.ftue(p))
+		end
+		return table.concat(out, " | ")
 	elseif c == "help" or c == "" then
-		return "give [player] plastic|xp|bags|unit <n|Unit Mut n> · event · clip · call [p] · reset [p] · state · ai on|off|act · zone <id> <team> · tut [p] n · merge [p] · rank [p] n · topple · round · supply [p] · daily [p] · deploy <zone> [p]"
+		return "give [player] plastic|xp|bags|unit <n|Unit Mut n> · event · hourly · clip · call [p] · strike <key> [zone] [p] · boost plastic|luck n · skin <key|none> [p] · pass <key> [p] · policy on|off [p] · bag <Key> [p] · ftue · reset [p] · state · ai on|off|act · zone <id> <team> · tut [p] n · merge [p] · rank [p] n · topple · round · supply [p] · daily [p] · deploy <zone> [p]"
 	end
 	return "unknown command: " .. c .. " (try help)"
 end

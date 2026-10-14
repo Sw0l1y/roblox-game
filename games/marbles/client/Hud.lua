@@ -1,9 +1,11 @@
 --!strict
 -- HUD and menus: top counters (coins, wins, index), the phase/timer pill, the next-goal pill with a
--- pointing arrow and a world beam to the right machine, the left menu (Marbles, Packs, Shine, League,
--- Shop) and right column (Daily, Grand Prix timer, Luck, 2x, mute), plus every panel: collection with
--- levels/stat points/tune-ups, the index, packs with numeric odds, the Shine Machine, the daily league,
--- the shop (passes, boosts, coins, trails) and the 7-day daily reward.
+-- pointing arrow and a world beam to the right machine, the server-boost pill, the left menu grid (Marbles,
+-- Packs, Shine, League, Shop, FREE) and right column (Daily, Grand Prix timer, Starter/2x offer, Luck, mute),
+-- plus the panels: collection with levels/stat points/tune-ups, the index, packs with exact % odds that
+-- follow the player's live luck (and an every-marble odds sheet), the Shine Machine, the daily league and
+-- the 7-day daily reward with Keep Streak. The shop and purchase popups live in Store.
+-- Players under Roblox's paid random item restriction (RandomBlocked) see fixed coin offers instead of rolls.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,6 +21,9 @@ local Sfx = require(ClientLib:WaitForChild("Sfx"))
 local State = require(ClientLib:WaitForChild("State"))
 local MarbleIcon = require(ClientLib:WaitForChild("MarbleIcon"))
 local Reveal = require(ClientLib:WaitForChild("Reveal"))
+local Store = require(ClientLib:WaitForChild("Store"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
+local Prices = require(ClientLib:WaitForChild("Prices"))
 
 local Hud = {}
 
@@ -29,21 +34,20 @@ local upgradeRemote = Net.event("Upgrade")
 local tuneRemote = Net.event("TuneUp")
 local dailyRemote = Net.event("ClaimDaily")
 local leagueRemote = Net.event("ClaimLeague")
-local trailRemote = Net.event("SetTrail")
 local favRemote = Net.event("Favorite")
 local openPackFunc = Net.func("OpenPack")
 local shineFunc = Net.func("Shine")
 
 local root = UI.root
 local data: { [string]: any } = {}
-local sessionStart = os.clock()
 
 local function now(): number
 	return workspace:GetServerTimeNow()
 end
 
+-- UTC day number on the server's clock (the server's Economy.today).
 local function today(): number
-	return math.floor(os.time() / 86400)
+	return math.floor(now() / 86400)
 end
 
 local function noStroke(l: TextLabel)
@@ -72,6 +76,28 @@ end
 local function owns(pass: string): boolean
 	local p = data.passes
 	return type(p) == "table" and p[pass] == true
+end
+
+local function serverBoost(kind: string): number
+	local ends = ReplicatedStorage:GetAttribute("BoostEnd_" .. kind)
+	local m = ReplicatedStorage:GetAttribute("Boost_" .. kind)
+	if type(ends) == "number" and ends > now() and type(m) == "number" then
+		return m
+	end
+	return 1
+end
+
+-- The player's luck right now, the same product as the server's Economy.luck: Lucky Charm x Luck Boost x
+-- server luck boost. Every odds screen uses it, so the shown % are exactly what the roll uses.
+local function luck(): number
+	local l = 1
+	if owns("LuckyCharm") then
+		l *= Config.LuckyCharmMult
+	end
+	if (tonumber(data.luckUntil) or 0) > now() then
+		l *= Config.LuckBoostMult
+	end
+	return l * serverBoost("luck")
 end
 
 -- Effective stats of an owned marble entry (mirrors the server's Economy.stats).
@@ -166,24 +192,40 @@ UI.corner(goalPill, 18)
 UI.stroke(goalPill, 3)
 UI.gradient(goalPill, UI.shade(UI.colors.teal, 0.6), UI.shade(UI.colors.teal, 0.38))
 local goalText = UI.text(goalPill, "", { Size = UDim2.new(1, -24, 0.72, 0), Position = UDim2.new(0, 12, 0.14, 0), ZIndex = 3 })
-UI.setToastTop(122) -- toasts stack under the hint instead of over it
+-- server boosts (kit Boosts: "⚡ 2x COINS 12:04") and the round modifiers bought for the next race
+LiveUI.boostPill(root, { coins = "COINS", luck = "LUCK" }, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 118), Size = UDim2.fromOffset(400, 34) })
+local modsPill = UI.frame(root, { Name = "NextMods", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 156), Size = UDim2.fromOffset(460, 30), Visible = false })
+UI.corner(modsPill, 14)
+UI.stroke(modsPill, 3)
+UI.gradient(modsPill, UI.shade(UI.colors.purple, 0.75), UI.shade(UI.colors.purple, 0.45))
+local modsText = UI.text(modsPill, "", { Size = UDim2.new(1, -20, 0.76, 0), Position = UDim2.new(0, 10, 0.12, 0), ZIndex = 3 })
+local function refreshMods()
+	local t = ReplicatedStorage:GetAttribute("NextMods")
+	modsPill.Visible = type(t) == "string" and t ~= ""
+	modsText.Text = type(t) == "string" and ("NEXT RACE: " .. t) or ""
+end
+ReplicatedStorage:GetAttributeChangedSignal("NextMods"):Connect(refreshMods)
+refreshMods()
+UI.setToastTop(192) -- toasts stack under the hint and boost pills instead of over them
 
--- Left menu (5 buttons: 5 x 78 + 4 x 12 = 438 tall)
+-- Left menu grid (2 x 3: 2 x 78 + 12 wide, 3 x 78 + 2 x 12 tall)
 local left = UI.frame(root, {
 	Name = "Menu",
 	BackgroundTransparency = 1,
 	AnchorPoint = MOBILE and Vector2.new(0, 0.5) or Vector2.new(0, 0),
 	Position = MOBILE and UDim2.new(0, 16, 0.5, 40) or UDim2.new(0, 16, 0.34, 10),
-	Size = UDim2.fromOffset(84, 438),
+	Size = UDim2.fromOffset(168, 258),
 })
-UI.list(left, 12).VerticalAlignment = MOBILE and Enum.VerticalAlignment.Center or Enum.VerticalAlignment.Top
+local leftGrid = UI.grid(left, UDim2.fromOffset(78, 78), 12)
+leftGrid.FillDirectionMaxCells = 2
 local bMarbles = UI.iconButton(left, I.marbles, "Marbles", "purple", { LayoutOrder = 1 })
 local bPacks = UI.iconButton(left, I.pack, "Packs", "green", { LayoutOrder = 2 })
 local bShine = UI.iconButton(left, I.shine, "Shine", "gold", { LayoutOrder = 3 })
 local bLeague = UI.iconButton(left, I.league, "League", "sky", { LayoutOrder = 4 })
 local bShop = UI.iconButton(left, I.shop, "Shop", "pink", { LayoutOrder = 5 })
+local bFree = UI.iconButton(left, I.gift, "FREE", "green", { LayoutOrder = 6 })
 
--- Right column (3 to 5 buttons: Luck and 2x come and go)
+-- Right column (3 to 5 buttons: the Starter/2x offer and Luck come and go)
 local rightCol = UI.frame(root, {
 	Name = "Side",
 	BackgroundTransparency = 1,
@@ -198,14 +240,15 @@ local bLuck = UI.iconButton(rightCol, I.luck, "Luck", "green", { LayoutOrder = 3
 local bX2 = UI.iconButton(rightCol, I.x2, "2x", "gold", { LayoutOrder = 4 })
 local bMute = UI.iconButton(rightCol, I.music, "Music", "teal", { LayoutOrder = 5 })
 bLuck.button.Visible = false
+bX2.button.Visible = false
 
 -- Panels ------------------------------------------------------------------------------------------------------
 local pMarbles = UI.panel("Marbles", "MY MARBLES", "purple", Vector2.new(820, 520))
 local pPacks = UI.panel("Packs", "MARBLE PACKS", "green", Vector2.new(940, 500))
 local pShine = UI.panel("Shine", "SHINE MACHINE", "gold", Vector2.new(780, 500))
 local pLeague = UI.panel("League", "DAILY LEAGUE", "sky", Vector2.new(820, 500))
-local pShop = UI.panel("Shop", "SHOP", "pink", Vector2.new(860, 520))
-local pDaily = UI.panel("Daily", "DAILY REWARD", "orange", Vector2.new(700, 380))
+local pDaily = UI.panel("Daily", "DAILY REWARD", "orange", Vector2.new(700, 420))
+local pOdds = UI.panel("Odds", "ALL ODDS", "green", Vector2.new(820, 520))
 local pWelcome = UI.panel("Welcome", "WELCOME BACK!", "teal", Vector2.new(480, 320))
 
 bMarbles.button.MouseButton1Click:Connect(function()
@@ -221,7 +264,17 @@ bLeague.button.MouseButton1Click:Connect(function()
 	UI.toggle("League")
 end)
 bShop.button.MouseButton1Click:Connect(function()
-	UI.toggle("Shop")
+	if Store.isOpen() then
+		UI.closeAll()
+	else
+		Store.open()
+	end
+end)
+bFree.button.MouseButton1Click:Connect(function()
+	LiveUI.open()
+end)
+LiveUI.onClaimable(function(n: number)
+	bFree.setBadge(n)
 end)
 bDaily.button.MouseButton1Click:Connect(function()
 	UI.toggle("Daily")
@@ -233,7 +286,7 @@ bLuck.button.MouseButton1Click:Connect(function()
 	UI.toggle("Packs")
 end)
 bX2.button.MouseButton1Click:Connect(function()
-	UI.toggle("Shop")
+	Store.open(Store.starterLeft() > 0 and "Deals" or "Passes")
 end)
 bMute.button.MouseButton1Click:Connect(function()
 	local m = not Sfx.isMuted()
@@ -428,8 +481,11 @@ end
 local _ = mSelect
 
 -- Packs panel ------------------------------------------------------------------------------------------------
-local luckLine = body(pPacks.body, "", { Size = UDim2.new(1, -220, 0, 30), Position = UDim2.fromOffset(0, 0), TextXAlignment = Enum.TextXAlignment.Left })
-local luckBuy = UI.button(pPacks.body, "🍀 LUCK x2  R$" .. Config.Products.LuckBoost.price, "green", { Size = UDim2.fromOffset(210, 36), Position = UDim2.new(1, -210, 0, -4) })
+-- Every chance is an exact % from kit Tiers (they add up to 100) at the player's luck right now: with luck on,
+-- each row shows the normal % in grey next to the boosted % in green, and the panel redraws as luck changes.
+-- A restricted player's coin purchase shows the fixed marble of the day instead of odds.
+local luckLine = body(pPacks.body, "", { Size = UDim2.new(1, -236, 0, 30), Position = UDim2.fromOffset(0, 0), TextXAlignment = Enum.TextXAlignment.Left })
+local luckBuy = UI.button(pPacks.body, "", "green", { Size = UDim2.fromOffset(226, 36), Position = UDim2.new(1, -226, 0, -4) })
 luckBuy.MouseButton1Click:Connect(function()
 	buy("product", "LuckBoost")
 end)
@@ -442,15 +498,28 @@ local packRow = UI.scroll(pPacks.body, {
 UI.list(packRow, 12, true, Enum.HorizontalAlignment.Left)
 local opening = false
 local openPack: (string, number) -> ()
+local GREY = Color3.fromRGB(190, 195, 210)
+local GREEN = Color3.fromRGB(140, 255, 140)
+
+-- Today's fixed marble when this coin purchase can't be a roll (paid random restriction), else nil.
+local function fixedFor(key: string): string?
+	local pack = Config.PackByKey[key]
+	local free = tonumber((data.packs or {})[key]) or 0
+	if Store.blocked() and pack and pack.price > 0 and free <= 0 then
+		return Config.fixedMarble(key, today())
+	end
+	return nil
+end
 
 openPack = function(key: string, count: number)
 	if opening then
 		return
 	end
 	opening = true
+	local expect = fixedFor(key)
 	task.spawn(function()
 		local ok, res = pcall(function()
-			return openPackFunc:InvokeServer(key, count)
+			return openPackFunc:InvokeServer(key, count, expect)
 		end)
 		opening = false
 		if not ok or type(res) ~= "table" then
@@ -471,38 +540,94 @@ openPack = function(key: string, count: number)
 	end)
 end
 
+-- One odds row: name, then the chance (with luck on: the normal chance in grey and the boosted one in green).
+local function oddsRow(parent: Instance, pos: UDim2, size: UDim2, name: string, color: Color3, entries: { any }, entry: any, l: number): Frame
+	local row = UI.frame(parent, { Size = size, Position = pos, BackgroundColor3 = UI.INK, BackgroundTransparency = 0.3 })
+	UI.corner(row, 8)
+	UI.text(row, name, { Size = UDim2.new(0.42, -6, 0.86, 0), Position = UDim2.new(0, 6, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = color })
+	if l > 1 then
+		UI.text(row, Tiers.odds(entries, entry), { Font = UI.BODY, Size = UDim2.new(0.26, 0, 0.72, 0), Position = UDim2.new(0.42, 0, 0.14, 0), TextColor3 = GREY })
+		UI.text(row, Tiers.odds(entries, entry, l), { Size = UDim2.new(0.32, -6, 0.86, 0), Position = UDim2.new(0.68, 0, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = GREEN })
+	else
+		UI.text(row, Tiers.odds(entries, entry), { Size = UDim2.new(0.58, -6, 0.86, 0), Position = UDim2.new(0.42, 0, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Right })
+	end
+	return row
+end
+
+-- Mutation chances on every pack pull, one line ("🟡 4%  🌈 1%  🌌 0.25%"), boosted while lucky.
+local function mutationText(l: number): string
+	local parts: { string } = {}
+	for _, o in ipairs(Config.PackMutations) do
+		local m = Config.MutationByKey[o.key]
+		if m then
+			table.insert(parts, m.glyph .. " " .. Tiers.odds(Config.PackMutations, o, l))
+		end
+	end
+	return table.concat(parts, "  ")
+end
+
+local function packCard(pack: Config.Pack, order: number, l: number, title: string?): Frame
+	local c = UI.card(packRow, pack.color, { Size = UDim2.fromOffset(230, 400), LayoutOrder = order })
+	UI.text(c, pack.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(60, 60), Position = UDim2.new(0.5, -30, 0, 4) })
+	UI.text(c, title or string.upper(pack.name), { Size = UDim2.new(1, -16, 0, 26), Position = UDim2.fromOffset(8, 64) })
+	UI.text(c, pack.desc, { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 20), Position = UDim2.fromOffset(8, 90), TextWrapped = true })
+	local fixed = if title then nil else fixedFor(pack.key)
+	if fixed then
+		local def = Config.MarbleById[fixed]
+		UI.text(c, "TODAY YOU GET:", { Size = UDim2.new(1, -16, 0, 22), Position = UDim2.fromOffset(8, 116) })
+		MarbleIcon.flat(c, fixed, nil, 84, { Position = UDim2.new(0.5, -42, 0, 140) })
+		UI.text(c, def and def.name or fixed, { Size = UDim2.new(1, -16, 0, 24), Position = UDim2.fromOffset(8, 228) })
+		MarbleIcon.tierText(c, def and def.tier or "Common", { Size = UDim2.new(1, -40, 0, 20), Position = UDim2.fromOffset(20, 254) })
+		UI.text(c, "The same marble all day.", { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 20), Position = UDim2.fromOffset(8, 276) })
+	else
+		for i, o in ipairs(pack.odds) do
+			local tc = Tiers.get(o.key)
+			oddsRow(c, UDim2.fromOffset(8, 114 + (i - 1) * 21), UDim2.new(1, -16, 0, 19), tc.name, tc.color, pack.odds, o, l)
+		end
+		UI.text(c, mutationText(l), { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 20), Position = UDim2.fromOffset(8, 116 + #pack.odds * 21), TextColor3 = l > 1 and GREEN or Color3.new(1, 1, 1) })
+		local ob = UI.button(c, "ODDS", "white", { Size = UDim2.fromOffset(62, 28), Position = UDim2.new(1, -68, 0, 6) })
+		ob.MouseButton1Click:Connect(function()
+			pOdds.open()
+		end)
+	end
+	return c
+end
+
+local shownLuck = 1
 local function drawPacks()
 	clearKids(packRow)
-	local lu = tonumber(data.luckUntil) or 0
-	local luckLeft = lu - os.time()
-	local luck = 1
+	local l = luck()
+	shownLuck = l
+	local isBlocked = Store.blocked()
+	local lu = (tonumber(data.luckUntil) or 0) - now()
+	local parts: { string } = {}
 	if owns("LuckyCharm") then
-		luck *= Config.LuckyCharmMult
+		table.insert(parts, "Charm")
 	end
-	if luckLeft > 0 then
-		luck *= Config.LuckBoostMult
+	if lu > 0 then
+		table.insert(parts, "Boost " .. Fmt.time(lu))
 	end
-	luckLine.Text = luckLeft > 0 and string.format("🍀 Luck x%.2g active - %s left", luck, Fmt.time(luckLeft)) or (luck > 1 and string.format("🍀 Lucky Charm: luck x%.2g", luck) or "Odds shown per pull. Luck boosts shift them up!")
+	if serverBoost("luck") > 1 then
+		table.insert(parts, string.format("Server x%g", serverBoost("luck")))
+	end
+	if l > 1 then
+		luckLine.Text = string.format("🍀 Luck x%.3g (%s): grey = normal, green = your odds now", l, table.concat(parts, " + "))
+	elseif isBlocked then
+		luckLine.Text = "Coin packs give the marble shown. Free packs show their odds."
+	else
+		local gx = Config.PackByKey.galaxy
+		local sec = gx.odds[#gx.odds]
+		luckLine.Text = string.format("🍀 Luck x%g: Galaxy Pack SECRET %s → %s!", Config.LuckBoostMult, Tiers.odds(gx.odds, sec), Tiers.odds(gx.odds, sec, Config.LuckBoostMult))
+	end
+	luckBuy.Visible = not isBlocked
+	luckBuy.Text = "🍀 LUCK x2  R$" .. Config.Products.LuckBoost.price
 	local order = 0
 	for _, pack in ipairs(Config.Packs) do
 		local free = tonumber((data.packs or {})[pack.key]) or 0
 		if pack.price > 0 or free > 0 then
 			order += 1
-			local c = UI.card(packRow, pack.color, { Size = UDim2.fromOffset(210, 400), LayoutOrder = pack.price == 0 and 0 or order })
-			UI.text(c, pack.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(80, 80), Position = UDim2.new(0.5, -40, 0, 8) })
-			UI.text(c, string.upper(pack.name), { Size = UDim2.new(1, -16, 0, 28), Position = UDim2.fromOffset(8, 90) })
-			local d = UI.text(c, pack.desc, { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 34), Position = UDim2.fromOffset(8, 118), TextWrapped = true })
-			local _ = d
-			-- odds
-			for i, o in ipairs(pack.odds) do
-				local tc = Tiers.get(o.key)
-				local y = 156 + (i - 1) * 24
-				local row = UI.frame(c, { Size = UDim2.new(1, -20, 0, 22), Position = UDim2.fromOffset(10, y), BackgroundColor3 = UI.INK, BackgroundTransparency = 0.35 })
-				UI.corner(row, 8)
-				UI.text(row, tc.name, { Size = UDim2.new(0.6, -6, 0.86, 0), Position = UDim2.new(0, 6, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = tc.color })
-				UI.text(row, Tiers.odds(pack.odds, o), { Size = UDim2.new(0.4, -6, 0.86, 0), Position = UDim2.new(0.6, 0, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Right })
-			end
-			local label = free > 0 and string.format("OPEN FREE (%d)", free) or ("OPEN  " .. Fmt.num(pack.price) .. "💰")
+			local c = packCard(pack, pack.price == 0 and 0 or order, l)
+			local label = free > 0 and string.format("OPEN FREE (%d)", free) or ((fixedFor(pack.key) and "BUY  " or "OPEN  ") .. Fmt.num(pack.price) .. "💰")
 			local openB = UI.button(c, label, free > 0 and "orange" or "green", { Size = UDim2.new(1, -20, 0, 46), Position = UDim2.new(0, 10, 1, -102) })
 			openB.MouseButton1Click:Connect(function()
 				openPack(pack.key, 1)
@@ -515,22 +640,73 @@ local function drawPacks()
 			else
 				local t3 = UI.button(c, "🔒 OPEN x3", "grey", { Size = UDim2.new(1, -20, 0, 42), Position = UDim2.new(0, 10, 1, -52) })
 				t3.MouseButton1Click:Connect(function()
-					pShop.open()
+					Store.open("Passes")
 				end)
 			end
 		end
 	end
-	-- Robux pack
-	local g = UI.card(packRow, "pink", { Size = UDim2.fromOffset(210, 400), LayoutOrder = 99 })
-	UI.text(g, "🌌", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(80, 80), Position = UDim2.new(0.5, -40, 0, 8) })
-	UI.text(g, "GALAXY PACK", { Size = UDim2.new(1, -16, 0, 28), Position = UDim2.fromOffset(8, 90) })
-	UI.text(g, "Epic-heavy odds, Secrets 1 in 125. Instant.", { Font = UI.BODY, Size = UDim2.new(1, -16, 0, 60), Position = UDim2.fromOffset(8, 124), TextWrapped = true })
-	local gb = UI.button(g, "R$ " .. Config.Products.GalaxyPack.price, "green", { Size = UDim2.new(1, -20, 0, 50), Position = UDim2.new(0, 10, 1, -62) })
-	gb.MouseButton1Click:Connect(function()
-		buy("product", "GalaxyPack")
-	end)
+	-- the Robux Galaxy Pack: a paid random item, so not shown under the restriction
+	if not isBlocked then
+		local g = packCard(Config.PackByKey.galaxy, 99, l, "GALAXY PACK (R$)")
+		local gb = UI.button(g, "R$ " .. Config.Products.GalaxyPack.price .. "  INSTANT", "green", { Size = UDim2.new(1, -20, 0, 60), Position = UDim2.new(0, 10, 1, -72) })
+		gb.MouseButton1Click:Connect(function()
+			buy("product", "GalaxyPack")
+		end)
+	end
 end
 pPacks.onOpen = drawPacks
+
+-- Every-marble odds sheet: per pack, each tier's % (live with luck), how many marbles share it and each
+-- marble's own %, the names (Secret ones stay ??? until found), mutations, and the Shine Machine.
+local oddsScroll = UI.scroll(pOdds.body, {})
+UI.list(oddsScroll, 4)
+local function drawOdds()
+	clearKids(oddsScroll)
+	local l = luck()
+	local blockedNow = Store.blocked()
+	local n = 0
+	local function line(text: string, color: Color3?, small: boolean?, h: number?): TextLabel
+		n += 1
+		local t = UI.text(oddsScroll, text, {
+			LayoutOrder = n,
+			Size = UDim2.new(1, -10, 0, h or 26),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			Font = small and UI.BODY or UI.TITLE,
+			TextColor3 = color or UI.INK,
+		})
+		if small or not color then
+			noStroke(t)
+		end
+		return t
+	end
+	line(l > 1 and string.format("🍀 Your luck now: x%.3g. Each line: normal %%  →  your %% now.", l) or "Exact chances per pull. In every pack they add up to 100%.", nil, true)
+	if blockedNow then
+		line("Coin purchases here give the fixed marble shown on each pack, and the Shine Machine a fixed Gold shine.", nil, true)
+	end
+	local idx = data.index or {}
+	for _, pack in ipairs(Config.Packs) do
+		line(pack.glyph .. " " .. string.upper(pack.name) .. (pack.price > 0 and ("  ·  " .. Fmt.num(pack.price) .. "💰") or "  ·  FREE") .. (pack.key == "galaxy" and "  (and the R$ Galaxy Pack)" or ""), Color3.fromRGB(255, 214, 50), false, 30)
+		local ps = Tiers.percents(pack.odds, l)
+		for i, o in ipairs(pack.odds) do
+			local tc = Tiers.get(o.key)
+			local list = Config.MarblesByTier[o.key] or {}
+			local names: { string } = {}
+			for _, def in ipairs(list) do
+				table.insert(names, (o.key == "Secret" and not idx[def.id]) and "???" or def.name)
+			end
+			line(string.format("%s  %s   ·  %d marbles, %s each", tc.name, Tiers.oddsLive(pack.odds, o, l), #list, Tiers.pct(ps[i] / math.max(1, #list))), tc.color, false, 24)
+			line(table.concat(names, ", "), nil, true, #names > 7 and 38 or 20)
+		end
+		line("Mutation on every pull:  " .. mutationText(l), nil, true)
+	end
+	line("✨ SHINE MACHINE  ·  " .. Fmt.num(Config.Shine.cost) .. "💰", Color3.fromRGB(255, 214, 50), false, 30)
+	for _, o in ipairs(Config.Shine.odds) do
+		local m = Config.MutationByKey[o.key]
+		line((m and (m.glyph .. " " .. m.name .. " x" .. m.mult .. " coins") or "No shine") .. "   " .. Tiers.oddsLive(Config.Shine.odds, o, l), m and m.color or Color3.fromRGB(190, 195, 210), false, 24)
+	end
+end
+pOdds.onOpen = drawOdds
 
 -- Shine panel ---------------------------------------------------------------------------------------------------
 Hud.shineKey = ""
@@ -540,6 +716,16 @@ local shineSide = UI.frame(pShine.body, { BackgroundTransparency = 1, Size = UDi
 local shining = false
 local drawShine: () -> ()
 
+-- Paid shines can't be a roll under the paid random item restriction: those players get a fixed Gold shine
+-- (dearer, shown before paying). The first shine is free and always Gold for everyone.
+local function shineFree(): boolean
+	return not (data.ftue and data.ftue.shine)
+end
+
+local function shineFixed(): boolean
+	return not shineFree() and Store.blocked()
+end
+
 local function doShine()
 	local key = Hud.shineKey
 	local e = data.marbles and data.marbles[key]
@@ -548,8 +734,9 @@ local function doShine()
 	end
 	shining = true
 	task.spawn(function()
+		local fixed = shineFixed()
 		local ok, res = pcall(function()
-			return shineFunc:InvokeServer(key)
+			return shineFunc:InvokeServer(key, fixed)
 		end)
 		shining = false
 		if not ok or type(res) ~= "table" then
@@ -565,7 +752,7 @@ local function doShine()
 			Hud.shineKey = tostring(res.key)
 		end
 		local again = nil
-		if (data.coins or 0) >= Config.Shine.cost then
+		if (data.coins or 0) >= (shineFixed() and Config.Shine.fixedCost or Config.Shine.cost) then
 			again = function()
 				pShine.open()
 			end
@@ -614,31 +801,38 @@ drawShine = function()
 	end
 	MarbleIcon.view(shineSide, tostring(e.id), nil, { Size = UDim2.fromOffset(160, 140), Position = UDim2.new(0.5, -80, 0, -4) }, 1.6)
 	UI.text(shineSide, MarbleIcon.name(tostring(e.id), nil), { Size = UDim2.new(1, 0, 0, 28), Position = UDim2.fromOffset(0, 136) })
-	local odds = Config.Shine.odds
-	for i, o in ipairs(odds) do
-		local m = Config.MutationByKey[o.key]
-		local y = 170 + (i - 1) * 30
-		local row = UI.frame(shineSide, { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, y), BackgroundColor3 = UI.INK, BackgroundTransparency = 0.2 })
-		UI.corner(row, 8)
-		UI.text(row, m and (m.glyph .. " " .. m.name .. "  x" .. m.mult .. " coins") or "No shine", {
-			Size = UDim2.new(0.7, -6, 0.86, 0),
-			Position = UDim2.new(0, 6, 0.07, 0),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextColor3 = m and m.color or Color3.fromRGB(190, 195, 210),
-		})
-		UI.text(row, Tiers.odds(odds, o), { Size = UDim2.new(0.3, -6, 0.86, 0), Position = UDim2.new(0.7, 0, 0.07, 0), TextXAlignment = Enum.TextXAlignment.Right })
+	local free = shineFree()
+	local fixed = shineFixed()
+	if fixed then
+		local m = Config.MutationByKey[Config.Shine.fixedMut]
+		UI.text(shineSide, "THIS MARBLE BECOMES:", { Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 172) })
+		UI.text(shineSide, m and (m.glyph .. " " .. string.upper(m.name) .. "  x" .. m.mult .. " coins") or "", { Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 202), TextColor3 = m and m.color or Color3.new(1, 1, 1) })
+		body(shineSide, "Every time. No luck needed.", { Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 248) })
+	else
+		-- live odds: with luck on, the normal % in grey and the boosted % in green
+		local l = luck()
+		local odds = Config.Shine.odds
+		for i, o in ipairs(odds) do
+			local m = Config.MutationByKey[o.key]
+			oddsRow(shineSide, UDim2.fromOffset(0, 170 + (i - 1) * 30), UDim2.new(1, 0, 0, 26), m and (m.glyph .. " " .. m.name .. " x" .. m.mult) or "No shine", m and m.color or GREY, odds, o, l)
+		end
+		if l > 1 and not free then
+			body(shineSide, string.format("🍀 Luck x%.3g is on!", l), { Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 292), TextColor3 = Color3.fromRGB(30, 150, 60) })
+		end
 	end
-	local free = not (data.ftue and data.ftue.shine)
 	if free then
 		body(shineSide, "First shine is FREE and always GOLD!", { Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 296), TextColor3 = Color3.fromRGB(200, 120, 0) })
-	else
+	elseif not (luck() > 1 and not fixed) then
 		body(shineSide, "Mutated marbles keep their level and earn more coins.", { Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 292), TextWrapped = true })
 	end
-	local b = UI.button(shineSide, free and "SHINE FREE!" or ("SHINE  " .. Fmt.num(Config.Shine.cost) .. "💰"), free and "orange" or "gold", {
+	local cost = fixed and Config.Shine.fixedCost or Config.Shine.cost
+	local label = free and "SHINE FREE!" or ((fixed and "GOLD SHINE  " or "SHINE  ") .. Fmt.num(cost) .. "💰")
+	local b = UI.button(shineSide, label, free and "orange" or "gold", {
 		Size = UDim2.new(1, 0, 0, 60),
 		Position = UDim2.new(0, 0, 1, -64),
 	})
 	b.MouseButton1Click:Connect(doShine)
+	shownLuck = luck()
 end
 pShine.onOpen = drawShine
 
@@ -709,111 +903,6 @@ local function drawLeague()
 end
 pLeague.onOpen = drawLeague
 
--- Shop panel ----------------------------------------------------------------------------------------------------
-local shopPages = UI.tabs(pShop.body, { "Featured", "Passes", "Coins", "Trails" }, { "pink", "purple", "gold", "teal" })
-local shopGrids: { [string]: ScrollingFrame } = {}
-for name, page in pairs(shopPages) do
-	local s = UI.scroll(page, {})
-	UI.grid(s, UDim2.fromOffset(190, 210), 10)
-	shopGrids[name] = s
-end
-
-local function shopCard(grid: Instance, order: number, glyph: string, name: string, desc: string, btnText: string, btnColor: any, onClick: () -> (), highlight: any?)
-	local c = UI.card(grid, highlight or Color3.fromRGB(240, 242, 252), { LayoutOrder = order })
-	UI.text(c, glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0.5, -28, 0, 6) })
-	UI.text(c, name, { Size = UDim2.new(1, -12, 0, 26), Position = UDim2.fromOffset(6, 62), TextWrapped = true })
-	local d = UI.text(c, desc, { Font = UI.BODY, Size = UDim2.new(1, -14, 0, 56), Position = UDim2.fromOffset(7, 90), TextWrapped = true, TextColor3 = highlight and Color3.new(1, 1, 1) or UI.INK })
-	if not highlight then
-		noStroke(d)
-	end
-	local b = UI.button(c, btnText, btnColor, { Size = UDim2.new(1, -16, 0, 46), Position = UDim2.new(0, 8, 1, -54) })
-	b.MouseButton1Click:Connect(onClick)
-end
-
-local function drawShop()
-	for _, g in pairs(shopGrids) do
-		clearKids(g)
-	end
-	local P, Pr = Config.Passes, Config.Products
-	-- Featured
-	local f = shopGrids.Featured
-	if not data.starterBought then
-		shopCard(f, 1, Pr.StarterPack.glyph, Pr.StarterPack.name, Pr.StarterPack.desc, "R$ " .. Pr.StarterPack.price, "green", function()
-			buy("product", "StarterPack")
-		end, "orange")
-	end
-	shopCard(f, 2, Pr.DiamondMarble.glyph, Pr.DiamondMarble.name, Pr.DiamondMarble.desc, "R$ " .. Fmt.commas(Pr.DiamondMarble.price), "sky", function()
-		buy("product", "DiamondMarble")
-	end, "purple")
-	shopCard(f, 3, P.VIP.glyph, P.VIP.name, P.VIP.desc, owns("VIP") and "OWNED ✅" or ("R$ " .. P.VIP.price), owns("VIP") and "grey" or "green", function()
-		if not owns("VIP") then
-			buy("pass", "VIP")
-		end
-	end, "gold")
-	shopCard(f, 4, Pr.StartGP.glyph, Pr.StartGP.name, Pr.StartGP.desc, "R$ " .. Pr.StartGP.price, "green", function()
-		buy("product", "StartGP")
-	end, "pink")
-	shopCard(f, 5, Pr.LuckBoost.glyph, Pr.LuckBoost.name, Pr.LuckBoost.desc, "R$ " .. Pr.LuckBoost.price, "green", function()
-		buy("product", "LuckBoost")
-	end)
-	shopCard(f, 6, Pr.GalaxyPack.glyph, Pr.GalaxyPack.name, Pr.GalaxyPack.desc, "R$ " .. Pr.GalaxyPack.price, "green", function()
-		buy("product", "GalaxyPack")
-	end)
-	-- Passes
-	local order = 0
-	for _, key in ipairs({ "CoinsX2", "PowerSlot", "VIP", "TripleOpen", "LuckyCharm" }) do
-		local p = (P :: any)[key]
-		order += 1
-		local have = owns(key)
-		shopCard(shopGrids.Passes, order, p.glyph, p.name, p.desc, have and "OWNED ✅" or ("R$ " .. p.price), have and "grey" or "green", function()
-			if not have then
-				buy("pass", key)
-			end
-		end)
-	end
-	-- Coins
-	order = 0
-	for _, key in ipairs({ "CoinsS", "CoinsM", "CoinsL" }) do
-		local p = (Pr :: any)[key]
-		order += 1
-		shopCard(shopGrids.Coins, order, p.glyph, p.name, p.desc, "R$ " .. p.price, "green", function()
-			buy("product", key)
-		end)
-	end
-	-- Trails
-	order = 1
-	shopCard(shopGrids.Trails, 0, "🚫", "No Trail", "Just the marble.", data.trail == "" and "EQUIPPED" or "EQUIP", data.trail == "" and "grey" or "blue", function()
-		trailRemote:FireServer("")
-	end)
-	for _, t in ipairs(Config.Trails) do
-		order += 1
-		local have = (data.trails or {})[t.key] == true
-		local equipped = data.trail == t.key
-		local glyph = t.key == "sparkle" and "✨" or (t.key == "flame" and "🔥" or (t.key == "rainbow" and "🌈" or "👑"))
-		local btn, col
-		if equipped then
-			btn, col = "EQUIPPED", "grey"
-		elseif have then
-			btn, col = "EQUIP", "blue"
-		elseif t.pass then
-			btn, col = "VIP PASS", "gold"
-		else
-			btn, col = "R$ " .. tostring(((Pr :: any)[t.product] or {}).price or "?"), "green"
-		end
-		shopCard(shopGrids.Trails, order, glyph, t.name, have and "Shows behind your marble in every race." or "Leave a trail behind your marble!", btn, col, function()
-			if have then
-				trailRemote:FireServer(t.key)
-				Sfx.play("unlock", 0.4)
-			elseif t.pass then
-				buy("pass", "VIP")
-			elseif t.product then
-				buy("product", t.product)
-			end
-		end)
-	end
-end
-pShop.onOpen = drawShop
-
 -- Daily panel ----------------------------------------------------------------------------------------------------
 local dailyRow = UI.frame(pDaily.body, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 150), Position = UDim2.fromOffset(0, 10) })
 UI.list(dailyRow, 8, true)
@@ -828,8 +917,22 @@ dailyBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
+-- Keep Streak: after missing a day with a streak of 2+, the old streak can be kept for the rest of that day.
+local keepCard = UI.card(pDaily.body, "red", { Size = UDim2.new(1, 0, 0, 64), Position = UDim2.fromOffset(0, 208), Visible = false })
+local keepText = UI.text(keepCard, "", { Size = UDim2.new(1, -200, 0, 50), Position = UDim2.fromOffset(12, 7), TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true })
+local keepBtn = UI.button(keepCard, "", "green", { Size = UDim2.fromOffset(170, 48), Position = UDim2.new(1, -180, 0, 8) })
+keepBtn.MouseButton1Click:Connect(function()
+	buy("product", "KeepStreak")
+end)
+
 local function drawDaily()
 	clearKids(dailyRow)
+	local broken = (data.daily or {}).broken
+	keepCard.Visible = type(broken) == "table" and broken.day == today()
+	if keepCard.Visible then
+		keepText.Text = string.format("🔥 You missed a day! Keep your %d-day streak?", tonumber(broken.streak) or 0)
+		keepBtn.Text = "KEEP IT  R$ " .. Config.Products.KeepStreak.price
+	end
 	local d = data.daily or { last = 0, streak = 0 }
 	local streak = tonumber(d.streak) or 0
 	local ready = dailyReady()
@@ -854,7 +957,7 @@ local function drawDaily()
 		dailyNote.Text = string.format("Streak: %d day%s. Come back every day for bigger rewards!", streak, streak == 1 and "" or "s")
 	else
 		dailyBtn.Visible = false
-		local secs = (today() + 1) * 86400 - os.time()
+		local secs = (today() + 1) * 86400 - now()
 		dailyNote.Text = "Claimed! Next reward in " .. Fmt.time(secs)
 	end
 end
@@ -1034,13 +1137,40 @@ task.spawn(function()
 	while true do
 		local left = gpAt - now()
 		bGp.label.Text = left > 0 and Fmt.time(left) or "NOW!"
-		local lu = (tonumber(data.luckUntil) or 0) - os.time()
+		local lu = (tonumber(data.luckUntil) or 0) - now()
 		bLuck.button.Visible = lu > 0
 		if lu > 0 then
 			bLuck.label.Text = Fmt.time(lu)
 		end
-		bX2.button.Visible = owns("CoinsX2") or os.clock() - sessionStart > Config.NoOffersBefore
-		bX2.label.Text = owns("CoinsX2") and "2x ON" or "2x"
+		-- the offer button: no offers in a session's first minutes; the Starter Pack (with its countdown)
+		-- while it lasts, then 2x Coins
+		local starter = Store.starterLeft()
+		local icon = bX2.icon :: any
+		if owns("CoinsX2") then
+			bX2.button.Visible = true
+			icon.Text = I.x2
+			bX2.label.Text = "2x ON"
+		elseif Store.canOffer() and starter > 0 then
+			bX2.button.Visible = true
+			icon.Text = Config.Products.StarterPack.glyph
+			bX2.label.Text = Fmt.time(starter)
+		else
+			bX2.button.Visible = Store.canOffer()
+			icon.Text = I.x2
+			bX2.label.Text = "2x"
+		end
+		-- live odds: redraw open odds screens when luck starts or runs out
+		if luck() ~= shownLuck and not Reveal.isOpen() then
+			if pPacks.isOpen() then
+				drawPacks()
+			end
+			if pShine.isOpen() then
+				drawShine()
+			end
+			if pOdds.isOpen() then
+				drawOdds()
+			end
+		end
 		task.wait(0.5)
 	end
 end)
@@ -1082,9 +1212,6 @@ State.onChange(function(d)
 	end
 	if pLeague.isOpen() then
 		drawLeague()
-	end
-	if pShop.isOpen() then
-		drawShop()
 	end
 	if pDaily.isOpen() then
 		drawDaily()
@@ -1129,55 +1256,29 @@ function Hud.refreshGuide()
 	updateGuide()
 end
 
--- Purchase offers: never in the first minutes, at most one every 6 minutes, only after a race ends.
-local lastOffer = -1000
+-- Purchase offers (Store): never in a session's first minutes, spaced out, only after a race ends.
 function Hud.maybeOffer(lost: boolean)
-	local t = os.clock()
-	if t - sessionStart < Config.NoOffersBefore or t - lastOffer < 360 or UI.getPanel("__offer") and (UI.getPanel("__offer") :: any).isOpen() then
-		return
-	end
-	if Reveal.isOpen() then
-		return
-	end
-	lastOffer = t
-	if not data.starterBought then
-		local p = Config.Products.StarterPack
-		UI.offer({
-			title = "STARTER PACK!",
-			text = p.desc,
-			glyph = p.glyph,
-			price = "R$ " .. p.price,
-			color = "orange",
-			onBuy = function()
-				buy("product", "StarterPack")
-			end,
-		})
-	elseif not owns("CoinsX2") then
-		local p = Config.Passes.CoinsX2
-		UI.offer({
-			title = lost and "DOUBLE YOUR COINS" or "2x COINS!",
-			text = p.desc,
-			glyph = p.glyph,
-			price = "R$ " .. p.price,
-			color = "gold",
-			onBuy = function()
-				buy("pass", "CoinsX2")
-			end,
-		})
-	elseif not owns("PowerSlot") then
-		local p = Config.Passes.PowerSlot
-		UI.offer({
-			title = "EXTRA POWER-UP!",
-			text = p.desc,
-			glyph = p.glyph,
-			price = "R$ " .. p.price,
-			color = "purple",
-			onBuy = function()
-				buy("pass", "PowerSlot")
-			end,
-		})
+	if not Reveal.isOpen() then
+		Store.maybeOffer(lost)
 	end
 end
 
-local _ = Tiers
+-- Odds screens follow the paid random item restriction and live prices.
+local function redrawOdds()
+	if pPacks.isOpen() and not Reveal.isOpen() then
+		drawPacks()
+	end
+	if pShine.isOpen() and not Reveal.isOpen() then
+		drawShine()
+	end
+	if pOdds.isOpen() then
+		drawOdds()
+	end
+	if pDaily.isOpen() then
+		drawDaily()
+	end
+end
+player:GetAttributeChangedSignal("RandomBlocked"):Connect(redrawOdds)
+Prices.onChange(redrawOdds)
+
 return Hud

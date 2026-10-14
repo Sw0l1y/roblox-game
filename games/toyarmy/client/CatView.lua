@@ -283,7 +283,7 @@ local function step()
 	apply(CF(pos) * ANG(0, yaw, 0), pose)
 end
 
-local function startRun(ks: { Key }, by: string)
+local function startRun(ks: { Key }, by: string, kind: string)
 	keys = ks
 	landed = {}
 	swiped = {}
@@ -296,7 +296,10 @@ local function startRun(ks: { Key }, by: string)
 		end)
 	end
 	Sfx.play("reveal", 0.6, 0.7)
-	if by ~= "" then
+	if kind == "hourly" then
+		UI.banner("🐱 HOURLY MEGA CAT! 2x PLASTIC FOR 10 MIN!", "gold", 4)
+		UI.confetti(60)
+	elseif by ~= "" then
 		UI.banner("🐱 " .. string.upper(by) .. " CALLED THE CAT!", "pink", 3)
 	else
 		UI.banner("🐱 THE CAT IS AWAKE!", "orange", 3)
@@ -337,7 +340,7 @@ function CatView.init(h: { [string]: (...any) -> () })
 	end)
 	Net.event("Cat").OnClientEvent:Connect(function(kind, a, b, c)
 		if kind == "run" and type(a) == "table" then
-			startRun(a, tostring(b or ""))
+			startRun(a, tostring(b or ""), tostring(c or ""))
 		elseif kind == "done" then
 			finish()
 		elseif kind == "warn" then

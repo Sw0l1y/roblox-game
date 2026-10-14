@@ -1,5 +1,6 @@
 -- Client-side helpers shared by the HUD and panels: asking the server to act, reading the save copy and the
--- busy/recovering counts, unit cards (ViewportFrames with the real toy model), and small formatting helpers.
+-- busy/recovering counts, bag luck (the same maths the server rolls with), the paid-random rule, offer timing,
+-- unit cards (ViewportFrames with the real toy model, in your army skin), and small formatting helpers.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -39,6 +40,49 @@ end
 
 function Game.buy(kind: string, key: string)
 	buyRemote:FireServer(kind, key)
+end
+
+-- True while Roblox's paid random item rule applies to this player (kit Policy; true until the lookup returns):
+-- bags bought with plastic then give their fixed reward, and random Robux items are hidden.
+function Game.randomBlocked(): boolean
+	return player:GetAttribute("RandomBlocked") ~= false
+end
+
+-- A server-wide boost multiplier (kit Boosts mirrors them to ReplicatedStorage attributes).
+function Game.serverBoost(kind: string): number
+	local ends = ReplicatedStorage:GetAttribute("BoostEnd_" .. kind)
+	local m = ReplicatedStorage:GetAttribute("Boost_" .. kind)
+	if type(ends) == "number" and ends > Game.now() and type(m) == "number" then
+		return m
+	end
+	return 1
+end
+
+-- Bag luck right now: (tier luck, mutation multiplier), exactly what the server rolls with.
+function Game.luck(d: Dict): (number, number)
+	return Config.bagLuck(d.upgrades.lucky or 0, (d.boosts.luck or 0) > Game.now(), Game.serverBoost("luck"))
+end
+
+-- Nothing bought yet (dev products or passes): the 9 R$ Recruit Deal is for these players only.
+function Game.neverBought(d: Dict): boolean
+	if (tonumber(d.spent) or 0) > 0 or (d.bought and d.bought.intro) then
+		return false
+	end
+	for _, owned in pairs(d.passes or {}) do
+		if owned then
+			return false
+		end
+	end
+	return true
+end
+
+-- Seconds left in the Starter Pack window (first 10 minutes of the first session), or 0 when it is over.
+function Game.starterLeft(d: Dict): number
+	if d.starterPack or (d.bought and d.bought.starter) or (tonumber(d.sessions) or 1) > 1 then
+		return 0
+	end
+	local first = tonumber(d.firstJoin) or Game.now()
+	return math.max(0, first + Config.StarterWindow - Game.now())
 end
 
 function Game.d(): Dict?
@@ -180,7 +224,9 @@ function Game.unitTitle(unitKey: string, mut: string): string
 	return (m and (m.glyph .. " ") or "") .. Config.unitName(unitKey, mut) .. (def and (" " .. def.glyph) or "")
 end
 
--- Unit card: a ViewportFrame showing the real toy model. ------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+-- Unit card: a ViewportFrame showing the real toy model, in your equipped army skin. props.plain = no skin (index),
+-- props.skin = show that skin (skin previews in the shop).
 function Game.viewport(parent: Instance, unitKey: string, mut: string, props: { [string]: any }?): ViewportFrame
 	local vf = Instance.new("ViewportFrame")
 	vf.Name = "Toy"
@@ -189,8 +235,16 @@ function Game.viewport(parent: Instance, unitKey: string, mut: string, props: { 
 	vf.Ambient = Color3.fromRGB(170, 170, 180)
 	vf.LightColor = Color3.fromRGB(255, 250, 240)
 	vf.LightDirection = Vector3.new(-0.6, -1, -0.8)
+	local plain = props ~= nil and props.plain == true
+	local forced: string? = props and props.skin or nil
+	if props then
+		props.plain = nil
+		props.skin = nil
+	end
 	UI.set(vf, props)
-	local m = Toys.build(unitKey, { team = Game.side(), mut = mut, ring = false })
+	local skin = forced or (not plain and (player:GetAttribute("Skin") :: string?) or nil)
+	local paint = forced or (not plain and (player:GetAttribute("TankPaint") :: string?) or nil)
+	local m = Toys.build(unitKey, { team = Game.side(), mut = mut, ring = false, skin = skin, tankPaint = paint })
 	m.Parent = vf
 	local cam = Instance.new("Camera")
 	cam.FieldOfView = 30

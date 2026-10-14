@@ -49,7 +49,9 @@ export type RaceT = {
 	sendAcc: number,
 	onDone: ((RaceT) -> ())?,
 	gp: boolean,
+	hourly: boolean,
 	rookie: boolean,
+	mods: { [string]: boolean },
 	results: { { [string]: any } }?,
 }
 
@@ -68,10 +70,12 @@ local function now(): number
 	return workspace:GetServerTimeNow()
 end
 
--- opts: { gp, rookie, clip, td (pre-generated track for this seed) }
+-- opts: { gp, hourly, rookie, clip, td (pre-generated track for this seed), track (Config.Tracks key when it
+-- isn't the race kind, e.g. "chaos"), mods (round modifiers: { ice = true, ... }) }
 function Race.create(kind: string, seed: number, theme: string, specs: { Spec }, goDelay: number, opts: { [string]: any }?): RaceT
 	local o: { [string]: any } = opts or {}
-	local trackOpts = (Config.Tracks :: any)[kind] or Config.Tracks.main
+	local trackKey = if type(o.track) == "string" then o.track else kind
+	local trackOpts = (Config.Tracks :: any)[trackKey] or Config.Tracks.main
 	local td: Track.TrackData = o.td or Track.generate(seed, trackOpts)
 	local rng = Random.new(seed + 17)
 	for i = #specs, 2, -1 do
@@ -136,7 +140,8 @@ function Race.create(kind: string, seed: number, theme: string, specs: { Spec },
 			byUser[sp.userId] = i
 		end
 	end
-	local sim = RaceSim.new(td, entrants, seed + 99, o.clip == true)
+	local mods: { [string]: boolean } = if type(o.mods) == "table" then o.mods :: any else {}
+	local sim = RaceSim.new(td, entrants, seed + 99, o.clip == true, mods)
 	nextId = nextId % 250 + 1
 	while races[nextId] do
 		nextId = nextId % 250 + 1
@@ -159,7 +164,9 @@ function Race.create(kind: string, seed: number, theme: string, specs: { Spec },
 		sendAcc = 0,
 		onDone = nil,
 		gp = o.gp == true,
+		hourly = o.hourly == true,
 		rookie = o.rookie == true,
+		mods = mods,
 		results = nil,
 	}
 	local list = {}
@@ -187,7 +194,10 @@ function Race.create(kind: string, seed: number, theme: string, specs: { Spec },
 		theme = theme,
 		goTime = race.goTime,
 		gp = race.gp,
+		hourly = race.hourly,
 		rookie = race.rookie,
+		track = trackKey,
+		mods = mods,
 		entrants = list,
 	}
 	races[race.id] = race

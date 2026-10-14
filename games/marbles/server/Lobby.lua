@@ -440,6 +440,21 @@ local function buildBoard()
 	end
 end
 
+-- The game's name floating over the start gates, seen from spawn (Config.Title).
+local function buildTitle()
+	local anchor = box(root, CF(0, DY + 30, 34), V(1, 1, 1), P.accent, { Name = "TitleSign", Transparency = 1, CanCollide = false })
+	decor(anchor)
+	World.label(anchor, "🔮 " .. string.upper(Config.Title) .. " 🔮", {
+		width = 52,
+		height = 9,
+		offset = V(0, 0, 0),
+		maxDistance = 600,
+		gradient = ColorSequence.new(Color3.new(1, 1, 1), P.accent),
+		stroke = 4,
+	})
+	World.label(anchor, Config.Tagline, { width = 34, height = 4, offset = V(0, -6.5, 0), maxDistance = 300, gradient = ColorSequence.new(Color3.new(1, 1, 1), P.rare) })
+end
+
 -- Giant desk props, kept outside every track's area -----------------------------------------------------
 
 local function pencil(parent: Instance, a: Vector3, b: Vector3, d: number, color: Color3)
@@ -612,6 +627,7 @@ function Lobby.build(): SpawnLocation
 	buildDaily()
 	buildPodium()
 	buildBoard()
+	buildTitle()
 	buildProps()
 	buildTrophy()
 	buildClouds()

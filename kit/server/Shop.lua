@@ -183,6 +183,10 @@ function Shop.init(opts: { passes: Catalog, products: Catalog, grants: { [string
 		local key = passById[passId]
 		if purchased and key then
 			grantPass(player, key)
+			local d = Data.get(player)
+			if d then
+				d.spent = (d.spent or 0) + (passes[key].price or 0)
+			end
 		end
 	end)
 
@@ -259,7 +263,7 @@ function Shop.prompt(player: Player, kind: string, key: string, target: number?)
 		return
 	end
 	local data = Data.get(player) :: any
-	if kind ~= "pass" and (item :: any).intro and data and (data.spent or 0) > 0 then
+	if kind ~= "pass" and (item :: any).intro and data and ((data.spent or 0) > 0 or next(data.passes or {}) ~= nil) then
 		notifyRemote:FireClient(player, item.name .. " is for your first purchase only!", "orange")
 		return
 	end

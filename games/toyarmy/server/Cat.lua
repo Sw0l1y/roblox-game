@@ -1,7 +1,8 @@
 -- The house cat: the recurring server event and the clip moment. Every ~10 minutes it wakes up on the bed,
 -- jumps down, stomps to the busiest zones and swats the armies there flying (flag goes neutral), drops
 -- "lost soldier" bags anyone can grab, then goes back to sleep. "Call the Cat" (dev product) sends it now
--- at the buyer's enemies. The server sends clients a keyframe plan (server times) and swat moments;
+-- at the buyer's enemies. At the top of every hour the HOURLY MEGA CAT swats more zones and drops twice the bags
+-- (Main adds a 2x plastic server boost). The server sends clients a keyframe plan (server times) and swat moments;
 -- clients animate the cat and the flying toys.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,6 +14,7 @@ local World = require(Shared:WaitForChild("World"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Army = require(script.Parent:WaitForChild("Army"))
 local Zones = require(script.Parent:WaitForChild("Zones"))
+local Live = require(script.Parent:WaitForChild("Live"))
 
 local Cat = {}
 
@@ -20,14 +22,14 @@ local V = Vector3.new
 local catRemote = Net.event("Cat")
 local rng = Random.new()
 
-type Call = { by: Player?, team: string? }
+type Call = { by: Player?, team: string?, hourly: boolean? }
 local active = false
 local queued: { Call } = {} -- paid calls waiting for the cat (each one runs; none is dropped)
 local nextAt = 0 -- server time of the next natural visit
 local warned = false
 local pickupFolder: Folder? = nil
 local runs = 0
-local current: { keys: { any }, by: string }? = nil -- the run in progress, for players who join mid-run
+local current: { keys: { any }, by: string, kind: string }? = nil -- the run in progress, for players who join mid-run
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -42,13 +44,13 @@ local function flat(v: Vector3): Vector3
 end
 
 -- Lost soldiers: little bags the cat knocked loose. First player to touch one gets a free bag.
-local function dropPickups(at: Vector3)
+local function dropPickups(at: Vector3, count: number)
 	local folder = pickupFolder
 	if not folder then
 		return
 	end
-	for i = 1, Config.Cat.pickups do
-		local a = (i / Config.Cat.pickups) * math.pi * 2 + rng:NextNumber(-0.4, 0.4)
+	for i = 1, count do
+		local a = (i / count) * math.pi * 2 + rng:NextNumber(-0.4, 0.4)
 		local r = rng:NextNumber(14, 26)
 		local pos = at + V(math.cos(a) * r, 2.2, math.sin(a) * r)
 		local bag = World.part({
@@ -85,6 +87,7 @@ local function dropPickups(at: Vector3)
 			end
 			taken = true
 			Army.addTokens(player, d, "Basic", 1, bag.Position)
+			Live.quest(player, "lost", 1)
 			catRemote:FireAllClients("pickup", bag.Position, player.DisplayName)
 			bag:Destroy()
 		end)
@@ -96,14 +99,14 @@ local function dropPickups(at: Vector3)
 	end
 end
 
-local function swat(zoneId: string, pos: Vector3, by: Player?)
+local function swat(zoneId: string, pos: Vector3, by: Player?, pickups: number?)
 	local n = Zones.swat(zoneId)
 	local def = Config.ZoneById[zoneId]
 	catRemote:FireAllClients("swat", zoneId, pos, n)
 	if n > 0 then
 		Army.feed("🐱 The cat swatted " .. n .. " soldiers off " .. (def and def.name or zoneId) .. "!", "orange")
 	end
-	dropPickups(def and def.pos or pos)
+	dropPickups(def and def.pos or pos, pickups or Config.Cat.pickups)
 	if by and by.Parent then
 		local d = Data.get(by)
 		if d then
@@ -122,7 +125,8 @@ local function targets(call: Call?): { Config.ZoneDef }
 		return sa > sb
 	end)
 	local out = {}
-	for i = 1, math.min(Config.Cat.targets, #list) do
+	local n = (call and call.hourly) and Config.Hourly.catTargets or Config.Cat.targets
+	for i = 1, math.min(n, #list) do
 		table.insert(out, list[i].def)
 	end
 	return out
@@ -206,16 +210,20 @@ local function run(call: Call?)
 	local t0 = now() + 0.5
 	local keys, swipes = plan(list, t0)
 	local by = call and call.by or nil
-	current = { keys = keys, by = by and by.DisplayName or "" }
-	catRemote:FireAllClients("run", keys, current.by)
+	local hourly = call ~= nil and call.hourly == true
+	current = { keys = keys, by = by and by.DisplayName or "", kind = hourly and "hourly" or "" }
+	catRemote:FireAllClients("run", keys, current.by, current.kind)
 	if by then
 		Army.feed("🐱 " .. by.DisplayName .. " CALLED THE CAT on the " .. Config.Team[Config.enemy(call and call.team or "Green")].name .. "!", "pink")
+	elseif hourly then
+		Army.feed("🐱 HOURLY MEGA CAT! Grab the lost soldiers!", "pink")
 	else
 		Army.feed("🐱 THE CAT IS AWAKE! Hide your soldiers!", "pink")
 	end
+	local pickups = hourly and Config.Hourly.pickups or Config.Cat.pickups
 	for _, s in ipairs(swipes) do
 		task.delay(math.max(0, s.t - now()), function()
-			swat(s.zone, s.at, by)
+			swat(s.zone, s.at, by, pickups)
 		end)
 	end
 	local endT = keys[#keys].t
@@ -253,6 +261,18 @@ function Cat.call(player: Player)
 	end
 end
 
+-- The hourly MEGA CAT (Live.onHour): now, or right after the visit in progress.
+function Cat.hourly()
+	local call: Call = { by = nil, team = nil, hourly = true }
+	if active then
+		table.insert(queued, call)
+	else
+		nextAt = now() + Config.Cat.interval
+		workspace:SetAttribute("CatAt", nextAt)
+		run(call)
+	end
+end
+
 -- Debug "clip": skip the walk, swat the busiest zone right now.
 function Cat.clip(): string
 	local list = targets(nil)
@@ -268,7 +288,7 @@ end
 function Cat.replay(player: Player)
 	local c = current
 	if c and player.Parent then
-		catRemote:FireClient(player, "run", c.keys, c.by)
+		catRemote:FireClient(player, "run", c.keys, c.by, c.kind)
 	end
 end
 
@@ -287,7 +307,7 @@ function Cat.init(parent: Instance)
 			if not active then
 				local q = table.remove(queued, 1)
 				if q then
-					if q.by and (q.by :: Player).Parent then
+					if q.hourly or (q.by and (q.by :: Player).Parent) then
 						run(q)
 					end
 				elseif now() >= nextAt then

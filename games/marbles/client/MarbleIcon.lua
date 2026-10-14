@@ -101,6 +101,9 @@ function MarbleIcon.flat(parent: Instance, id: string, mut: string?, px: number,
 	elseif p == "flame" or p == "gem" then
 		g.Color = ColorSequence.new(c1:Lerp(WHITE, 0.25), c2)
 		g.Rotation = 90
+	elseif p == "pumpkin" then
+		g.Color = bands({ c2, c1, c1:Lerp(WHITE, 0.15), c1, c2 })
+		g.Rotation = 0
 	else
 		g.Color = ColorSequence.new(c1:Lerp(WHITE, 0.15), UI.shade(c1, 0.75))
 		g.Rotation = 90
@@ -162,6 +165,18 @@ function MarbleIcon.flat(parent: Instance, id: string, mut: string?, px: number,
 		d.Parent = ball
 	elseif p == "swirl" then
 		dot(ball, 0.42, 0.55, 0.55, c1, z + 1, 0.15)
+	elseif p == "pumpkin" then
+		dot(ball, 0.17, 0.35, 0.42, c3, z + 1)
+		dot(ball, 0.17, 0.65, 0.42, c3, z + 1)
+		local mouth = Instance.new("Frame")
+		mouth.BorderSizePixel = 0
+		mouth.BackgroundColor3 = c3
+		mouth.AnchorPoint = Vector2.new(0.5, 0.5)
+		mouth.Size = UDim2.fromScale(0.46, 0.11)
+		mouth.Position = UDim2.fromScale(0.5, 0.66)
+		mouth.ZIndex = z + 1
+		round(mouth)
+		mouth.Parent = ball
 	end
 	-- glass gloss
 	dot(ball, 0.34, 0.33, 0.27, WHITE, z + 6, 0.45)

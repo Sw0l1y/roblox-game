@@ -330,7 +330,8 @@ local function buildStart(b: Builder, view: View, td: Track.TrackData, th: Theme
 		ball(b, base + V3(0, postH + THICK + 0.4, 0), 2.4, th.accent, { Material = NEON })
 	end
 	local bar = part(b, V3(w + 5, 2.6, 1.6), gateCf * CF(0, postH - 0.6, 0), th.accent, { CastShadow = true })
-	local title = view.kind == "practice" and "WARM-UP HEAT" or (view.kind == "gp" and "🏁 GRAND PRIX 🏁" or "MARBLE MAYHEM")
+	local title = view.kind == "practice" and "WARM-UP HEAT"
+		or ((view.kind == "gp" or view.kind == "gpchaos") and "🏁 GRAND PRIX 🏁" or (view.kind == "chaos" and "🌪️ CHAOS TRACK 🌪️" or string.upper(Config.Title)))
 	signGui(bar, title, WHITE, { Enum.NormalId.Front, Enum.NormalId.Back })
 	-- countdown lights
 	view.lights = {}

@@ -1,7 +1,7 @@
 --!strict
 -- Marble models built from parts: a Glass shell around a coloured core with a per-marble pattern
 -- (cat's-eye vanes, swirl bands, stripes, dots, candy meridians, eye, planet ring, galaxy specks,
--- glowing flame/gem cores). Mutations restyle the shell (gold, rainbow, cosmic).
+-- glowing flame/gem cores, a jack-o'-lantern pumpkin). Mutations restyle the shell (gold, rainbow, cosmic).
 -- If the server has loaded the AI sphere mesh (ReplicatedStorage.MarbleMeshes.Sphere) and a marble has
 -- its own texture id, the core becomes that textured mesh instead of the primitive pattern.
 -- Used by the server (lobby podium, showcase) and clients (race marbles, previews).
@@ -204,6 +204,25 @@ function MarbleArt.build(id: string, mut: string?, d: number): Built
 				ball(model, d * 0.1, pos, c3, Enum.Material.Neon)
 			end
 			disc(model, d * 0.7, d * 0.05, CFrame.Angles(0, RAD(45), RAD(90)), c2, Enum.Material.Neon)
+		elseif p == "pumpkin" then
+			-- ribbed orange core, a green stem and a glowing face on both sides (reads from every angle as it rolls)
+			local core = ball(model, rc * 2.1, Vector3.zero, c1)
+			core.Name = "Core"
+			for k = 0, 3 do
+				disc(model, rc * 2.16, d * 0.05, CFrame.Angles(0, RAD(45 * k), 0), c2)
+			end
+			newPart(model, Enum.PartType.Cylinder, V3(d * 0.16, d * 0.12, d * 0.12), CF(0, rc * 1.08, 0) * CFrame.Angles(0, 0, RAD(90)), Color3.fromRGB(70, 140, 50))
+			for _, side in ipairs({ -1, 1 }) do
+				local z = side * rc * 0.98
+				ball(model, d * 0.11, V3(-rc * 0.36, rc * 0.26, z), c3, Enum.Material.Neon)
+				ball(model, d * 0.11, V3(rc * 0.36, rc * 0.26, z), c3, Enum.Material.Neon)
+				newPart(model, Enum.PartType.Block, V3(rc * 0.9, d * 0.06, d * 0.06), CF(0, -rc * 0.3, side * rc * 1.0), c3, Enum.Material.Neon)
+			end
+			local light = Instance.new("PointLight")
+			light.Color = c1
+			light.Range = d * 3
+			light.Brightness = 1.2
+			light.Parent = core
 		else
 			local core = ball(model, rc * 2, Vector3.zero, c1)
 			core.Name = "Core"

@@ -73,6 +73,7 @@ export type Sim = {
 	clipDone: boolean,
 	photo: boolean,
 	gap: number,
+	mods: { [string]: boolean }, -- round modifiers: ice, chaos, bigair
 }
 
 local D = R.marbleD
@@ -87,7 +88,8 @@ local function halfW(td: Track.TrackData, i: number): number
 end
 
 -- entrants: partially filled records (idx, name, stats, cards...). Grid slots are assigned here.
-function RaceSim.new(td: Track.TrackData, entrants: { Entrant }, seed: number, clip: boolean?): Sim
+-- mods: round modifiers bought for this race ({ ice = true } etc.).
+function RaceSim.new(td: Track.TrackData, entrants: { Entrant }, seed: number, clip: boolean?, mods: { [string]: boolean }?): Sim
 	local rng = Random.new(seed)
 	local sim: Sim = {
 		td = td,
@@ -103,6 +105,7 @@ function RaceSim.new(td: Track.TrackData, entrants: { Entrant }, seed: number, c
 		clipDone = false,
 		photo = false,
 		gap = 0,
+		mods = mods or {},
 	}
 	-- grid: rows of four behind the gate
 	local gate = td.gateS
@@ -280,12 +283,13 @@ function RaceSim.step(sim: Sim, dt: number)
 		end
 
 		-- target speed
-		local vmax = R.baseSpeed + e.spd * R.spdK
+		local ice = sim.mods.ice == true
+		local vmax = (R.baseSpeed + e.spd * R.spdK) * (ice and Config.Ice.speedMult or 1)
 		local target = vmax
 		local down = clamp(-td.slope[i], -0.4, 0.9)
 		target += down * R.slopeK * (0.85 + e.wt * 0.03)
 		local curv = td.curv[i]
-		local turnLoss = math.min(0.3, math.abs(curv) * R.turnK * math.max(0.12, 1 - e.grip / 20))
+		local turnLoss = math.min(0.3, math.abs(curv) * R.turnK * math.max(0.12, 1 - e.grip / 20)) * (ice and Config.Ice.turnMult or 1)
 		target *= 1 - (cards.sticky and turnLoss * 0.62 or turnLoss)
 		if tag == TAG.FUNNEL then
 			-- marbles slow as the bowl narrows, so they bunch up at the hole
@@ -346,14 +350,15 @@ function RaceSim.step(sim: Sim, dt: number)
 		-- random bumps
 		e.bumpCd -= dt
 		if e.bumpCd <= 0 then
-			e.bumpCd = rng:NextNumber(1.2, 3.2)
+			local chaos = sim.mods.chaos == true
+			e.bumpCd = chaos and rng:NextNumber(0.6, 1.6) or rng:NextNumber(1.2, 3.2)
 			if not e.noBump and (tag == TAG.NORMAL or tag == TAG.TURN or tag == TAG.WAVE or tag == TAG.SPLIT) then
-				if rng:NextNumber() < 0.3 then
-					e.v *= 1.04
+				if rng:NextNumber() < (chaos and 0.4 or 0.3) then
+					e.v *= chaos and 1.08 or 1.04
 				else
-					e.v *= 1 - rng:NextNumber(0, 0.06) * math.max(0.3, 1.2 - e.wt * 0.05)
+					e.v *= 1 - rng:NextNumber(0, chaos and 0.09 or 0.06) * math.max(0.3, 1.2 - e.wt * 0.05)
 				end
-				e.ut = clamp(e.ut + rng:NextNumber(-0.35, 0.35), -0.9, 0.9)
+				e.ut = clamp(e.ut + rng:NextNumber(-0.35, 0.35) * (chaos and 1.6 or 1), -0.9, 0.9)
 			end
 		end
 
@@ -363,7 +368,7 @@ function RaceSim.step(sim: Sim, dt: number)
 		elseif tag == TAG.DROP then
 			e.v = math.max(e.v, 16)
 		else
-			local acc = target > e.v and R.accel * (1.3 - e.wt * 0.04) or R.decel
+			local acc = (target > e.v and R.accel * (1.3 - e.wt * 0.04) or R.decel) * (ice and Config.Ice.accelMult or 1)
 			e.v += clamp(target - e.v, -acc * dt, acc * dt)
 		end
 		e.v = clamp(e.v, 2, 80)
@@ -384,7 +389,7 @@ function RaceSim.step(sim: Sim, dt: number)
 			e.ut = clamp(e.ut + rng:NextNumber(-0.6, 0.6), -0.88, 0.88)
 		end
 		if not cards.sticky and tag ~= TAG.AIR then
-			e.ut = clamp(e.ut + curv * e.v * math.max(0.1, 1.15 - e.grip / 16) * 0.9 * dt, -0.92, 0.92)
+			e.ut = clamp(e.ut + curv * e.v * math.max(0.1, 1.15 - e.grip / 16) * 0.9 * (ice and Config.Ice.driftMult or 1) * dt, -0.92, 0.92)
 		end
 		if ptype == "split" then
 			local base = e.splitSide * 0.56
@@ -467,6 +472,9 @@ function RaceSim.step(sim: Sim, dt: number)
 				local peak = math.max(0, (e.v - 25) * 0.2) * math.max(0.4, 1.3 - e.wt * 0.05) + 0.4
 				if cards.bounce then
 					peak += 4.5
+				end
+				if sim.mods.bigair or sim.mods.chaos then
+					peak += sim.mods.bigair and Config.BigAirPeak or 2
 				end
 				if sim.clip then
 					peak += 6

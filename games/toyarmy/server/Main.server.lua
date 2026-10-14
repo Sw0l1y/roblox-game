@@ -1,6 +1,7 @@
 -- Toy Army ⚔️ server: builds the giant bedroom, splits players into the Green and Tan armies, hands out toy-box
 -- bases, and wires saves, the shop, zones and auto-battles, the AI commander, the house cat, war rounds, the
--- tutorial (FTUE) and every client request. Clients only ask (Net.func "Act"); the server validates everything.
+-- tutorial (FTUE), launch features (kit Live: codes, playtime gifts, quests, badges, the hourly MEGA CAT), paid
+-- strikes, army skins and every client request. Clients only ask (Net.func "Act"); the server validates everything.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Teams = game:GetService("Teams")
@@ -23,6 +24,9 @@ local Commander = require(Lib:WaitForChild("Commander"))
 local Cat = require(Lib:WaitForChild("Cat"))
 local Bases = require(Lib:WaitForChild("Bases"))
 local Debug = require(Lib:WaitForChild("Debug"))
+local Live = require(Lib:WaitForChild("Live"))
+local Boosts = require(Lib:WaitForChild("Boosts"))
+local Strikes = require(Lib:WaitForChild("Strikes"))
 
 local V = Vector3.new
 type Dict = { [string]: any }
@@ -39,6 +43,7 @@ Net.event("Feed")
 Net.event("Announce")
 Net.event("BagResult")
 Net.event("Merged")
+Net.event("Strike")
 Net.func("Sync")
 
 local function now(): number
@@ -117,8 +122,17 @@ for _, key in ipairs(Config.TeamKeys) do
 end
 
 -- Sessions ------------------------------------------------------------------------------------------------------
-type Session = { joined: number, giftAt: number, supplyAt: number, autoAt: number, welcome: Dict? }
+-- ftue: seconds after joining of the first deploy, first reward and first free gift claimed (Debug "state" prints
+-- them so the headless sim reports the first-minute timings).
+type Session = { joined: number, giftAt: number, supplyAt: number, autoAt: number, welcome: Dict?, ftue: { [string]: number } }
 local sessions: { [Player]: Session } = {}
+
+local function mark(player: Player, what: string)
+	local s = sessions[player]
+	if s and not s.ftue[what] then
+		s.ftue[what] = math.floor(os.clock() - s.joined + 0.5)
+	end
+end
 
 local function side(player: Player): string
 	return (player:GetAttribute("Side") :: string?) or "Green"
@@ -241,6 +255,8 @@ local function doDeploy(player: Player, zoneId: string): (boolean, string?)
 	if not ok then
 		return false, why
 	end
+	mark(player, "deploy")
+	Live.quest(player, "deploy", 1)
 	if d.tut == 6 and (hadTank or not hasTankTier(d)) then
 		setTut(player, d, 7)
 	end
@@ -274,11 +290,19 @@ Zones.onResolved(function(f, _winner, captured)
 		if d and player.Parent then
 			local won = (s == "att" and captured) or (s == "def" and not captured)
 			if won then
+				mark(player, "reward")
 				if d.tut == 1 then
 					setTut(player, d, 2)
 				end
 				if d.tut == 4 and s == "att" and not f.drill then
 					setTut(player, d, 5)
+				end
+				if s == "att" and not f.drill then
+					Live.quest(player, "capture", 1)
+					Live.badge(player, "FirstCapture")
+				end
+				if (d.stats.wins or 0) >= 10 then
+					Live.badge(player, "Wins10")
 				end
 			end
 		end
@@ -289,17 +313,27 @@ Army.on("bag", function(player, d)
 	if d.tut == 2 then
 		setTut(player, d, 3)
 	end
+	Live.quest(player, "bags", 1)
 end)
 Army.on("merge", function(player, d)
 	if d.tut == 3 then
 		setTut(player, d, 4)
 	end
+	Live.quest(player, "merge", 1)
 end)
 Army.on("upgrade", function(player, d)
 	if d.tut == 7 then
 		setTut(player, d, Config.TutDone)
 	end
+	Live.quest(player, "upgrade", 1)
 	Bases.refreshNow(player)
+end)
+Army.on("unit", function(player, _d, unitKey)
+	if unitKey == "Tank" then
+		Live.badge(player, "FirstTank")
+	elseif unitKey == "Dino" then
+		Live.badge(player, "SecretDino")
+	end
 end)
 
 -- Saves ----------------------------------------------------------------------------------------------------------
@@ -333,7 +367,14 @@ Data.onLoaded(function(player: Player, d: Dict)
 	local s = sessions[player]
 	if s then
 		s.welcome = { offline = earned, away = away, daily = dailyReady(d), first = (d.sessions or 1) <= 1 }
+		if (d.sessions or 1) <= 1 then
+			-- a brand-new player's first free gift comes inside the first minute (later ones every 10 minutes)
+			s.giftAt = math.min(s.giftAt, now() - (os.clock() - s.joined) + Config.FirstGiftAt)
+			player:SetAttribute("GiftAt", s.giftAt)
+		end
 	end
+	player:SetAttribute("Skin", d.skin or "")
+	player:SetAttribute("TankPaint", d.tankPaint or "")
 	Data.dirty(player)
 	Bases.refreshNow(player)
 end)
@@ -347,56 +388,84 @@ local function rankPlastic(player: Player, d: Dict, amount: number, kind: string
 	Army.addPlastic(player, d, amount * Config.rankReward(Army.rank(d)), { raw = true, kind = kind })
 end
 
+-- Strikes are granted by firing them (or saving a credit when there is nothing to hit).
+local function strikeGrant(key: string): (Player, Dict) -> boolean
+	return function(player: Player, d: Dict): boolean
+		if not Strikes.fire(player, key, nil) then
+			d.strikeCredits[key] = (d.strikeCredits[key] or 0) + 1
+			Shop.notify(player, "Saved! Use your " .. Config.Products[key].name .. " from STRIKES when there's an enemy to hit.", "orange")
+		end
+		return true
+	end
+end
+
+local grants: { [string]: (Player, Dict) -> boolean } = {
+	intro = function(player, d)
+		Army.addPlastic(player, d, 1000, { raw = true, kind = "purchase" })
+		Army.grantReveal(player, d, "Recruit Deal", { { "Tank", "" } })
+		return true
+	end,
+	skip = function(player, d)
+		Army.skipMerges(player, d)
+		return true
+	end,
+	luck = function(player, d)
+		d.boosts.luck = math.max(os.time(), d.boosts.luck or 0) + Config.LuckBoostSeconds
+		Shop.notify(player, "🍀 LUCKY BAGS active for 15 minutes!", "green")
+		return true
+	end,
+	starter = function(player, d)
+		d.starterPack = true
+		Army.addPlastic(player, d, 1500, { raw = true, kind = "purchase" })
+		Army.grantReveal(player, d, "Starter Pack", { { "Medic", "" }, { "Medic", "" }, { "Tank", "Gold" } })
+		return true
+	end,
+	bags10 = function(player, d)
+		Army.addTokens(player, d, "Basic", 10, nil, true)
+		return true
+	end,
+	tanks = function(player, d)
+		Army.grantReveal(player, d, "Tank Bundle", { { "Tank", "" }, { "Tank", "" }, { "Tank", "Gold" } })
+		return true
+	end,
+	helis = function(player, d)
+		Army.grantReveal(player, d, "Heli Bundle", { { "Heli", "" }, { "Heli", "" }, { "Heli", "Glow" } })
+		return true
+	end,
+}
+for _, key in ipairs(Config.StrikeOrder) do
+	grants[key] = strikeGrant(key)
+end
+for _, key in ipairs(Config.PlasticOrder) do
+	local base = Config.Products[key].base or 0
+	grants[key] = function(player: Player, d: Dict): boolean
+		rankPlastic(player, d, base, "purchase")
+		return true
+	end
+end
+
 Shop.init({
 	passes = Config.Passes :: any,
 	products = Config.Products :: any,
-	grants = {
-		skip = function(player, d)
-			Army.skipMerges(player, d)
-			return true
-		end,
-		plasticS = function(player, d)
-			rankPlastic(player, d, 1500, "purchase")
-			return true
-		end,
-		plasticM = function(player, d)
-			rankPlastic(player, d, 7500, "purchase")
-			return true
-		end,
-		plasticL = function(player, d)
-			rankPlastic(player, d, 30000, "purchase")
-			return true
-		end,
-		luck = function(player, d)
-			d.boosts.luck = math.max(os.time(), d.boosts.luck or 0) + Config.LuckBoostSeconds
-			Shop.notify(player, "🍀 LUCKY BAGS active for 15 minutes!", "green")
-			return true
-		end,
-		starter = function(player, d)
-			d.starterPack = true
-			Army.addPlastic(player, d, 1000, { raw = true, kind = "purchase" })
-			Army.addTokens(player, d, "Heavy", 3, nil, true)
-			Army.grantReveal(player, d, "Starter Pack", { { "Medic", "" } })
-			return true
-		end,
-		bags10 = function(player, d)
-			Army.addTokens(player, d, "Basic", 10, nil, true)
-			return true
-		end,
-		callcat = function(player, _d)
-			Cat.call(player)
-			return true
-		end,
-		tanks = function(player, d)
-			Army.grantReveal(player, d, "Tank Bundle", { { "Tank", "" }, { "Tank", "" }, { "Tank", "Gold" } })
-			return true
-		end,
-		helis = function(player, d)
-			Army.grantReveal(player, d, "Heli Bundle", { { "Heli", "" }, { "Heli", "" }, { "Heli", "Glow" } })
-			return true
-		end,
-	},
+	grants = grants,
 })
+
+-- Skins: equipped one army skin + the tank paint; mirrored to player attributes so every client paints that
+-- player's toys (Arena) and the toy-box showcase repaints (Bases).
+local function setSkin(player: Player, d: Dict, key: string)
+	local sk = Config.Skins[key]
+	if key == "" or not sk then
+		d.skin = ""
+	elseif sk.kind == "tank" then
+		d.tankPaint = (d.tankPaint == key) and "" or key
+	else
+		d.skin = key
+	end
+	player:SetAttribute("Skin", d.skin)
+	player:SetAttribute("TankPaint", d.tankPaint)
+	Data.dirty(player)
+	Bases.refreshNow(player)
+end
 
 local function tag(player: Player, character: Model)
 	local head = character:WaitForChild("Head", 10)
@@ -468,6 +537,20 @@ Shop.onPass(function(player, key)
 		d.proBundle = true
 		Army.grantReveal(player, d, "Pro Commander", { { "Tank", "Rainbow" } })
 	end
+	if Config.Skins[key] and not d.skinsSeen then
+		d.skinsSeen = {}
+	end
+	if Config.Skins[key] and not d.skinsSeen[key] then
+		d.skinsSeen[key] = true -- first time: put the new skin on right away
+		local sk = Config.Skins[key]
+		if sk.kind == "tank" then
+			if d.tankPaint ~= key then
+				setSkin(player, d, key)
+			end
+		elseif d.skin ~= key then
+			setSkin(player, d, key)
+		end
+	end
 	if key == "pro" or key == "bigbox" then
 		Bases.refreshNow(player)
 	end
@@ -477,8 +560,11 @@ Shop.onPass(function(player, key)
 	Data.dirty(player)
 end)
 
-Army.on("rank", function(player)
+Army.on("rank", function(player, _d, rank)
 	retag(player)
+	if (tonumber(rank) or 0) >= 5 then
+		Live.badge(player, "Lieutenant")
+	end
 end)
 
 -- The character usually spawns before the save has loaded (tag shows Recruit): redo the tag once the rank is known.
@@ -501,6 +587,7 @@ local function onPlayerAdded(player: Player)
 		supplyAt = os.clock() + Config.SupplyAt,
 		autoAt = os.clock() + 8,
 		welcome = nil,
+		ftue = {},
 	}
 	player:SetAttribute("GiftAt", now() + Config.GiftEvery)
 	player:SetAttribute("ActiveAt", now())
@@ -536,6 +623,36 @@ Data.init({
 	},
 })
 
+-- Launch features (kit Live): rewards are plastic (grows with rank), free bags and minutes of Lucky Bags.
+Live.init({
+	config = Config.Live,
+	grant = function(player: Player, d: Dict, reward: Dict, _source: string)
+		if reward.plastic then
+			rankPlastic(player, d, reward.plastic, "gift")
+		end
+		if type(reward.bags) == "table" then
+			for bag, n in pairs(reward.bags :: { [string]: number }) do
+				if Config.BagByKey[bag] then
+					Army.addTokens(player, d, bag, n, nil, true)
+				end
+			end
+		end
+		if reward.luckMinutes then
+			d.boosts.luck = math.max(os.time(), d.boosts.luck or 0) + reward.luckMinutes * 60
+		end
+		Data.dirty(player)
+	end,
+})
+
+-- Hourly event at :00: the MEGA CAT (4 zones, twice the lost-soldier bags) and 10 minutes of 2x plastic for all.
+local function hourly()
+	Cat.hourly()
+	Boosts.add("plastic", Config.Hourly.boost, Config.Hourly.boostMinutes * 60, "HOURLY EVENT")
+	Shop.notifyAll("⏰ HOURLY EVENT! The MEGA CAT is coming + " .. Config.Hourly.boost .. "x PLASTIC for everyone for " .. Config.Hourly.boostMinutes .. " minutes!", "gold")
+end
+Live.onHour(function()
+	hourly()
+end)
 
 Players.PlayerRemoving:Connect(function(player)
 	Zones.removePlayer(player)
@@ -572,6 +689,42 @@ local actions: { [string]: Action } = {
 			s.welcome = nil
 		end
 		return true, w
+	end,
+	-- STRIKES panel: remember the zone the next strike purchase should hit
+	aim = function(player, _d, zoneId)
+		if type(zoneId) ~= "string" then
+			return false, nil
+		end
+		Strikes.setAim(player, zoneId)
+		return true, nil
+	end,
+	-- use a saved strike credit
+	strike = function(player, d, key, zoneId)
+		if type(key) ~= "string" or not Config.Strikes[key] or key == "callcat" then
+			return false, nil
+		end
+		if (d.strikeCredits[key] or 0) <= 0 then
+			return false, "No saved " .. Config.Products[key].name .. "!"
+		end
+		if not Strikes.fire(player, key, type(zoneId) == "string" and zoneId or nil) then
+			return false, "Nothing to hit right now!"
+		end
+		d.strikeCredits[key] -= 1
+		if d.strikeCredits[key] <= 0 then
+			d.strikeCredits[key] = nil
+		end
+		Data.dirty(player)
+		return true, nil
+	end,
+	skin = function(player, d, key)
+		if type(key) ~= "string" then
+			return false, nil
+		end
+		if key ~= "" and (not Config.Skins[key] or not Shop.owns(player, key)) then
+			return false, "Buy this skin in the SHOP first!"
+		end
+		setSkin(player, d, key)
+		return true, nil
 	end,
 	deploy = function(player, _d, zoneId)
 		if type(zoneId) ~= "string" then
@@ -631,6 +784,7 @@ local actions: { [string]: Action } = {
 		if now() < s.giftAt then
 			return false, "Free bag in " .. Fmt.time(s.giftAt - now())
 		end
+		mark(player, "gift")
 		s.giftAt = now() + Config.GiftEvery
 		player:SetAttribute("GiftAt", s.giftAt)
 		rankPlastic(player, d, Config.Gift.plastic, "gift")
@@ -688,9 +842,17 @@ local function endRound(): string
 				rankPlastic(p, d, Config.Round.perZone * held, "round")
 				Army.addTokens(p, d, "Basic", 1)
 				Army.addXp(p, d, Config.Round.xp)
+				Live.quest(p, "round", 1)
+				Live.badge(p, "RoundWin")
 			else
 				rankPlastic(p, d, Config.Round.perZone * held * 0.3, "round")
 			end
+		end
+	end
+	for _, p in ipairs(Players:GetPlayers()) do
+		local f = p:GetAttribute("Friends")
+		if type(f) == "number" and f > 0 then
+			Live.quest(p, "friend", 1) -- played a round with a friend in the server
 		end
 	end
 	roundRemote:FireAllClients(winner or "", g, t)
@@ -784,6 +946,27 @@ end)
 Debug.init({
 	round = function(): string
 		return endRound()
+	end,
+	hourly = function(): string
+		hourly()
+		return "hourly event: mega cat + 2x plastic"
+	end,
+	ftue = function(player: Player): string
+		local s = sessions[player]
+		if not s then
+			return "-"
+		end
+		local f = s.ftue
+		local function t(k: string): string
+			return f[k] and (tostring(f[k]) .. "s") or "-"
+		end
+		return string.format("deploy=%s reward=%s gift@%ds claimed=%s", t("deploy"), t("reward"), math.floor(s.giftAt - (now() - (os.clock() - s.joined)) + 0.5), t("gift"))
+	end,
+	skin = function(player: Player, key: string)
+		local d = Data.get(player)
+		if d then
+			setSkin(player, d, key)
+		end
 	end,
 	supply = function(player: Player)
 		local s = sessions[player]

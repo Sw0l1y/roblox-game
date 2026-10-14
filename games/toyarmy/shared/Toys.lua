@@ -22,6 +22,9 @@ export type Paint = {
 	gold: boolean,
 	glow: boolean,
 	rainbow: boolean,
+	alt: Color3?, -- skins with a pattern (camo, lava): every other "main" piece takes this colour
+	material: Enum.Material?,
+	reflect: number?,
 }
 
 type Builder = { m: Model, s: number, p: Paint, n: number, shadows: boolean }
@@ -30,7 +33,23 @@ local WHITE = Color3.fromRGB(250, 250, 250)
 local BLACK = Color3.fromRGB(34, 36, 44)
 local RED = Color3.fromRGB(232, 60, 60)
 
-function Toys.paint(team: string?, mut: string?, unitKey: string?): Paint
+-- The skin (Config.Skins) that paints this unit: the tank paint on Tanks, else the army skin. Mutations, the Golden
+-- General and the Robot Dino keep their own look so rare toys still read as rare.
+function Toys.skinFor(unitKey: string?, mut: string?, skin: string?, tankPaint: string?): Config.SkinDef?
+	if (mut or "") ~= "" or unitKey == "General" or unitKey == "Dino" then
+		return nil
+	end
+	if unitKey == "Tank" and tankPaint and Config.Skins[tankPaint] then
+		return Config.Skins[tankPaint]
+	end
+	local s = skin and Config.Skins[skin]
+	if s and s.kind == "army" then
+		return s
+	end
+	return nil
+end
+
+function Toys.paint(team: string?, mut: string?, unitKey: string?, skin: string?, tankPaint: string?): Paint
 	local tc = team and Config.Team[team] or nil
 	local teamCol = tc and tc.color or Config.C.wild
 	local main = teamCol
@@ -49,7 +68,12 @@ function Toys.paint(team: string?, mut: string?, unitKey: string?): Paint
 	elseif m == "Glow" then
 		main, dark = Config.C.glow, Config.C.glowDark
 	end
-	return { main = main, dark = dark, team = teamCol, gold = m == "Gold", glow = m == "Glow", rainbow = m == "Rainbow" }
+	local p: Paint = { main = main, dark = dark, team = teamCol, gold = m == "Gold", glow = m == "Glow", rainbow = m == "Rainbow" }
+	local sk = Toys.skinFor(unitKey, m, skin, tankPaint)
+	if sk then
+		p.main, p.dark, p.alt, p.material, p.reflect = sk.main, sk.dark, sk.alt, sk.material, sk.reflect
+	end
+	return p
 end
 
 -- Part in model space (scaled by the builder). role: "main", "dark", "team", "white", "black", "red", "glass", "eye".
@@ -86,6 +110,12 @@ local function piece(b: Builder, name: string, cf: CFrame, size: Vector3, role: 
 		elseif b.p.glow and role == "dark" then
 			material = Enum.Material.Neon
 		end
+		local alt = b.p.alt
+		if alt and role == "main" and b.n % 2 == 0 then
+			color = alt -- camo blotches / lava streaks
+		end
+		material = b.p.material or material
+		reflect = b.p.reflect or reflect
 	end
 	local props: { [string]: any } = {
 		Class = cls or "Part",
@@ -327,7 +357,7 @@ function Toys.heroMesh(key: string): MeshPart?
 	return nil
 end
 
-export type BuildOpts = { team: string?, mut: string?, ring: boolean?, shadows: boolean?, scale: number? }
+export type BuildOpts = { team: string?, mut: string?, ring: boolean?, shadows: boolean?, scale: number?, skin: string?, tankPaint: string? }
 
 -- Build a unit model. Attributes: Unit, Mut, Team, Rainbow (client animates hue), Height.
 function Toys.build(unitKey: string, opts: BuildOpts?): Model
@@ -336,7 +366,7 @@ function Toys.build(unitKey: string, opts: BuildOpts?): Model
 	local m = Instance.new("Model")
 	m.Name = unitKey
 	local s = (def and def.scale or 1) * (o.scale or 1)
-	local b: Builder = { m = m, s = s, p = Toys.paint(o.team, o.mut, unitKey), n = 0, shadows = o.shadows == true }
+	local b: Builder = { m = m, s = s, p = Toys.paint(o.team, o.mut, unitKey, o.skin, o.tankPaint), n = 0, shadows = o.shadows == true }
 	local hero = Toys.heroMesh(unitKey)
 	local height = 3.8
 	if hero then
@@ -347,9 +377,9 @@ function Toys.build(unitKey: string, opts: BuildOpts?): Model
 		hero.CanQuery = false
 		hero.CanTouch = false
 		hero.CastShadow = b.shadows
-		hero.Material = Enum.Material.SmoothPlastic
+		hero.Material = b.p.material or Enum.Material.SmoothPlastic
 		hero.Color = b.p.rainbow and Color3.fromHSV(math.random(), 0.7, 1) or b.p.main
-		hero.Reflectance = b.p.gold and 0.18 or 0
+		hero.Reflectance = b.p.reflect or (b.p.gold and 0.18 or 0)
 		hero.Size = hero.Size * (o.scale or 1)
 		hero.CFrame = CF(0, 0.3 * s + hero.Size.Y / 2, 0)
 		hero:SetAttribute("Paint", "main")

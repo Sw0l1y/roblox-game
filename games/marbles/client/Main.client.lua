@@ -1,8 +1,9 @@
 --!strict
 -- Marble Mayhem client: wires the server's race cycle to the views. Builds each new track from its seed
 -- as soon as the pick phase starts (with a camera flyover), shows the pick screen, hands live races to
--- RaceView, and routes rewards, the Grand Prix timer, the mutation tease, offline earnings, server
--- announcements and machine prompts to the HUD.
+-- RaceView, and routes rewards, the Grand Prix timer (and the hourly one), the mutation tease, offline
+-- earnings, server announcements and machine prompts to the HUD. Starts live prices and the free-rewards
+-- menu (codes, gifts, quests).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -19,6 +20,8 @@ local RaceView = require(ClientLib:WaitForChild("RaceView"))
 local Picker = require(ClientLib:WaitForChild("Picker"))
 local Hud = require(ClientLib:WaitForChild("Hud"))
 local Reveal = require(ClientLib:WaitForChild("Reveal"))
+local Prices = require(ClientLib:WaitForChild("Prices"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 
 local player = Players.LocalPlayer
 local _ = Fx -- loaded for server-triggered effects
@@ -29,13 +32,16 @@ end
 
 Sfx.music(Config.Music)
 RaceView.coinTarget = Hud.coinFrame()
+Prices.sync(Config.Passes :: any, Config.Products :: any)
+LiveUI.init(Config.Live)
 
 -- Tracks ---------------------------------------------------------------------------------------------------
 local mainView: TrackView.View? = nil
 local practiceView: TrackView.View? = nil
 
-local function ensureTrack(kind: string, seed: number, theme: string): TrackView.View
-	if kind == "practice" then
+-- track: a Config.Tracks key ("main", "gp", "chaos", "gpchaos" or "practice").
+local function ensureTrack(track: string, seed: number, theme: string): TrackView.View
+	if track == "practice" then
 		local pv = practiceView
 		if pv and pv.seed == seed then
 			return pv
@@ -48,13 +54,13 @@ local function ensureTrack(kind: string, seed: number, theme: string): TrackView
 		return v
 	end
 	local mv = mainView
-	if mv and mv.seed == seed and mv.kind == kind then
+	if mv and mv.seed == seed and mv.kind == track then
 		return mv
 	end
 	if mv then
 		TrackView.destroy(mv)
 	end
-	local v = TrackView.build(kind, seed, theme)
+	local v = TrackView.build(track, seed, theme)
 	mainView = v
 	return v
 end
@@ -87,15 +93,22 @@ local function onPhase(p: string, endsAt: number, info: { [string]: any }?)
 	if p == "pick" then
 		phaseInfo = inf
 		if type(inf.seed) == "number" then
-			ensureTrack(tostring(inf.kind or "main"), inf.seed, tostring(inf.theme or "Classic"))
+			ensureTrack(tostring(inf.track or inf.kind or "main"), inf.seed, tostring(inf.theme or "Classic"))
 		end
 		Picker.setEnds(endsAt)
 		setGpMusic(inf.gp == true)
 		if wasPhase ~= "pick" then
 			RaceView.hideResults()
-			if inf.gp then
+			local mods = type(inf.mods) == "table" and inf.mods or {}
+			if inf.hourly then
+				UI.banner("⏰ HOURLY GRAND PRIX!", "purple", 2.8)
+				Sfx.play("victory", 0.5)
+			elseif inf.gp then
 				UI.banner("🏁 GRAND PRIX!", "purple", 2.4)
 				Sfx.play("victory", 0.5)
+			elseif #mods > 0 then
+				UI.banner(table.concat(mods, " + ") .. "!", "red", 2.4)
+				Sfx.play("unlock", 0.5)
 			end
 		end
 	elseif p == "race" then
@@ -124,7 +137,7 @@ Net.event("RaceStart").OnClientEvent:Connect(function(desc)
 	if type(desc) ~= "table" then
 		return
 	end
-	local view = ensureTrack(tostring(desc.kind), tonumber(desc.seed) or 0, tostring(desc.theme or "Classic"))
+	local view = ensureTrack(tostring(desc.track or desc.kind), tonumber(desc.seed) or 0, tostring(desc.theme or "Classic"))
 	RaceView.add(desc, view)
 end)
 Net.fast("RaceSnap").OnClientEvent:Connect(function(b)
@@ -153,7 +166,7 @@ RaceView.onReward = function(_raceId: number, info: { [string]: any })
 		task.delay(2.6, function()
 			UI.banner("🎉 FREE WELCOME PACK!", "orange", 2.4)
 			Sfx.play("unlock", 0.6)
-			UI.toast("Your first pack is FREE - tap 🎁 Packs or visit the Pack Machine!", "orange", 5)
+			UI.toast("Your first pack is FREE - tap 📦 Packs or visit the Pack Machine!", "orange", 5)
 			Hud.refreshGuide()
 		end)
 	end
@@ -217,7 +230,7 @@ task.spawn(function()
 		local left = math.max(0, math.ceil(phaseEnds - now()))
 		local gp = phaseInfo.gp == true and phase ~= "idle"
 		if RaceView.busy() then
-			Hud.setStatus(gp and "🏁 GRAND PRIX!" or "🏁 RACING!", gp and "purple" or "orange")
+			Hud.setStatus(gp and (phaseInfo.hourly and "⏰ HOURLY GP!" or "🏁 GRAND PRIX!") or "🏁 RACING!", gp and "purple" or "orange")
 		elseif phase == "pick" then
 			Hud.setStatus((Picker.isOpen() and "PICK!  " or "NEXT RACE  ") .. left .. "s", gp and "purple" or "pink")
 		elseif phase == "race" then
@@ -225,7 +238,7 @@ task.spawn(function()
 		elseif phase == "results" then
 			Hud.setStatus("NEXT RACE  " .. (left + Config.Race.pickTime) .. "s", "blue")
 		else
-			Hud.setStatus(Config.TITLE, "pink")
+			Hud.setStatus(Config.Title .. " 🔮", "pink")
 		end
 		task.wait(0.25)
 	end
@@ -252,7 +265,7 @@ task.spawn(function()
 		onPhase(s.phase, tonumber(s.endsAt) or 0, s.info)
 	end
 	for _, desc in ipairs((s.races or {}) :: { { [string]: any } }) do
-		local view = ensureTrack(tostring(desc.kind), tonumber(desc.seed) or 0, tostring(desc.theme or "Classic"))
+		local view = ensureTrack(tostring(desc.track or desc.kind), tonumber(desc.seed) or 0, tostring(desc.theme or "Classic"))
 		if not desc.done then
 			RaceView.add(desc, view)
 		end
