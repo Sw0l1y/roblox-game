@@ -1,6 +1,7 @@
 -- Showtime: the theme reveal, the turntable showcase with 1-5 star voting, the judges' score paddles, the
 -- score pop, the podium, your personal results card and the clip moment: the winning cake growing giant on
--- the plaza with fireworks. Owns the stage camera during Vote and Results.
+-- the plaza with fireworks. Owns the stage camera during Vote and Results (except while this player decorates
+-- in their paid Overtime). Paid reactions (cheering only, never the score) sit above the vote card.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -68,6 +69,9 @@ local voteSub: TextLabel
 local starBtns: { TextButton } = {}
 local ownLabel: TextLabel
 local voteBar: UI.Bar
+local reactRow: Frame
+local reactBtns: { [string]: TextButton } = {}
+local hidden = false -- Overtime: the vote UI steps aside while this player decorates
 local scoreCard: Frame
 local scoreValue: TextLabel
 local scoreStars: TextLabel
@@ -277,7 +281,7 @@ local function onShow(p: D)
 	for _, b in ipairs(starBtns) do
 		b.Visible = not showOwn
 	end
-	voteCard.Visible = true
+	voteCard.Visible = not hidden
 	UI.punch(voteCard, 0.15)
 	Sfx.play("whoosh", 0.4)
 	Fx.burst(W.turntable + Vector3.new(0, 2, 0), { Config.Palette.pink, Config.Palette.mint, Config.Palette.sky, Config.Palette.lemon }, 12, 0.8)
@@ -394,11 +398,26 @@ function Showtime.onReward(r: D)
 	resultScore.Text = string.format("⭐ %.1f   %s", tonumber(r.score) or 0, starsText(tonumber(r.score) or 0))
 	resultReward.Text = string.format("+%s 💰    +%s XP", Fmt.commas(tonumber(r.coins) or 0), Fmt.commas(tonumber(r.xp) or 0))
 	local extras = {}
-	if r.celebrity then
+	if r.hourly then
+		table.insert(extras, "👑 Gala " .. Config.Round.hourlyMult .. "x!")
+	elseif r.celebrity then
 		table.insert(extras, "🌟 Celebrity 2x!")
 	end
-	if r.box then
-		table.insert(extras, "🎁 +1 Mystery Box!")
+	local boost = tonumber(r.boost) or 1
+	if boost > 1 then
+		table.insert(extras, string.format("⚡ Server %gx", boost))
+	end
+	local friends = tonumber(r.friends) or 1
+	if friends > 1 then
+		table.insert(extras, string.format("👫 +%d%%", math.floor((friends - 1) * 100 + 0.5)))
+	end
+	local candy = tonumber(r.candy) or 0
+	if candy > 0 then
+		table.insert(extras, Config.Icons.candy .. " +" .. candy)
+	end
+	local boxes = tonumber(r.boxes) or (if r.box then 1 else 0)
+	if boxes > 0 then
+		table.insert(extras, "🎁 +" .. boxes .. " Box" .. (if boxes > 1 then "es" else "") .. "!")
 	end
 	resultExtra.Text = table.concat(extras, "   ")
 	UI.recolor(resultCard, if place == 1 then "gold" elseif place <= 3 then "sky" else "purple")
@@ -485,8 +504,9 @@ local function onTheme(p: D)
 	clearPodium()
 	clearGiant()
 	resultCard.Visible = false
-	UI.recolor(themeCard, if celeb then "gold" else "pink")
-	themeTitle.Text = if celeb then "🌟 CELEBRITY JUDGE ROUND 🌟" else "THIS ROUND'S THEME"
+	local gala = p.hourly == true
+	UI.recolor(themeCard, if celeb or gala then "gold" else "pink")
+	themeTitle.Text = if gala then "👑 HOURLY GRAND GALA 👑" elseif celeb then "🌟 CELEBRITY JUDGE ROUND 🌟" else "THIS ROUND'S THEME"
 	themeIdeas.Text = ""
 	themeCard.Visible = true
 	themeSpinning = true
@@ -518,7 +538,7 @@ local function onTheme(p: D)
 				table.insert(ideas, def.glyph)
 			end
 		end
-		themeIdeas.Text = (if celeb then "Chef Gateau judges · 2x coins & XP! · " else "Ideas: ") .. table.concat(ideas, " ")
+		themeIdeas.Text = (if gala then Config.Round.hourlyMult .. "x coins & XP · boxes for the top 3! · " elseif celeb then "Chef Gateau judges · 2x coins & XP! · " else "Ideas: ") .. table.concat(ideas, " ")
 		Sfx.play("magic", 0.6)
 		UI.confetti(if celeb then 90 else 40)
 		if celeb then
@@ -568,7 +588,29 @@ local function buildUI()
 	ownLabel = UI.text(voteCard, "🤞 Everyone is rating your cake right now...", { Font = UI.BODY, Size = UDim2.new(1, -40, 0, 50), Position = UDim2.fromOffset(20, 90), Visible = false })
 	voteBar = UI.bar(voteCard, "gold", { Size = UDim2.new(1, -40, 0, 12), Position = UDim2.new(0, 20, 1, -22) })
 
-	scoreCard = UI.card(root, "gold", { Name = "Score", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 146), Size = UDim2.fromOffset(420, 150), Visible = false })
+	-- reactions: paid cheers for the cake on show (its baker gets coins; the score is never touched)
+	reactRow = UI.frame(voteCard, { Name = "Reactions", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, -58), Size = UDim2.new(1, 0, 0, 50) })
+	UI.list(reactRow, 10, true)
+	for i, key in ipairs(Config.ReactionOrder) do
+		local def = Config.Reactions[key]
+		local b = UI.button(reactRow, def.glyph, def.color, { Name = key, Size = UDim2.fromOffset(196, 50), LayoutOrder = i })
+		b.MouseButton1Click:Connect(function()
+			local credits = Own.credits(ctx.data(), key)
+			if credits > 0 then
+				local r = ctx.act("react", key)
+				if type(r) == "table" and not r.ok and r.msg then
+					UI.toast(tostring(r.msg), "orange")
+				end
+			elseif ctx.canPrompt() then
+				ctx.buy("product", key)
+			else
+				ctx.openShop("Robux")
+			end
+		end)
+		reactBtns[key] = b
+	end
+
+	scoreCard = UI.card(root, "gold", { Name = "Score", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 184), Size = UDim2.fromOffset(420, 150), Visible = false })
 	scoreValue = UI.text(scoreCard, "", { Size = UDim2.new(1, -20, 0, 64), Position = UDim2.fromOffset(10, 8) })
 	scoreStars = UI.text(scoreCard, "", { Font = Enum.Font.GothamBold, Size = UDim2.new(1, -40, 0, 34), Position = UDim2.fromOffset(20, 72) })
 	scoreWord = UI.text(scoreCard, "", { Font = UI.BODY, Size = UDim2.new(1, -20, 0, 32), Position = UDim2.fromOffset(10, 110) })
@@ -580,7 +622,66 @@ local function buildUI()
 	resultExtra = UI.text(resultCard, "", { Font = UI.BODY, Size = UDim2.new(1, -20, 0, 32), Position = UDim2.fromOffset(10, 172), ZIndex = 13 })
 end
 
+-- Reactions --------------------------------------------------------------------------------------------------------------
+local function refreshReactions()
+	local d = ctx.data()
+	local any = false
+	for _, key in ipairs(Config.ReactionOrder) do
+		local def = Config.Reactions[key]
+		local b = reactBtns[key]
+		local credits = Own.credits(d, key)
+		local text = def.glyph .. " " .. (if credits > 0 then "x" .. credits else "R$ " .. Config.Products[key].price)
+		if b.Text ~= text then
+			b.Text = text
+		end
+		if credits > 0 then
+			any = true
+		end
+	end
+	-- no Robux buttons in a first session's first 2 minutes (saved credits still show)
+	reactRow.Visible = not showOwn and showcase ~= nil and (any or ctx.canPrompt())
+end
+
+local function onReact(p: D)
+	local def = Config.Reactions[tostring(p.key or "")]
+	if not def then
+		return
+	end
+	local top = W.turntable + Vector3.new(0, 6, 0)
+	if p.key == "React1" then
+		Fx.burst(top, { Config.Palette.pink, Config.Palette.mint, Config.Palette.sky, Config.Palette.lemon, Config.Palette.lavender }, 26, 1.3)
+		Sfx.play("pop", 0.5, 1.2)
+	elseif p.key == "React2" then
+		Fx.shockwave(W.turntable + Vector3.new(0, 1, 0), Config.Palette.gold, 16)
+		Fx.sparkle(top, Config.Palette.gold, 4, 1.5)
+		Sfx.play("sparkle", 0.6)
+	else
+		for i = 1, 6 do
+			task.delay(i * 0.12, function()
+				UI.floatAt(top + Vector3.new(rng:NextNumber(-3, 3), rng:NextNumber(-1, 2), 0), if i % 2 == 0 then "💋" else "❤️", "red", 44)
+			end)
+		end
+		Fx.burst(top, { Color3.fromRGB(255, 80, 120), Color3.fromRGB(255, 170, 200), Color3.new(1, 1, 1) }, 14, 0.9)
+		Sfx.play("magic", 0.5)
+	end
+	UI.floatAt(top + Vector3.new(0, 3, 0), def.glyph, def.color, 64)
+	UI.toast(def.glyph .. " " .. tostring(p.by or "?") .. " sent " .. tostring(p.to or "?") .. " a " .. def.name .. "!", def.color, 2.5)
+end
+
 -- API ---------------------------------------------------------------------------------------------------------------------
+-- Overtime: hide the vote UI while this player decorates (the show keeps running for everyone else).
+function Showtime.setHidden(on: boolean)
+	if on == hidden then
+		return
+	end
+	hidden = on
+	if on then
+		voteCard.Visible = false
+	elseif showcase and phase() == "Vote" then
+		voteCard.Visible = true
+	end
+end
+
 function Showtime.onRound(kind: string, p: any)
 	if type(p) ~= "table" then
 		return
@@ -597,6 +698,8 @@ function Showtime.onRound(kind: string, p: any)
 		onResults(p)
 	elseif kind == "giant" then
 		onGiant(p)
+	elseif kind == "react" then
+		onReact(p)
 	end
 end
 
@@ -660,6 +763,7 @@ function Showtime.tick(dt: number)
 	if voteCard.Visible then
 		-- set directly: voteBar.set starts a new tween, which every frame would pile up Tween objects
 		voteBar.fill.Size = UDim2.fromScale(math.clamp((showEnds - now()) / math.max(showSlot, 1), 0, 1), 1)
+		refreshReactions()
 	end
 	local gr = giantRig
 	if giant and gr then

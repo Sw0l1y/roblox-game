@@ -1,5 +1,8 @@
--- Menus: Shop (toppings, colours, upgrades, Robux), Topping Index, Mystery Sprinkle Box (odds + reveal),
--- Daily reward and the Pick-the-Theme menu. Every panel refreshes from the latest save data.
+-- Menus: Shop (toppings, colours, upgrades, passes with gift buttons, Robux products in sections), Topping
+-- Index (with each box topping's chance), Mystery Sprinkle Box (live percent odds, reveal, the paid-random
+-- policy), Daily reward, Pick-the-Theme, the Caketober prize track, the starter / intro offers and the
+-- first-minute welcome gift. Every panel refreshes from the latest save data and live Robux prices.
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -9,13 +12,16 @@ local Fmt = require(Shared:WaitForChild("Fmt"))
 local Tiers = require(Shared:WaitForChild("Tiers"))
 local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 local Own = require(ClientLib:WaitForChild("Own"))
 local Widgets = require(ClientLib:WaitForChild("Widgets"))
 
 local Panels = {}
 
 type D = { [string]: any }
+type ProductDef = Config.ProductDef
 
+local player = Players.LocalPlayer
 local ctx: Own.Ctx = nil :: any
 local refreshers: { () -> () } = {}
 local shop: UI.Panel
@@ -24,7 +30,11 @@ local index: UI.Panel
 local box: UI.Panel
 local daily: UI.Panel
 local theme: UI.Panel
+local track: UI.Panel
 local revealing = false
+local welcome = false -- the box panel is showing the first-minute welcome gift
+local openOne: () -> () = function() end
+local trackScroll: ScrollingFrame? = nil
 
 local function data(): D?
 	return ctx.data()
@@ -36,6 +46,12 @@ end
 
 local function buy(kind: string, key: string)
 	ctx.buy(kind, key)
+end
+
+-- Live price text ("R$ 49"): Config holds the planned price; kit Prices writes Roblox's live price into it.
+local function price(kind: string, key: string): string
+	local def = if kind == "pass" then Config.Passes[key] else Config.Products[key]
+	return "R$ " .. (if def then def.price else 0)
 end
 
 -- Toast + sound for an Act result. Returns true on success.
@@ -70,10 +86,14 @@ local function dark(l: TextLabel): TextLabel
 	return l
 end
 
+local function blocked(): boolean
+	return ctx.blocked()
+end
+
 -- Shop -------------------------------------------------------------------------------------------------
 local function buildShop()
 	shop = UI.panel("Shop", "🛒 BAKERY SHOP", "green", Vector2.new(900, 540))
-	local pages, select = UI.tabs(shop.body, { "Toppings", "Colours", "Upgrades", "Robux" }, { "pink", "sky", "orange", "green" })
+	local pages, select = UI.tabs(shop.body, { "Toppings", "Colours", "Upgrades", "Passes", "Robux" }, { "pink", "sky", "orange", "purple", "green" })
 	shopSelect = select
 
 	-- Toppings: everything sold for coins, cheapest first
@@ -142,7 +162,7 @@ local function buildShop()
 					btn.Text = "OWNED ✔"
 					UI.recolor(btn, "grey")
 				elseif def.pass then
-					btn.Text = "R$ " .. Config.Passes[def.pass].price
+					btn.Text = price("pass", def.pass)
 					UI.recolor(btn, "purple")
 				else
 					btn.Text = "💰 " .. Fmt.num(def.price)
@@ -168,12 +188,12 @@ local function buildShop()
 			UI.recolor(btn, col)
 		end)
 	end
-	local function priced(price: number, owned: boolean): (string, string)
+	local function priced(cost: number, owned: boolean): (string, string)
 		if owned then
 			return "OWNED ✔", "grey"
 		end
 		local d = data()
-		return "💰 " .. Fmt.num(price), if d and (d.coins or 0) >= price then "green" else "orange"
+		return "💰 " .. Fmt.num(cost), if d and (d.coins or 0) >= cost then "green" else "orange"
 	end
 	for i, s in ipairs(Config.Shapes) do
 		if s.price > 0 then
@@ -212,59 +232,132 @@ local function buildShop()
 		return priced(Config.Cake.slotUpgrades[lvl + 1], false)
 	end)
 
-	-- Robux: passes (forever) then products
-	local rScroll = UI.scroll(pages.Robux)
-	UI.grid(rScroll, UDim2.fromOffset(260, 168), 12)
-	local function robuxCard(kind: string, key: string, def: Config.ProductDef, order: number)
-		local color = if kind == "pass" then (if key == "GoldenOven" then "gold" else "purple") else "teal"
-		local card = UI.card(rScroll, color, { Name = key, LayoutOrder = order })
+	type Entry = { key: string, def: ProductDef }
+	local function sorted(set: { [string]: ProductDef }, filter: ((ProductDef) -> boolean)?): { Entry }
+		local out: { Entry } = {}
+		for key, def in pairs(set) do
+			if filter == nil or filter(def) then
+				table.insert(out, { key = key, def = def })
+			end
+		end
+		table.sort(out, function(a: Entry, b: Entry)
+			return a.def.order < b.def.order
+		end)
+		return out
+	end
+
+	-- Passes (forever), each with a gift copy for a player in the server
+	local pScroll = UI.scroll(pages.Passes)
+	UI.grid(pScroll, UDim2.fromOffset(260, 196), 12)
+	for i, p in ipairs(sorted(Config.Passes, nil)) do
+		local key, def = p.key, p.def
+		local card = UI.card(pScroll, if key == "GoldenOven" then "gold" elseif key == "Caketober" then "orange" else "purple", { Name = key, LayoutOrder = i })
 		UI.text(card, def.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(50, 50), Position = UDim2.fromOffset(10, 10) })
 		UI.text(card, def.name, { Size = UDim2.new(1, -76, 0, 30), Position = UDim2.fromOffset(66, 12), TextXAlignment = Enum.TextXAlignment.Left })
-		UI.text(card, def.desc, { Font = UI.BODY, Size = UDim2.new(1, -20, 0, 44), Position = UDim2.fromOffset(10, 62), TextWrapped = true })
-		local btn = UI.button(card, "R$ " .. def.price, "green", { Name = "Buy", Size = UDim2.new(1, -20, 0, 46), Position = UDim2.new(0, 10, 1, -54) })
+		UI.text(card, def.desc, { Font = UI.BODY, Size = UDim2.new(1, -20, 0, 66), Position = UDim2.fromOffset(10, 60), TextWrapped = true })
+		local btn = UI.button(card, "", "green", { Name = "Buy", Size = UDim2.new(0.62, -12, 0, 48), Position = UDim2.new(0, 10, 1, -56) })
+		local gift = UI.button(card, "🎁 GIFT", "pink", { Name = "Gift", Size = UDim2.new(0.38, -8, 0, 48), Position = UDim2.new(0.62, 2, 1, -56) })
 		btn.MouseButton1Click:Connect(function()
-			if kind == "pass" and Own.pass(data(), key) then
+			if Own.pass(data(), key) then
 				UI.toast("You already own " .. def.name .. "!", "blue")
 				return
 			end
-			if key == "Starter" then
+			buy("pass", key)
+		end)
+		gift.MouseButton1Click:Connect(function()
+			if Config.Products["Gift" .. key] then
+				LiveUI.gift("Gift" .. key, "GIFT " .. string.upper(def.name))
+			end
+		end)
+		refresh(function()
+			local d = data()
+			local owned = Own.pass(d, key)
+			card.Visible = key ~= "Caketober" or Config.trackLive() or owned
+			btn.Text = if owned then "OWNED ✔" else price("pass", key)
+			UI.recolor(btn, if owned then "grey" else "green")
+			gift.Visible = Config.Products["Gift" .. key] ~= nil
+		end)
+	end
+
+	-- Robux products by section
+	local rScroll = UI.scroll(pages.Robux)
+	UI.list(rScroll, 8)
+	local COLS, CARD_H, GAP = 3, 168, 12
+	local function visibleFor(key: string, def: ProductDef, d: D?): boolean
+		if def.random and blocked() then
+			return false -- paid random items are hidden from restricted players
+		end
+		if key == "Intro" then
+			return Own.introOk(d)
+		elseif key == "Starter" then
+			return Own.starterLeft(d) > 0
+		elseif key == "Coins6Deal" then
+			return not Own.bought(d, "Coins6Deal")
+		elseif def.section == "track" then
+			return Config.trackLive()
+		end
+		return true
+	end
+	for si, sec in ipairs(Config.ShopSections) do
+		local items = sorted(Config.Products, function(def: ProductDef): boolean
+			return def.section == sec.key
+		end)
+		local header = UI.text(rScroll, sec.title, { LayoutOrder = si * 2 - 1, Size = UDim2.new(1, -8, 0, 34), TextXAlignment = Enum.TextXAlignment.Left })
+		local holder = UI.frame(rScroll, { Name = "Section_" .. sec.key, BackgroundTransparency = 1, LayoutOrder = si * 2, Size = UDim2.new(1, -8, 0, CARD_H) })
+		UI.grid(holder, UDim2.fromOffset(260, CARD_H), GAP)
+		local cards: { { key: string, def: ProductDef, frame: Frame } } = {}
+		for i, p in ipairs(items) do
+			local key, def = p.key, p.def
+			local card = UI.card(holder, if sec.key == "deal" then "pink" elseif sec.key == "boost" then "gold" else "teal", { Name = key, LayoutOrder = i })
+			UI.text(card, def.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(50, 50), Position = UDim2.fromOffset(10, 10) })
+			UI.text(card, def.name, { Size = UDim2.new(1, -76, 0, 30), Position = UDim2.fromOffset(66, 12), TextXAlignment = Enum.TextXAlignment.Left })
+			local desc = UI.text(card, def.desc, { Font = UI.BODY, Size = UDim2.new(1, -20, 0, 50), Position = UDim2.fromOffset(10, 58), TextWrapped = true })
+			local btn = UI.button(card, "", "green", { Name = "Buy", Size = UDim2.new(1, -20, 0, 46), Position = UDim2.new(0, 10, 1, -54) })
+			btn.MouseButton1Click:Connect(function()
 				local d = data()
-				if d and d.starter then
-					UI.toast("Starter Pack already claimed!", "blue")
+				if def.once and Own.bought(d, key) then
+					UI.toast("You already got the " .. def.name .. "!", "blue")
 					return
 				end
-			end
-			buy(kind, key)
-		end)
-		if kind == "pass" or key == "Starter" then
+				buy("product", key)
+			end)
+			table.insert(cards, { key = key, def = def, frame = card })
 			refresh(function()
 				local d = data()
-				local owned = if kind == "pass" then Own.pass(d, key) else (d ~= nil and d.starter == true)
-				btn.Text = if owned then "OWNED ✔" else "R$ " .. def.price
-				UI.recolor(btn, if owned then "grey" else "green")
+				local text = price("product", key)
+				local col = "green"
+				local boost = def.boost
+				if boost and boost.needs and Config.serverBoost(boost.kind) < boost.needs then
+					text = "🔒 needs " .. boost.needs .. "x · " .. text
+					col = "grey"
+				end
+				btn.Text = text
+				UI.recolor(btn, col)
+				if key == "Starter" then
+					local base = if blocked() then Config.StarterBlocked.desc else def.desc
+					desc.Text = base .. " · ⏳ " .. Fmt.time(Own.starterLeft(d))
+				elseif key == "Overtime" and d and (d.overtime or 0) > 0 then
+					desc.Text = "⏰ " .. d.overtime .. " ready! " .. def.desc
+				elseif Config.Reactions[key] and Own.credits(d, key) > 0 then
+					desc.Text = "x" .. Own.credits(d, key) .. " saved · " .. def.desc
+				end
 			end)
 		end
-	end
-	type Entry = { key: string, def: Config.ProductDef }
-	local passes: { Entry } = {}
-	for key, def in pairs(Config.Passes) do
-		table.insert(passes, { key = key, def = def })
-	end
-	table.sort(passes, function(a: Entry, b: Entry)
-		return a.def.order < b.def.order
-	end)
-	for i, p in ipairs(passes) do
-		robuxCard("pass", p.key, p.def, i)
-	end
-	local products: { Entry } = {}
-	for key, def in pairs(Config.Products) do
-		table.insert(products, { key = key, def = def })
-	end
-	table.sort(products, function(a: Entry, b: Entry)
-		return a.def.order < b.def.order
-	end)
-	for i, p in ipairs(products) do
-		robuxCard("product", p.key, p.def, 100 + i)
+		refresh(function()
+			local d = data()
+			local n = 0
+			for _, c in ipairs(cards) do
+				local vis = visibleFor(c.key, c.def, d)
+				c.frame.Visible = vis
+				if vis then
+					n += 1
+				end
+			end
+			header.Visible = n > 0
+			holder.Visible = n > 0
+			local rows = math.max(1, math.ceil(n / COLS))
+			holder.Size = UDim2.new(1, -8, 0, rows * CARD_H + (rows - 1) * GAP)
+		end)
 	end
 	shop.onOpen = function()
 		Panels.refresh()
@@ -272,6 +365,23 @@ local function buildShop()
 end
 
 -- Topping Index -----------------------------------------------------------------------------------------
+local indexOdds: { [string]: TextLabel } = {}
+local function boxPercents(luck: number): { [string]: number }
+	local ps = Tiers.percents(Config.Box.odds, luck)
+	local out = {}
+	for i, e in ipairs(Config.Box.odds) do
+		out[e.key] = ps[i]
+	end
+	return out
+end
+
+-- "🎁 0.82%": a box-only topping's chance per box with the player's current luck (Secret ones too).
+local function boxItemText(d: D, id: string): string
+	local luck = Config.boxLuck(d.luckUntil)
+	local pct = Config.itemOdds(id, d.toppings or {}, luck, boxPercents(luck))
+	return "🎁 " .. Tiers.pct(math.floor(pct * 1000 + 0.5) / 1000) .. (if luck > 1 then " 🍀" else "")
+end
+
 local function buildIndex()
 	index = UI.panel("Index", "📖 TOPPING INDEX", "blue", Vector2.new(900, 540))
 	local body = index.body
@@ -297,10 +407,19 @@ local function buildIndex()
 				Panels.openShop("Toppings")
 			elseif t.source == "box" then
 				Panels.openBox()
+			elseif t.source == "event" then
+				Panels.openTrack()
 			elseif t.source == "vip" then
-				buy("pass", "VIP")
+				if ctx.canPrompt() then
+					buy("pass", "VIP")
+				else
+					Panels.openShop("Passes")
+				end
 			end
 		end)
+		if t.source == "box" then
+			indexOdds[t.id] = card.foot
+		end
 		refresh(function()
 			local d = data()
 			local owned = Own.topping(d, t.id)
@@ -312,8 +431,10 @@ local function buildIndex()
 				card.foot.Text = "✔ " .. Tiers.get(t.tier).name
 			elseif t.source == "shop" then
 				card.foot.Text = "💰 " .. Fmt.num(t.price)
-			elseif t.source == "box" then
-				card.foot.Text = "🎁 Box only"
+			elseif t.source == "box" and d then
+				card.foot.Text = boxItemText(d, t.id)
+			elseif t.source == "event" then
+				card.foot.Text = "🎃 " .. Config.Track.name
 			else
 				card.foot.Text = "👑 VIP"
 			end
@@ -338,51 +459,98 @@ local function buildIndex()
 	end
 end
 
+-- Each unowned box-only topping's exact chance per box, with the player's current luck.
+local function refreshIndexOdds()
+	local d = data()
+	if not d then
+		return
+	end
+	for id, label in pairs(indexOdds) do
+		if not Own.topping(d, id) then
+			label.Text = boxItemText(d, id)
+		end
+	end
+end
+
 -- Mystery Sprinkle Box -----------------------------------------------------------------------------------
+local refreshBoxOdds: () -> () = function() end
+
 local function buildBox()
-	box = UI.panel("Box", "🎁 MYSTERY BOX", "pink", Vector2.new(720, 480))
+	box = UI.panel("Box", "🎁 MYSTERY BOX", "pink", Vector2.new(760, 540))
 	local body = box.body
 	-- left: the box and the open button
 	local left = UI.frame(body, { BackgroundTransparency = 1, Size = UDim2.new(0.5, -10, 1, 0) })
-	local glyph = UI.text(left, "🎁", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(130, 130), Position = UDim2.new(0.5, -65, 0, 18) })
-	local count = dark(UI.text(left, "", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 154) }))
-	local openBtn = UI.button(left, "OPEN!", "green", { Name = "Open", Size = UDim2.new(1, -30, 0, 70), Position = UDim2.fromOffset(15, 192) })
-	local luck = UI.button(left, "🍀 2.5x Luck · R$ " .. Config.Products.Luck.price, "teal", { Name = "Luck", Size = UDim2.new(1, -30, 0, 50), Position = UDim2.fromOffset(15, 276) })
-	local luckNote = dark(UI.text(left, "", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 334) }))
-	-- right: odds and Robux boxes
+	local glyph = UI.text(left, "🎁", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(120, 120), Position = UDim2.new(0.5, -60, 0, 14) })
+	local count = dark(UI.text(left, "", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 140) }))
+	local firstNote = UI.text(left, "✨ Your first box is a guaranteed RARE!", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 172), TextColor3 = Color3.fromRGB(80, 160, 255) })
+	local openBtn = UI.button(left, "OPEN!", "green", { Name = "Open", Size = UDim2.new(1, -30, 0, 70), Position = UDim2.fromOffset(15, 204) })
+	local luck = UI.button(left, "", "teal", { Name = "Luck", Size = UDim2.new(1, -30, 0, 50), Position = UDim2.fromOffset(15, 288) })
+	local luckNote = dark(UI.text(left, "", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 346) }))
+	local freeNote = dark(UI.text(left, "", { Font = UI.BODY, Size = UDim2.new(1, -10, 0, 70), Position = UDim2.fromOffset(5, 380), TextWrapped = true }))
+	-- right: odds (percent, sums to 100, live with luck) and Robux boxes
 	local right = UI.frame(body, { BackgroundTransparency = 1, Size = UDim2.new(0.5, -10, 1, 0), Position = UDim2.new(0.5, 10, 0, 0) })
-	dark(UI.text(right, "ODDS", { Size = UDim2.new(1, 0, 0, 34), Position = UDim2.fromOffset(0, 18) }))
+	local oddsTitle = dark(UI.text(right, "ODDS", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 10) }))
+	local oddsLabels: { TextLabel } = {}
 	for i, e in ipairs(Config.Box.odds) do
 		local t = Tiers.get(e.key)
-		local r = UI.card(right, t.color, { Size = UDim2.new(1, 0, 0, 34), Position = UDim2.fromOffset(0, 18 + i * 38) })
-		local name = UI.text(r, t.name, { Size = UDim2.new(0.6, 0, 0.8, 0), Position = UDim2.fromScale(0.04, 0.1), TextXAlignment = Enum.TextXAlignment.Left })
+		local r = UI.card(right, t.color, { Size = UDim2.new(1, 0, 0, 32), Position = UDim2.fromOffset(0, 10 + i * 36) })
+		local name = UI.text(r, t.name, { Size = UDim2.new(0.34, 0, 0.8, 0), Position = UDim2.fromScale(0.03, 0.1), TextXAlignment = Enum.TextXAlignment.Left })
 		if t.rainbow then
 			UI.rainbow(name)
 		end
-		UI.text(r, Tiers.odds(Config.Box.odds, e), { Font = UI.BODY, Size = UDim2.new(0.36, 0, 0.8, 0), Position = UDim2.fromScale(0.62, 0.1), TextXAlignment = Enum.TextXAlignment.Right })
+		oddsLabels[i] = UI.text(r, "", { Font = UI.BODY, Size = UDim2.new(0.6, 0, 0.8, 0), Position = UDim2.fromScale(0.38, 0.1), TextXAlignment = Enum.TextXAlignment.Right })
 	end
-	local b1 = UI.button(right, "🎁 1 Box · R$ " .. Config.Products.Box1.price, "purple", { Name = "Box1", Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 290) })
-	local b5 = UI.button(right, "🎁 5 Boxes · R$ " .. Config.Products.Box5.price, "purple", { Name = "Box5", Size = UDim2.new(1, 0, 0, 46), Position = UDim2.fromOffset(0, 342) })
+	dark(UI.text(right, "Every topping in a tier has the same chance; a duplicate re-rolls once.", { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 34), Position = UDim2.fromOffset(0, 266), TextWrapped = true }))
+	local b1 = UI.button(right, "", "purple", { Name = "Box1", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.fromOffset(0, 306) })
+	local b5 = UI.button(right, "", "purple", { Name = "Box5", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.fromOffset(0, 356) })
+	local b15 = UI.button(right, "", "purple", { Name = "Box15", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.fromOffset(0, 406) })
 	b1.MouseButton1Click:Connect(function()
 		buy("product", "Box1")
 	end)
 	b5.MouseButton1Click:Connect(function()
 		buy("product", "Box5")
 	end)
+	b15.MouseButton1Click:Connect(function()
+		buy("product", "Box15")
+	end)
 	luck.MouseButton1Click:Connect(function()
 		buy("product", "Luck")
 	end)
 
+	refreshBoxOdds = function()
+		local d = data()
+		local l = Config.boxLuck(if d then d.luckUntil else 0)
+		for i, e in ipairs(Config.Box.odds) do
+			oddsLabels[i].Text = Tiers.oddsLive(Config.Box.odds, e, l)
+		end
+		oddsTitle.Text = if l > 1 then string.format("ODDS · 🍀 %gx LUCK", l) else "ODDS"
+		local left2 = if d then (d.luckUntil or 0) - os.time() else 0
+		local server = Config.serverBoost("luck")
+		if left2 > 0 then
+			luckNote.Text = "🍀 Lucky Sprinkles: " .. Fmt.time(left2) .. (if server > 1 then string.format(" · server %gx", server) else "")
+		elseif server > 1 then
+			luckNote.Text = string.format("🍀 Server luck %gx is on!", server)
+		else
+			luckNote.Text = if blocked() then "" else "Luck shifts odds toward rarer tiers"
+		end
+	end
+
 	-- reveal overlay
 	local over = UI.card(body, "dark", { Name = "Reveal", Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 30 })
-	local rGlyph = UI.text(over, "🎁", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(150, 150), Position = UDim2.new(0.5, -75, 0, 30), ZIndex = 31 })
-	local rName = UI.text(over, "", { Size = UDim2.new(1, -40, 0, 50), Position = UDim2.fromOffset(20, 190), ZIndex = 31 })
-	local rTier = UI.text(over, "", { Size = UDim2.new(1, -40, 0, 38), Position = UDim2.fromOffset(20, 244), ZIndex = 31 })
-	local rNote = UI.text(over, "", { Font = UI.BODY, Size = UDim2.new(1, -40, 0, 30), Position = UDim2.fromOffset(20, 288), ZIndex = 31 })
+	local rTitle = UI.text(over, "", { Size = UDim2.new(1, -40, 0, 40), Position = UDim2.fromOffset(20, 10), ZIndex = 31, TextColor3 = Config.Palette.gold })
+	local rGlyph = UI.text(over, "🎁", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(150, 150), Position = UDim2.new(0.5, -75, 0, 50), ZIndex = 31 })
+	local rName = UI.text(over, "", { Size = UDim2.new(1, -40, 0, 50), Position = UDim2.fromOffset(20, 210), ZIndex = 31 })
+	local rTier = UI.text(over, "", { Size = UDim2.new(1, -40, 0, 38), Position = UDim2.fromOffset(20, 264), ZIndex = 31 })
+	local rNote = UI.text(over, "", { Font = UI.BODY, Size = UDim2.new(1, -40, 0, 30), Position = UDim2.fromOffset(20, 308), ZIndex = 31 })
 	local rOk = UI.button(over, "AWESOME!", "green", { Name = "Ok", Size = UDim2.fromOffset(240, 64), Position = UDim2.new(0.5, -120, 1, -84), ZIndex = 32, Visible = false })
 	local rainbowGrad: UIGradient? = nil
 	rOk.MouseButton1Click:Connect(function()
 		over.Visible = false
+		if welcome then
+			welcome = false
+			box.close()
+			UI.toast("🍒 Your new topping is in your tray: open TOPPINGS and tap your cake!", "pink", 4)
+		end
 	end)
 
 	local glyphs: { string } = {}
@@ -392,7 +560,7 @@ local function buildBox()
 		end
 	end
 
-	openBtn.MouseButton1Click:Connect(function()
+	openOne = function()
 		if revealing then
 			return
 		end
@@ -400,17 +568,30 @@ local function buildBox()
 		if not d then
 			return
 		end
-		if (d.boxes or 0) <= 0 and (d.coins or 0) < Config.Box.price then
-			UI.toast("Need 💰 " .. Config.Box.price .. " or a free box. Win rounds to earn more!", "orange")
-			Sfx.play("error", 0.5)
-			UI.punch(b1, 0.2)
-			return
+		local free = Own.freeBoxes(d)
+		local paid = (d.boxes or 0) - free
+		if free <= 0 and paid <= 0 then
+			if blocked() then
+				UI.toast("🎁 Get free boxes from Daily treats, quests, Index milestones and Celebrity wins!", "orange")
+				Sfx.play("error", 0.5)
+				return
+			elseif (d.coins or 0) < Config.Box.price then
+				UI.toast("Need 💰 " .. Config.Box.price .. " or a free box. Win rounds to earn more!", "orange")
+				Sfx.play("error", 0.5)
+				UI.punch(b1, 0.2)
+				return
+			end
 		end
 		revealing = true
 		local r = act("box", true)
 		if type(r) ~= "table" or not r.ok then
 			revealing = false
 			result(r)
+			return
+		end
+		if r.swapped then
+			revealing = false
+			result(r, "cash")
 			return
 		end
 		local id = tostring(r.id)
@@ -422,6 +603,7 @@ local function buildBox()
 		local tier = Tiers.get(def.tier)
 		over.Visible = true
 		rOk.Visible = false
+		rTitle.Text = if welcome then "🎁 WELCOME GIFT!" else ""
 		rName.Text = ""
 		rTier.Text = ""
 		rNote.Text = ""
@@ -455,8 +637,8 @@ local function buildBox()
 			Sfx.play("unlock", 0.7)
 		end
 		local ti = Tiers.index[def.tier] or 1
-		if ti >= 4 then
-			UI.confetti(60 + ti * 10, { tier.color, tier.dark, Color3.new(1, 1, 1) })
+		if ti >= 3 then
+			UI.confetti(40 + ti * 15, { tier.color, tier.dark, Color3.new(1, 1, 1) })
 			Sfx.play("magic", 0.7)
 		end
 		if ti >= 5 then
@@ -465,17 +647,36 @@ local function buildBox()
 		end
 		rOk.Visible = true
 		revealing = false
-	end)
+	end
+	openBtn.MouseButton1Click:Connect(openOne)
 
 	refresh(function()
 		local d = data()
 		local n: number = if d then d.boxes or 0 else 0
+		local free = Own.freeBoxes(d)
+		local isBlocked = blocked()
 		count.Text = if n > 0 then string.format("You have %d box%s!", n, if n == 1 then "" else "es") else "No free boxes · win rounds for more"
-		openBtn.Text = if n > 0 then "OPEN FREE BOX!" else "OPEN · 💰 " .. Config.Box.price
-		UI.recolor(openBtn, if n > 0 or (d and (d.coins or 0) >= Config.Box.price) then "green" else "grey")
+		firstNote.Visible = d ~= nil and not d.firstBox
+		if free > 0 then
+			openBtn.Text = "OPEN FREE BOX!"
+		elseif n > 0 then
+			openBtn.Text = if isBlocked then "OPEN · → 💰 " .. Config.Box.blockedCoins else "OPEN BOX!"
+		else
+			openBtn.Text = if isBlocked then "FREE BOXES ONLY" else "OPEN · 💰 " .. Config.Box.price
+		end
+		UI.recolor(openBtn, if n > 0 or (not isBlocked and d and (d.coins or 0) >= Config.Box.price) then "green" else "grey")
 		glyph.Rotation = if n > 0 then 6 else 0
-		local left2 = if d then (d.luckUntil or 0) - os.time() else 0
-		luckNote.Text = if left2 > 0 then "🍀 Lucky Sprinkles: " .. Fmt.time(left2) else "Luck shifts odds toward rarer tiers"
+		-- paid random items (Robux boxes, luck) are hidden from players under the paid-random restriction
+		luck.Visible = not isBlocked
+		b1.Visible = not isBlocked
+		b5.Visible = not isBlocked
+		b15.Visible = not isBlocked
+		luck.Text = "🍀 2.5x Luck 15 min · " .. price("product", "Luck")
+		b1.Text = "🎁 1 Box · " .. price("product", "Box1")
+		b5.Text = "🎁 5 Boxes · " .. price("product", "Box5")
+		b15.Text = "🎁 15 Boxes · " .. price("product", "Box15")
+		freeNote.Text = if isBlocked then "🎁 Free boxes: Daily day 7, quests, playtime gifts, Index milestones and Celebrity wins." else ""
+		refreshBoxOdds()
 	end)
 	box.onOpen = function()
 		over.Visible = false
@@ -558,12 +759,14 @@ local function buildTheme()
 				if result(act("pickTheme", t.key), "magic") then
 					theme.close()
 				end
-			else
+			elseif ctx.canPrompt() then
 				buy("product", "PickTheme")
+			else
+				UI.toast("🎟️ Get a theme pick with the button below!", "pink")
 			end
 		end)
 	end
-	local buyBtn = UI.button(body, "🎟️ BUY A PICK · R$ " .. Config.Products.PickTheme.price, "pink", { Name = "BuyPick", Size = UDim2.fromOffset(380, 60), Position = UDim2.new(0.5, -190, 1, -70) })
+	local buyBtn = UI.button(body, "", "pink", { Name = "BuyPick", Size = UDim2.fromOffset(380, 60), Position = UDim2.new(0.5, -190, 1, -70) })
 	buyBtn.MouseButton1Click:Connect(function()
 		buy("product", "PickTheme")
 	end)
@@ -571,10 +774,187 @@ local function buildTheme()
 		local d = data()
 		local n: number = if d then d.themeTickets or 0 else 0
 		note.Text = if n > 0 then string.format("🎟️ You have %d pick%s! Tap a theme for the next round.", n, if n == 1 then "" else "s") else "Choose the next round's theme for the whole server!"
+		buyBtn.Text = "🎟️ BUY A PICK · " .. price("product", "PickTheme")
 	end)
 	theme.onOpen = function()
 		Panels.refresh()
 	end
+end
+
+-- Caketober prize track -------------------------------------------------------------------------------------
+local function buildTrack()
+	track = UI.panel("Track", "🎃 " .. string.upper(Config.Track.name), "orange", Vector2.new(900, 540))
+	local body = track.body
+	local bar = UI.bar(body, "orange", { Size = UDim2.new(0.62, 0, 0, 36), Position = UDim2.fromOffset(0, 18) })
+	local ends = dark(UI.text(body, "", { Font = UI.BODY, Size = UDim2.new(0.36, 0, 0, 30), Position = UDim2.new(0.64, 0, 0, 22), TextXAlignment = Enum.TextXAlignment.Right }))
+	local claimAll = UI.button(body, "CLAIM ALL", "green", { Name = "ClaimAll", Size = UDim2.fromOffset(230, 52), Position = UDim2.fromOffset(0, 64) })
+	local passBtn = UI.button(body, "", "orange", { Name = "Pass", Size = UDim2.fromOffset(300, 52), Position = UDim2.fromOffset(242, 64) })
+	local giftBtn = UI.button(body, "🎁 GIFT PASS", "pink", { Name = "GiftPass", Size = UDim2.fromOffset(190, 52), Position = UDim2.fromOffset(554, 64) })
+	claimAll.MouseButton1Click:Connect(function()
+		if result(act("track"), "unlock") then
+			UI.confetti(70, { Color3.fromRGB(255, 140, 30), Color3.fromRGB(120, 240, 70), Color3.fromRGB(110, 50, 160) })
+		end
+	end)
+	passBtn.MouseButton1Click:Connect(function()
+		if not Own.pass(data(), "Caketober") then
+			buy("pass", "Caketober")
+		end
+	end)
+	giftBtn.MouseButton1Click:Connect(function()
+		LiveUI.gift("GiftCaketober", "GIFT CAKETOBER PASS")
+	end)
+	dark(UI.text(body, "FREE", { Size = UDim2.fromOffset(80, 30), Position = UDim2.fromOffset(0, 190) }))
+	dark(UI.text(body, "🎃 PASS", { Size = UDim2.fromOffset(80, 30), Position = UDim2.fromOffset(0, 300) }))
+	local scroll = UI.scroll(body, {
+		Name = "Tiers",
+		Size = UDim2.new(1, -86, 0, 284),
+		Position = UDim2.fromOffset(86, 124),
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		ScrollBarThickness = 8,
+	})
+	trackScroll = scroll
+	UI.list(scroll, 8, true, Enum.HorizontalAlignment.Left)
+	type Cell = { card: Frame, glyph: TextLabel, text: TextLabel, mark: TextLabel }
+	local cols: { { head: TextLabel, free: Cell, premium: Cell } } = {}
+	local function cell(parent: Instance, y: number, color: string): Cell
+		local c = UI.card(parent, color, { Size = UDim2.fromOffset(112, 104), Position = UDim2.fromOffset(0, y) })
+		local g = UI.text(c, "", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(46, 46), Position = UDim2.new(0.5, -23, 0, 6) })
+		local t = UI.text(c, "", { Font = UI.BODY, Size = UDim2.new(1, -8, 0, 34), Position = UDim2.fromOffset(4, 54), TextWrapped = true })
+		local m = UI.text(c, "", { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, -28, 0, -6), ZIndex = c.ZIndex + 2 })
+		return { card = c, glyph = g, text = t, mark = m }
+	end
+	for k = 1, Config.Track.tiers do
+		local col = UI.frame(scroll, { Name = "Tier" .. k, BackgroundTransparency = 1, LayoutOrder = k, Size = UDim2.fromOffset(112, 262) })
+		local head = dark(UI.text(col, "TIER " .. k, { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 8) }))
+		cols[k] = { head = head, free = cell(col, 44, "sky"), premium = cell(col, 154, "orange") }
+	end
+	local skipRow = UI.frame(body, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 54), Position = UDim2.new(0, 0, 1, -58) })
+	UI.list(skipRow, 10, true, Enum.HorizontalAlignment.Left)
+	dark(UI.text(skipRow, "SKIP AHEAD:", { Font = UI.BODY, LayoutOrder = 0, Size = UDim2.fromOffset(150, 40) }))
+	local skips: { { key: string, btn: TextButton } } = {}
+	for i, key in ipairs({ "Track1", "Track5", "Track10" }) do
+		local b = UI.button(skipRow, "", "purple", { Name = key, LayoutOrder = i, Size = UDim2.fromOffset(200, 50) })
+		b.MouseButton1Click:Connect(function()
+			buy("product", key)
+		end)
+		table.insert(skips, { key = key, btn = b })
+	end
+	refresh(function()
+		local d = data()
+		local tier, into = Own.track(d)
+		local live = Config.trackLive()
+		local premium = Own.pass(d, "Caketober")
+		local isBlocked = blocked()
+		local t = (d and d.track) or {}
+		if tier >= Config.Track.tiers then
+			bar.set(1, "TIER " .. tier .. " · MAXED! 🎃")
+		else
+			bar.set(into / Config.Track.cost, string.format("TIER %d · 🍬 %d / %d", tier, into, Config.Track.cost))
+		end
+		local left = Config.Track.ends - os.time()
+		ends.Text = if live then "⏳ Ends in " .. (if left > 86400 then math.floor(left / 86400) .. " days" else Fmt.time(left)) else "Caketober is over: claim what you earned!"
+		passBtn.Visible = live or premium
+		passBtn.Text = if premium then "🎃 PASS ✔" else "🎃 GET PASS · " .. price("pass", "Caketober")
+		UI.recolor(passBtn, if premium then "grey" else "orange")
+		giftBtn.Visible = live
+		skipRow.Visible = live
+		for _, s in ipairs(skips) do
+			s.btn.Text = "+" .. ((Config.TrackSkips :: any)[s.key] or 1) .. " · " .. price("product", s.key)
+		end
+		for k, c in ipairs(cols) do
+			local reached = k <= tier
+			for _, which in ipairs({ "free", "premium" }) do
+				local isPremium = which == "premium"
+				local cl: Cell = if isPremium then c.premium else c.free
+				local r = if isPremium then Config.Track.premium[k] else Config.Track.free[k]
+				local g, text = Config.rewardText(r, isBlocked)
+				cl.glyph.Text = g
+				cl.text.Text = text
+				local claimed = t[which] ~= nil and t[which][tostring(k)] == true
+				local locked = isPremium and not premium
+				cl.mark.Text = if claimed then "✔" elseif locked then "🔒" elseif reached then "!" else ""
+				cl.card.BackgroundTransparency = if reached or claimed then 0 else 0.45
+			end
+			c.head.TextColor3 = if reached then Color3.fromRGB(230, 110, 20) else UI.INK
+		end
+	end)
+	track.onOpen = function()
+		Panels.refresh()
+		local d = data()
+		local tier = Own.track(d)
+		scroll.CanvasPosition = Vector2.new(math.max(0, (tier - 2) * 120), 0)
+	end
+end
+
+-- Offers (never in the first 2 minutes of a first session; Main checks ctx.canPrompt) -----------------------
+local function offerPanel(name: string, title: string, glyph: string, text: string, priceKey: string, color: string, until_: (() -> number)?): ()
+	local old = UI.getPanel(name)
+	if old then
+		old.frame:Destroy()
+	end
+	local p = UI.panel(name, title, color, Vector2.new(480, 360))
+	local body = p.body
+	UI.text(body, glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(110, 110), Position = UDim2.new(0.5, -55, 0, 8) })
+	dark(UI.text(body, text, { Font = UI.BODY, Size = UDim2.new(1, 0, 0, 64), Position = UDim2.fromOffset(0, 120), TextWrapped = true }))
+	local timer = UI.text(body, "", { Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 188), TextColor3 = UI.colors.red })
+	local b = UI.button(body, price("product", priceKey), "green", { Size = UDim2.fromOffset(240, 64), Position = UDim2.new(0.5, -120, 1, -72) })
+	b.MouseButton1Click:Connect(function()
+		p.close()
+		buy("product", priceKey)
+	end)
+	p.open()
+	Sfx.play("notify", 0.5)
+	if until_ then
+		task.spawn(function()
+			while p.isOpen() do
+				local left = (until_ :: () -> number)()
+				if left <= 0 then
+					p.close()
+					break
+				end
+				timer.Text = "⏳ Ends in " .. Fmt.time(left)
+				task.wait(1)
+			end
+		end)
+	else
+		timer.Text = "First purchase only!"
+	end
+end
+
+function Panels.starterOffer()
+	local text = (if blocked() then Config.StarterBlocked.desc else "2,000 coins + 3 Mystery Boxes") .. " · new bakers only!"
+	offerPanel("StarterOffer", "BAKER STARTER PACK", "🧁", text, "Starter", "pink", function(): number
+		return Own.starterLeft(data())
+	end)
+end
+
+function Panels.introOffer()
+	offerPanel("IntroOffer", "BAKER'S TREAT", "🍰", "2,000 coins + 🧁 Mini Cupcake topping for just " .. price("product", "Intro") .. "!", "Intro", "green", nil)
+end
+
+-- The deal button: the starter pack while its window is open, else the intro offer.
+function Panels.openDeal()
+	local d = data()
+	if Own.starterLeft(d) > 0 then
+		Panels.starterOffer()
+	elseif Own.introOk(d) then
+		Panels.introOffer()
+	else
+		Panels.openShop("Robux")
+	end
+end
+
+-- The first-minute free gift: opens the welcome box (guaranteed Rare) with a WELCOME GIFT reveal.
+function Panels.welcomeGift(): boolean
+	local d = data()
+	if not d or d.firstBox or Own.freeBoxes(d) <= 0 or revealing then
+		return false
+	end
+	welcome = true
+	box.open()
+	task.spawn(openOne)
+	return true
 end
 
 -- API ---------------------------------------------------------------------------------------------------------------
@@ -585,7 +965,7 @@ function Panels.refresh()
 end
 
 function Panels.update(_d: D)
-	if shop.isOpen() or index.isOpen() or box.isOpen() or daily.isOpen() or theme.isOpen() then
+	if shop.isOpen() or index.isOpen() or box.isOpen() or daily.isOpen() or theme.isOpen() or track.isOpen() then
 		Panels.refresh()
 	end
 end
@@ -612,6 +992,14 @@ function Panels.openTheme()
 	theme.open()
 end
 
+function Panels.openTrack()
+	track.open()
+end
+
+function Panels.anyOpen(): boolean
+	return shop.isOpen() or index.isOpen() or box.isOpen() or daily.isOpen() or theme.isOpen() or track.isOpen()
+end
+
 function Panels.init(c: Own.Ctx)
 	ctx = c
 	buildShop()
@@ -619,7 +1007,22 @@ function Panels.init(c: Own.Ctx)
 	buildBox()
 	buildDaily()
 	buildTheme()
+	buildTrack()
 	Panels.refresh()
+	-- live odds and countdowns: luck timers and server boosts change them without a save push
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			if box.isOpen() then
+				refreshBoxOdds()
+			elseif index.isOpen() then
+				refreshIndexOdds()
+			elseif shop.isOpen() or track.isOpen() then
+				Panels.refresh()
+			end
+		end
+	end)
+	player:GetAttributeChangedSignal("RandomBlocked"):Connect(Panels.refresh)
 end
 
 return Panels

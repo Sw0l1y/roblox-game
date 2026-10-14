@@ -1,5 +1,7 @@
 -- Bakery stations: who owns which station, the live cake data at each one, and the server-validated
 -- build actions (clients only ask; every action is checked for phase, ownership, unlocks and distance).
+-- A station takes edits during the build, during the lobby/theme warm-up (so a new player decorates within
+-- seconds of joining, whatever the round is doing) and during its owner's paid Overtime.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -36,12 +38,16 @@ export type Station = {
 	ready: boolean,
 	golden: boolean,
 	sparkle: ParticleEmitter?,
+	overtimeUntil: number, -- server time; > now while the owner's Overtime keeps this station open
 }
 
 local Stations = {}
 Stations.list = {} :: { Station }
 Stations.byPlayer = {} :: { [Player]: Station }
 Stations.buildOpen = false
+Stations.warmup = false -- lobby/theme: players may already decorate (the cake carries into the round)
+Stations.theme = "" -- current round's theme (for the theme-topping quest)
+Stations.onEdit = nil :: ((Player, string, string?) -> ())? -- after every accepted edit: (player, action, id)
 Stations.onLateJoin = nil :: ((Player, Station) -> ())?
 Stations.removeBot = nil :: ((Station) -> ())?
 Stations.onFree = nil :: ((Station) -> ())?
@@ -81,6 +87,7 @@ function Stations.init(infos: { Plaza.StationInfo })
 			ready = false,
 			golden = false,
 			sparkle = nil,
+			overtimeUntil = 0,
 		}
 		info.model:SetAttribute("Index", info.index)
 		info.model:SetAttribute("OwnerId", 0)
@@ -116,6 +123,9 @@ function Stations.ownsColor(player: Player, d: { [string]: any }, key: string): 
 	end
 	if def.pass then
 		return Shop.owns(player, def.pass)
+	end
+	if def.event then -- Caketober prize: owned once claimed from the track
+		return d.colors ~= nil and d.colors[key] == true
 	end
 	return def.price == 0 or (d.colors ~= nil and d.colors[key] == true)
 end
@@ -205,7 +215,19 @@ end
 function Stations.reset(st: Station)
 	st.edits = 0
 	st.ready = false
+	Stations.setOvertime(st, 0)
 	Stations.setCake(st, CakeBuilder.newCake())
+end
+
+-- Overtime: the station stays open for its owner until `untilTime` (server time; 0 closes it).
+function Stations.setOvertime(st: Station, untilTime: number)
+	st.overtimeUntil = untilTime
+	st.model:SetAttribute("Overtime", untilTime)
+end
+
+-- True while the station's owner may edit it.
+function Stations.isOpen(st: Station): boolean
+	return Stations.buildOpen or Stations.warmup or st.overtimeUntil > workspace:GetServerTimeNow()
 end
 
 -- Place a topping at a surface point (pos/normal are hints; the server re-raycasts against the cake body).
@@ -367,6 +389,7 @@ function Stations.release(player: Player)
 	st.owner = nil
 	st.edits = 0
 	st.ready = false
+	Stations.setOvertime(st, 0)
 	st.model:SetAttribute("OwnerId", 0)
 	st.model:SetAttribute("OwnerName", "")
 	Stations.applyGolden(st, false)
@@ -413,7 +436,7 @@ function Stations.handle(player: Player, action: any, a: any, b: any, c: any, d4
 		end
 		return
 	end
-	if not Stations.buildOpen or not ACTIONS[action] then
+	if not Stations.isOpen(st) or not ACTIONS[action] then
 		return
 	end
 	if not Net.allow(player, "build_" .. action, if action == "place" then 0.08 else 0.12) then
@@ -503,6 +526,10 @@ function Stations.handle(player: Player, action: any, a: any, b: any, c: any, d4
 	st.edits += 1
 	st.ready = false
 	Stations.publish(st)
+	local cb = Stations.onEdit
+	if cb then
+		cb(player, action, if action == "place" then a else nil)
+	end
 end
 
 return Stations

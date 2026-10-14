@@ -476,7 +476,7 @@ local function buildStage(f: Folder): (BasePart, Folder, { BasePart }, { SpotLig
 		table.insert(podium, b)
 	end
 
-	-- landmark arch: two cake pillars, the CAKE OFF! sign and a giant cake on top
+	-- landmark arch: two cake pillars, the title sign (Config.Title) and a giant cake on top
 	local az = -15
 	for _, sx in ipairs({ 1, -1 }) do
 		local x = 12.5 * sx
@@ -492,8 +492,9 @@ local function buildStage(f: Folder): (BasePart, Folder, { BasePart }, { SpotLig
 	local signY = W.stageTop + 16.5
 	local sign = box(f, CF(0, signY, az), V(22, 6, 1.4), C(255, 120, 165), { Name = "LandmarkSign" })
 	box(f, CF(0, signY, az), V(23, 7, 1.0), C(255, 255, 255), { Name = "LandmarkFrame" })
-	surfaceText(sign, Enum.NormalId.Back, "CAKE OFF! 🎂", C(255, 255, 255), 24)
-	surfaceText(sign, Enum.NormalId.Front, "CAKE OFF! 🎂", C(255, 255, 255), 24)
+	local title = string.upper(Config.Title) .. " " .. Config.TitleGlyph -- Config.Title: the game's name
+	surfaceText(sign, Enum.NormalId.Back, title, C(255, 255, 255), 24)
+	surfaceText(sign, Enum.NormalId.Front, title, C(255, 255, 255), 24)
 	for k = 0, 10 do
 		local bulb = deco(World.ball(f, V(-10.5 + k * 2.1, signY - 3.6, az + 0.75), 0.7, C(255, 236, 170), { Name = "Bulb", Material = Enum.Material.Neon, CanCollide = false }))
 		table.insert(glows, bulb)

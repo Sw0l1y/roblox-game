@@ -1,6 +1,7 @@
--- HUD: phase/theme pill with timer and the Celebrity Judge countdown (top centre); coins, level, next goal and
--- the 2x2 icon menu stacked at left-middle; the gift/boost column at right-middle; FTUE tip pill. The top-left
--- and top-right corners stay empty: on desktop Roblox's chat window and player list cover them. Mobile-first sizes.
+-- HUD: phase/theme pill with timer, the Celebrity Judge / Hourly Gala chip and the server-boost pill (top
+-- centre); coins, level, next goal and the 3x2 icon menu (Shop, FREE, Index, Daily, Caketober, Music) stacked at
+-- left-middle; the box / deal / theme column at right-middle; FTUE tip pill. The top-left and top-right corners
+-- stay empty: on desktop Roblox's chat window and player list cover them. Mobile-first sizes.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
@@ -11,6 +12,7 @@ local Fmt = require(Shared:WaitForChild("Fmt"))
 local Net = require(Shared:WaitForChild("Net"))
 local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
 local Own = require(ClientLib:WaitForChild("Own"))
 
 local Hud = {}
@@ -37,6 +39,8 @@ local data: { [string]: any }? = nil
 local goalTab = "Toppings"
 local pillColor = ""
 local eventColor = ""
+local dealMode = "" -- "starter" | "intro" | "boost" | "coins": what the right-column deal button does now
+local dealColor = ""
 
 Hud.coinTarget = nil :: GuiObject?
 
@@ -73,6 +77,15 @@ function Hud.tip(text: string?)
 	end
 end
 
+-- "!" count on the FREE button (kit LiveUI.onClaimable).
+function Hud.setFreeBadge(n: number)
+	local b = buttons.Free
+	if b then
+		b.setBadge(if n > 0 then n else nil)
+		pulse(b.button, n > 0)
+	end
+end
+
 function Hud.init(c: Own.Ctx)
 	ctx = c
 	local root = UI.root
@@ -81,8 +94,8 @@ function Hud.init(c: Own.Ctx)
 	-- fractions: UI.root is resized to the viewport divided by its UIScale.
 	local top = if UI.isMobile then 0.3 else 0.36
 
-	-- left-middle stack: coins, level, next goal, then the 2x2 menu grid
-	local left = UI.frame(root, { Name = "LeftHud", BackgroundTransparency = 1, Position = UDim2.new(0, 12, top, 0), Size = UDim2.fromOffset(262, 324) })
+	-- left-middle stack: coins, level, next goal, then the 3x2 menu grid
+	local left = UI.frame(root, { Name = "LeftHud", BackgroundTransparency = 1, Position = UDim2.new(0, 12, top, 0), Size = UDim2.fromOffset(262, 418) })
 	local stack = UI.list(left, 8, false, Enum.HorizontalAlignment.Left)
 	stack.VerticalAlignment = Enum.VerticalAlignment.Top
 	-- the coin pill's icon hangs off its left edge, so the pill sits inset in a full-width row
@@ -106,20 +119,22 @@ function Hud.init(c: Own.Ctx)
 
 	-- phase pill
 	pill = UI.card(root, "pink", { Name = "Phase", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10), Size = UDim2.fromOffset(420, 84) })
-	themeLabel = UI.text(pill, "🎂 CAKE OFF!", { Size = UDim2.new(1, -24, 0, 40), Position = UDim2.fromOffset(12, 6) })
+	themeLabel = UI.text(pill, Config.titleCaps(), { Size = UDim2.new(1, -24, 0, 40), Position = UDim2.fromOffset(12, 6) })
 	phaseLabel = UI.text(pill, "", { Font = UI.BODY, Size = UDim2.new(1, -24, 0, 26), Position = UDim2.fromOffset(12, 46), TextColor3 = Color3.fromRGB(255, 240, 248) })
 	local track = UI.frame(pill, { Name = "Track", BackgroundColor3 = UI.INK, BackgroundTransparency = 0.4, Size = UDim2.new(1, -28, 0, 6), Position = UDim2.new(0, 14, 1, -12) })
 	UI.corner(track, 3)
 	timerFill = UI.frame(track, { Name = "Fill", BackgroundColor3 = Color3.fromRGB(255, 240, 160), Size = UDim2.fromScale(1, 1) })
 	UI.corner(timerFill, 3)
-	eventCard = UI.card(root, "purple", { Name = "Event", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 100), Size = UDim2.fromOffset(340, 36) })
+	eventCard = UI.card(root, "purple", { Name = "Event", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 100), Size = UDim2.fromOffset(380, 36) })
 	eventLabel = UI.text(eventCard, "", { Font = UI.BODY, Size = UDim2.new(1, -16, 0.78, 0), Position = UDim2.new(0, 8, 0.11, 0) })
+	-- server boosts ("⚡ 2x COINS 12:04"), only while one runs
+	LiveUI.boostPill(root, { coins = "COINS", xp = "XP", luck = "LUCK" }, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 142), Size = UDim2.fromOffset(380, 34) })
 
-	UI.setToastTop(146) -- toasts go below our top stack (phase pill, event chip)
+	UI.setToastTop(184) -- toasts go below our top stack (phase pill, event chip, boost pill)
 
-	-- left icon menu (2x2, under the goal chip; hidden while the build tray is open, see Hud.tick)
+	-- left icon menu (3 rows of 2, under the goal chip; hidden while the build tray is open, see Hud.tick)
 	-- (a few px wider than 2 cells + gap, capped at 2 per row: an exact fit can round down to one column once scaled)
-	menu = UI.frame(left, { Name = "LeftMenu", BackgroundTransparency = 1, LayoutOrder = 4, Size = UDim2.fromOffset(180, 174) })
+	menu = UI.frame(left, { Name = "LeftMenu", BackgroundTransparency = 1, LayoutOrder = 4, Size = UDim2.fromOffset(180, 268) })
 	local grid = UI.grid(menu, UDim2.fromOffset(80, 80), 14)
 	grid.FillDirectionMaxCells = 2
 	grid.HorizontalAlignment = Enum.HorizontalAlignment.Left
@@ -132,20 +147,26 @@ function Hud.init(c: Own.Ctx)
 	leftBtn("Shop", I.shop, "Shop", "green", 1, function()
 		ctx.openShop()
 	end)
-	leftBtn("Index", I.index, "Index", "blue", 2, function()
+	leftBtn("Free", I.free, "FREE", "pink", 2, function()
+		ctx.openFree()
+	end)
+	leftBtn("Index", I.index, "Index", "blue", 3, function()
 		ctx.openIndex()
 	end)
-	leftBtn("Daily", I.daily, "Daily", "orange", 3, function()
+	leftBtn("Daily", I.daily, "Daily", "orange", 4, function()
 		ctx.openDaily()
 	end)
-	leftBtn("Music", I.music, "Music", "grey", 4, function()
+	leftBtn("Track", I.track, Config.Track.name, "orange", 5, function()
+		ctx.openTrack()
+	end)
+	leftBtn("Music", I.music, "Music", "grey", 6, function()
 		local m = not Sfx.isMuted()
 		Sfx.setMuted(m)
 		buttons.Music.icon.Text = if m then I.mute else I.music
 		Net.func("Act"):InvokeServer("mute", m)
 	end)
 
-	-- right gift/boost column, top-aligned with the left stack
+	-- right box/deal/theme column, top-aligned with the left stack
 	local right = UI.frame(root, { Name = "RightMenu", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, top, 0), Size = UDim2.fromOffset(80, 268) })
 	local rl = UI.list(right, 14)
 	rl.VerticalAlignment = Enum.VerticalAlignment.Top
@@ -154,11 +175,18 @@ function Hud.init(c: Own.Ctx)
 		b.button.MouseButton1Click:Connect(fn)
 		buttons[name] = b
 	end
-	rightBtn("Box", I.box, "Box", "pink", 1, function()
+	rightBtn("Box", I.box, "Boxes", "pink", 1, function()
 		ctx.openBox()
 	end)
+	-- the deal button: starter pack countdown (first 10 min), then the 9 R$ intro, else 2x coins / boosts
 	rightBtn("Boost", I.boost, "2x Coins", "gold", 2, function()
-		ctx.openShop("Robux")
+		if dealMode == "starter" or dealMode == "intro" then
+			ctx.openDeal()
+		elseif dealMode == "coins" then
+			ctx.openShop("Passes")
+		else
+			ctx.openShop("Robux")
+		end
 	end)
 	rightBtn("Theme", I.theme, "Theme", "teal", 3, function()
 		ctx.openTheme()
@@ -190,20 +218,24 @@ function Hud.update(d: { [string]: any })
 	local canDaily = os.time() - (d.dailyLast or 0) >= Config.DailyCooldown
 	buttons.Daily.setBadge(if canDaily then true else nil)
 	buttons.Theme.setBadge(if (d.themeTickets or 0) > 0 then d.themeTickets else nil)
-	buttons.Boost.button.Visible = not Own.pass(d, "DoubleCoins")
+	local _, _, claim = Own.track(d)
+	buttons.Track.setBadge(if claim > 0 then claim else nil)
+	buttons.Track.button.Visible = Config.trackLive() or claim > 0
 	buttons.Music.icon.Text = if Sfx.isMuted() then I.mute else I.music
 end
 
-local function phaseText(phase: string, left: number, state: Instance): string
-	if phase == "Waiting" then
+local function phaseText(phase: string, left: number, state: Instance, overtime: number): string
+	if overtime > 0 then
+		return "⏰ YOUR OVERTIME! " .. Fmt.time(overtime)
+	elseif phase == "Waiting" then
 		return "Waiting for bakers..."
 	elseif phase == "Lobby" then
-		return "Next round in " .. Fmt.time(left)
+		return "Warm up! Theme in " .. Fmt.time(left)
 	elseif phase == "Theme" then
 		return "Get ready to bake!"
 	elseif phase == "Build" then
 		local ot = state:GetAttribute("Overtime")
-		return "DECORATE! " .. Fmt.time(left) .. (if type(ot) == "string" and ot ~= "" then "  ⏰+30s" else "")
+		return "DECORATE! " .. Fmt.time(left) .. (if type(ot) == "string" and ot ~= "" then "  ⏰+" .. Config.Round.overtime .. "s" else "")
 	elseif phase == "Vote" then
 		return string.format("Judging cake %d/%d", tonumber(state:GetAttribute("ShowIndex")) or 0, tonumber(state:GetAttribute("ShowTotal")) or 0)
 	elseif phase == "Results" then
@@ -212,10 +244,35 @@ local function phaseText(phase: string, left: number, state: Instance): string
 	return ""
 end
 
+-- The right-column deal button: what it offers right now.
+local function refreshDeal(d: { [string]: any }?)
+	local b = buttons.Boost
+	local mode, glyph, label, color = "boost", "⚡", "Boosts", "gold"
+	local starter = Own.starterLeft(d)
+	if starter > 0 and ctx.canPrompt() then
+		mode, glyph, label, color = "starter", "🧁", Fmt.time(starter), "pink"
+	elseif d and Own.introOk(d) and starter <= 0 and ctx.canPrompt() then
+		mode, glyph, label, color = "intro", "🍰", "R$ " .. Config.Products.Intro.price, "green"
+	elseif not Own.pass(d, "DoubleCoins") then
+		mode, glyph, label, color = "coins", I.boost, "2x Coins", "gold"
+	end
+	if mode ~= dealMode then
+		dealMode = mode
+		b.icon.Text = glyph
+		b.setBadge(if mode == "starter" or mode == "intro" then true else nil)
+		pulse(b.button, mode == "starter")
+	end
+	if color ~= dealColor then
+		dealColor = color
+		UI.recolor(b.button, color)
+	end
+	b.label.Text = label
+end
+
 -- Called every frame by Main. `building`: the build tray is open (it covers the bottom of the screen, where the
--- 2x2 menu would reach on 16:9 screens). `spinning`: the theme card is still shuffling, so the pill must not
--- give the theme away yet.
-function Hud.tick(state: Instance, now: number, building: boolean?, spinning: boolean?)
+-- menu would reach on 16:9 screens). `spinning`: the theme card is still shuffling, so the pill must not give the
+-- theme away yet. `overtime`: seconds left of this player's paid Overtime (0 = none).
+function Hud.tick(state: Instance, now: number, building: boolean?, spinning: boolean?, overtime: number?)
 	menu.Visible = not building
 	local phase = tostring(state:GetAttribute("Phase") or "Waiting")
 	local ends = tonumber(state:GetAttribute("PhaseEnds")) or 0
@@ -223,14 +280,19 @@ function Hud.tick(state: Instance, now: number, building: boolean?, spinning: bo
 	local themeKey = tostring(state:GetAttribute("Theme") or "")
 	local theme = Config.ThemeByKey[themeKey]
 	local celeb = state:GetAttribute("Celebrity") == true
+	local hourly = state:GetAttribute("Hourly") == true
+	local ot = overtime or 0
 	if theme and phase ~= "Lobby" and phase ~= "Waiting" and not spinning then
 		themeLabel.Text = theme.glyph .. " " .. string.upper(theme.name)
 	else
-		themeLabel.Text = "🎂 CAKE OFF!"
+		themeLabel.Text = Config.titleCaps()
 	end
-	phaseLabel.Text = phaseText(phase, left, state)
+	phaseLabel.Text = phaseText(phase, left, state, ot)
 	local total = if phase == "Build" then Config.Round.build elseif phase == "Lobby" then Config.Round.intermission else 0
-	if total > 0 then
+	if ot > 0 then
+		timerFill.Size = UDim2.fromScale(math.clamp(ot / Config.Round.personal, 0, 1), 1)
+		timerFill.Visible = true
+	elseif total > 0 then
 		timerFill.Size = UDim2.fromScale(math.clamp(left / total, 0, 1), 1)
 		timerFill.Visible = true
 	else
@@ -255,13 +317,21 @@ function Hud.tick(state: Instance, now: number, building: boolean?, spinning: bo
 
 	local eventAt = tonumber(state:GetAttribute("EventAt")) or 0
 	local untilEvent = eventAt - now
-	local ec = if celeb and phase ~= "Lobby" and phase ~= "Waiting" then "gold" else "purple"
+	local inEvent = celeb and phase ~= "Lobby" and phase ~= "Waiting"
+	local toHour = 3600 - os.time() % 3600
+	local ec = if inEvent then "gold" elseif toHour <= 600 or state:GetAttribute("HourlyNext") == true then "orange" else "purple"
 	if ec ~= eventColor then
 		eventColor = ec
 		UI.recolor(eventCard, ec)
 	end
-	if celeb and phase ~= "Lobby" and phase ~= "Waiting" then
+	if inEvent and hourly then
+		eventLabel.Text = "👑 HOURLY GRAND GALA · 3x REWARDS!"
+	elseif inEvent then
 		eventLabel.Text = "🌟 CELEBRITY JUDGE ROUND · 2x REWARDS!"
+	elseif state:GetAttribute("HourlyNext") == true then
+		eventLabel.Text = "👑 Hourly Grand Gala: NEXT ROUND!"
+	elseif toHour <= 600 then
+		eventLabel.Text = "👑 Hourly Grand Gala in " .. Fmt.time(toHour)
 	elseif eventAt > 0 then
 		if untilEvent <= 0 then
 			eventLabel.Text = "🌟 Celebrity Judge: NEXT ROUND!"
@@ -275,8 +345,9 @@ function Hud.tick(state: Instance, now: number, building: boolean?, spinning: bo
 	if d and (d.luckUntil or 0) > os.time() then
 		buttons.Box.label.Text = "🍀 " .. Fmt.time((d.luckUntil :: number) - os.time())
 	else
-		buttons.Box.label.Text = "Box"
+		buttons.Box.label.Text = "Boxes"
 	end
+	refreshDeal(d)
 end
 
 -- Coins flying from a screen point into the counter.

@@ -1,5 +1,6 @@
--- Economy and progression: coins, XP and baker levels, coin unlocks, the Mystery Sprinkle Box (numeric odds),
--- the Topping Index with milestone rewards, the daily reward, and the overhead baker tag.
+-- Economy and progression: coins, XP and baker levels, coin unlocks, the Mystery Sprinkle Box (percent odds,
+-- live luck, paid-random policy), the Topping Index with milestone rewards, the daily reward, the Caketober
+-- prize track, first-minute rewards and the overhead baker tag.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -9,6 +10,9 @@ local Tiers = require(Shared:WaitForChild("Tiers"))
 local Net = require(Shared:WaitForChild("Net"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Policy = require(script.Parent:WaitForChild("Policy"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 
 local Progress = {}
 
@@ -17,8 +21,9 @@ local rewardRemote = Net.event("Reward")
 local rng = Random.new()
 
 type D = { [string]: any }
-export type Result = { ok: boolean, msg: string?, id: string?, tier: string?, dup: boolean?, refund: number?, coins: number?, boxes: number?, day: number? }
+export type Result = { ok: boolean, msg: string?, id: string?, tier: string?, dup: boolean?, refund: number?, coins: number?, boxes: number?, day: number?, swapped: boolean? }
 
+-- Pass multipliers on round coins (server boosts and the friend bonus are applied next to it in Rounds).
 function Progress.coinMult(player: Player): number
 	local m = 1
 	if Shop.owns(player, "DoubleCoins") then
@@ -31,7 +36,7 @@ function Progress.coinMult(player: Player): number
 end
 
 function Progress.xpMult(player: Player): number
-	return if Shop.owns(player, "GoldenOven") then Config.Rewards.goldenXp else 1
+	return (if Shop.owns(player, "GoldenOven") then Config.Rewards.goldenXp else 1) * Boosts.mult("xp")
 end
 
 function Progress.addCoins(player: Player, d: D, n: number)
@@ -82,6 +87,9 @@ function Progress.refreshTag(player: Player)
 		return
 	end
 	local prefix = ""
+	if Shop.owns(player, "Caketober") and Config.trackLive() then
+		prefix ..= "🎃 "
+	end
 	if Shop.owns(player, "GoldenOven") then
 		prefix ..= "🏆 "
 	end
@@ -132,6 +140,9 @@ function Progress.grantTopping(player: Player, d: D, id: string, quiet: boolean?
 	end
 	d.milestones = d.milestones or {}
 	local count = Progress.indexCount(player, d)
+	if count >= 30 then
+		Live.badge(player, "Collector")
+	end
 	for _, m in ipairs(Config.Rewards.indexMilestones) do
 		local key = "m" .. m
 		if count >= m and not d.milestones[key] then
@@ -212,19 +223,37 @@ function Progress.unlock(player: Player, kind: string, key: string?): Result
 end
 
 -- Mystery Sprinkle Box ---------------------------------------------------------------------------------
+-- Boxes bought with Robux are counted in d.paidBoxes (part of d.boxes). Free boxes (welcome, daily, quests,
+-- Index milestones, Celebrity wins) open first. A player under Roblox's paid-random restriction never rolls a
+-- paid box (it opens as coins) and cannot open boxes with coins (coins are sold for Robux).
+function Progress.freeBoxes(d: D): number
+	return math.max(0, (d.boxes or 0) - (d.paidBoxes or 0))
+end
+
 function Progress.openBox(player: Player, useCoins: boolean): Result
 	local d = Data.get(player)
 	if not d then
 		return { ok = false, msg = "Still loading..." }
 	end
-	if (d.boxes or 0) > 0 then
+	local blocked = Policy.randomBlocked(player)
+	if Progress.freeBoxes(d) > 0 then
 		d.boxes -= 1
+	elseif (d.paidBoxes or 0) > 0 then
+		d.boxes = math.max(0, (d.boxes or 0) - 1)
+		d.paidBoxes -= 1
+		if blocked then
+			local c = Config.Box.blockedCoins
+			Progress.addCoins(player, d, c)
+			return { ok = true, swapped = true, coins = c, msg = "Box swapped for 💰 " .. c .. " (no paid random items in your region)" }
+		end
+	elseif blocked then
+		return { ok = false, msg = "Mystery Boxes come free from daily treats, quests and wins!" }
 	elseif useCoins and (d.coins or 0) >= Config.Box.price then
 		d.coins -= Config.Box.price
 	else
 		return { ok = false, msg = "Need " .. Config.Box.price .. " coins or a box" }
 	end
-	local luck = if (d.luckUntil or 0) > os.time() then Config.Box.luck else 1
+	local luck = Config.boxLuck(d.luckUntil)
 	local tierKey: string
 	if not d.firstBox then
 		tierKey = Config.Box.firstTier
@@ -234,7 +263,7 @@ function Progress.openBox(player: Player, useCoins: boolean): Result
 	end
 	local pool = Config.BoxPool[tierKey] or Config.BoxPool.Uncommon
 	local id = pool[rng:NextInteger(1, #pool)]
-	if d.toppings[id] then -- one free re-roll inside the tier to soften duplicates
+	if d.toppings[id] then -- one free re-roll inside the tier to soften duplicates (Config.itemOdds shows it)
 		id = pool[rng:NextInteger(1, #pool)]
 	end
 	local def = Config.ToppingById[id]
@@ -253,6 +282,12 @@ function Progress.openBox(player: Player, useCoins: boolean): Result
 		announce:FireAllClients(string.format("🎁 %s unboxed a %s %s %s!", player.DisplayName, string.upper(t.name), def.name, def.glyph), "gold", false)
 	end
 	return { ok = true, id = id, tier = def.tier, dup = dup, refund = refund }
+end
+
+-- Boxes bought with Robux (Box products, Starter Pack).
+function Progress.addPaidBoxes(d: D, n: number)
+	d.boxes = (d.boxes or 0) + n
+	d.paidBoxes = (d.paidBoxes or 0) + n
 end
 
 -- Daily reward -----------------------------------------------------------------------------------------
@@ -290,6 +325,96 @@ function Progress.claimDaily(player: Player): Result
 	d.dailyLast = os.time()
 	Data.dirty(player)
 	return { ok = true, coins = coins, boxes = boxes, day = day }
+end
+
+-- Caketober prize track ----------------------------------------------------------------------------------
+-- Candy fills tiers while the event runs; rewards are claimed from the track panel (free row for everyone,
+-- premium row with the Caketober Pass, retroactive). Returns the candy actually added.
+function Progress.addCandy(player: Player, d: D, n: number): number
+	n = math.floor(n)
+	if n <= 0 or not Config.trackLive() then
+		return 0
+	end
+	local before = Config.trackTier(d.candy or 0)
+	d.candy = (d.candy or 0) + n
+	local after = Config.trackTier(d.candy)
+	if after > before then
+		Shop.notify(player, "🎃 Caketober tier " .. after .. " unlocked! Claim it in 🎃", "orange")
+	end
+	Data.dirty(player)
+	return n
+end
+
+local function payReward(player: Player, d: D, r: Config.TrackReward): string
+	local glyph, text = Config.rewardText(r, Policy.randomBlocked(player))
+	if r.topping then
+		if not Progress.grantTopping(player, d, r.topping) then
+			Progress.addCoins(player, d, Config.Track.ownedCoins)
+			return "💰 " .. Config.Track.ownedCoins
+		end
+	elseif r.color then
+		d.colors = d.colors or {}
+		if d.colors[r.color] then
+			Progress.addCoins(player, d, Config.Track.ownedCoins)
+			return "💰 " .. Config.Track.ownedCoins
+		end
+		d.colors[r.color] = true
+	elseif r.boxes then
+		if Policy.randomBlocked(player) then -- tiers can be bought, so no random reward for restricted players
+			Progress.addCoins(player, d, r.boxes * Config.Track.boxCoins)
+		else
+			d.boxes = (d.boxes or 0) + r.boxes
+		end
+	elseif r.coins then
+		Progress.addCoins(player, d, r.coins)
+	end
+	return glyph .. " " .. text
+end
+
+-- Claim every reached, unclaimed tier (free row, and the premium row with the pass).
+function Progress.claimTrack(player: Player): Result
+	local d = Data.get(player)
+	if not d then
+		return { ok = false, msg = "Still loading..." }
+	end
+	d.track = d.track or {}
+	d.track.free = d.track.free or {}
+	d.track.premium = d.track.premium or {}
+	local tier = Config.trackTier(d.candy or 0)
+	local premium = Shop.owns(player, "Caketober")
+	local got: { string } = {}
+	for k = 1, tier do
+		local key = tostring(k)
+		if not d.track.free[key] then
+			d.track.free[key] = true
+			table.insert(got, payReward(player, d, Config.Track.free[k]))
+		end
+		if premium and not d.track.premium[key] then
+			d.track.premium[key] = true
+			table.insert(got, payReward(player, d, Config.Track.premium[k]))
+		end
+	end
+	Data.dirty(player)
+	if #got == 0 then
+		return { ok = false, msg = if tier < Config.Track.tiers then "Bake rounds to earn 🍬 for the next tier!" else "All claimed! 🎃" }
+	end
+	return { ok = true, msg = "🎃 " .. table.concat(got, ", ", 1, math.min(#got, 4)) .. (if #got > 4 then " +" .. (#got - 4) .. " more" else "") }
+end
+
+-- First-minute rewards: a few coins for the first frosting and the first topping (first reward < 30 s).
+function Progress.ftue(player: Player, key: string)
+	local d = Data.get(player)
+	local amount = Config.Rewards.ftue[key]
+	if not d or not amount then
+		return
+	end
+	d.ftueRw = d.ftueRw or {}
+	if d.ftueRw[key] then
+		return
+	end
+	d.ftueRw[key] = true
+	Progress.addCoins(player, d, amount)
+	rewardRemote:FireClient(player, { kind = "ftue", key = key, coins = amount })
 end
 
 function Progress.init()

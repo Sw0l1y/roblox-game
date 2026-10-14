@@ -1,5 +1,6 @@
--- Cake Off! 🎂 client entry: HUD, menus, decorating, the show, one camera arbiter, music, server messages,
--- FTUE tips, the one-time starter offer and the VIP chat tag.
+-- Client entry: HUD, menus, decorating, the show, one camera arbiter, music, server messages, the first
+-- minute (warm-up decorating, first-coin rewards, the welcome gift), offers (never in a first session's first
+-- 2 minutes), live Robux prices, the FREE panel and the VIP chat tag.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -12,6 +13,9 @@ local UI = require(ClientLib:WaitForChild("UI"))
 local Sfx = require(ClientLib:WaitForChild("Sfx"))
 local _Fx = require(ClientLib:WaitForChild("Fx")) -- hooks server-triggered effects
 local State = require(ClientLib:WaitForChild("State"))
+local Prices = require(ClientLib:WaitForChild("Prices"))
+local LiveUI = require(ClientLib:WaitForChild("LiveUI"))
+local Own = require(ClientLib:WaitForChild("Own"))
 local Hud = require(ClientLib:WaitForChild("Hud"))
 local Panels = require(ClientLib:WaitForChild("Panels"))
 local BuildMode = require(ClientLib:WaitForChild("BuildMode"))
@@ -33,6 +37,8 @@ end
 local function buy(kind: string, key: string)
 	buyRemote:FireServer(kind, key)
 end
+
+local sessionStart = os.clock()
 
 local ctx: { [string]: any } = {}
 ctx.data = function(): { [string]: any }?
@@ -65,11 +71,45 @@ end
 ctx.openTheme = function()
 	Panels.openTheme()
 end
+ctx.openFree = function()
+	LiveUI.open()
+end
+ctx.openTrack = function()
+	Panels.openTrack()
+end
+ctx.openDeal = function()
+	Panels.openDeal()
+end
+ctx.sessionAge = function(): number
+	return os.clock() - sessionStart
+end
+-- No purchase prompt or offer popup in the first 2 minutes of a player's first session.
+ctx.canPrompt = function(): boolean
+	local d = State.data
+	if d and (d.sessions or 1) > 1 then
+		return true
+	end
+	return os.clock() - sessionStart >= Config.PromptGrace
+end
+-- Paid random items are hidden until the server's policy lookup clears this player (kit Policy).
+ctx.blocked = function(): boolean
+	return player:GetAttribute("RandomBlocked") ~= false
+end
 
+Prices.sync(Config.Passes :: any, Config.Products :: any)
+LiveUI.init(Config.Live)
 Hud.init(ctx)
 Panels.init(ctx)
 BuildMode.init(ctx, state)
 Showtime.init(ctx, state)
+LiveUI.onClaimable(Hud.setFreeBadge)
+Prices.onChange(function()
+	Panels.refresh()
+	local d = State.data
+	if d then
+		Hud.update(d)
+	end
+end)
 
 Sfx.music(Config.Music)
 
@@ -80,7 +120,7 @@ State.onChange(function(d: { [string]: any }, _prev: { [string]: any }?)
 		first = false
 		Sfx.setMuted(d.muted == true)
 		if (d.rounds or 0) == 0 then
-			UI.banner("🎂 CAKE OFF!", "pink", 2.4)
+			UI.banner(Config.titleCaps(), "pink", 2.4)
 			task.delay(1.2, function()
 				UI.toast("Bake the best cake for the theme · everyone votes!", "pink", 4)
 			end)
@@ -111,8 +151,18 @@ Net.event("Reward").OnClientEvent:Connect(function(r: any)
 	if r.kind == "round" then
 		Showtime.onReward(r)
 	elseif r.kind == "vote" then
-		UI.floater("+" .. tostring(r.coins) .. " 💰", "gold", UI.center() + Vector2.new(0, 120), 34)
+		if r.fair then
+			UI.floater("🎯 Fair judge! +" .. tostring(r.coins) .. " 💰", "green", UI.center() + Vector2.new(0, 60), 30)
+		else
+			UI.floater("+" .. tostring(r.coins) .. " 💰", "gold", UI.center() + Vector2.new(0, 120), 34)
+		end
 		Sfx.play("coin", 0.3)
+	elseif r.kind == "ftue" then -- first frosting / first topping: the first coins within seconds
+		local at = UI.center() + Vector2.new(0, -40)
+		UI.floater("+" .. tostring(r.coins) .. " 💰", "gold", at, 44)
+		UI.toast(if r.key == "frost" then "🎨 First decoration! Here are some coins" else "🍒 First topping! Keep decorating", "gold", 2.5)
+		Hud.flyCoins(at, tonumber(r.coins) or 25)
+		Sfx.play("cash", 0.5)
 	elseif r.kind == "level" then
 		task.delay(1.5, function()
 			UI.banner("LEVEL UP! Lv " .. tostring(r.level), "gold", 2.4)
@@ -166,7 +216,8 @@ local function lockMovement(on: boolean)
 end
 
 RunService:BindToRenderStep("CakeCam", Enum.RenderPriority.Camera.Value, function(dt: number)
-	local want = Showtime.camera() or BuildMode.camera()
+	-- decorating in your own Overtime beats the stage camera
+	local want = (if BuildMode.overtimeLeft() > 0 then BuildMode.camera() else nil) or Showtime.camera() or BuildMode.camera()
 	if want then
 		if not scripted then
 			scripted = true
@@ -190,37 +241,49 @@ RunService:BindToRenderStep("CakeCam", Enum.RenderPriority.Camera.Value, functio
 end)
 
 RunService.Heartbeat:Connect(function(dt: number)
-	Hud.tick(state, workspace:GetServerTimeNow(), BuildMode.isActive(), Showtime.spinning())
+	Hud.tick(state, workspace:GetServerTimeNow(), BuildMode.isActive(), Showtime.spinning(), BuildMode.overtime())
 	BuildMode.tick(dt)
+	Showtime.setHidden(BuildMode.overtimeLeft() > 0)
 	Showtime.tick(dt)
 	Hud.tip(Showtime.tip() or BuildMode.tip())
 end)
 
--- One-time starter offer (never in the first minutes, never mid-round) ------------------------------------
+-- The first minute's free gift: the welcome box (guaranteed Rare) opens itself at ~40 s, between moments, and by
+-- ~55 s at the latest.
 task.spawn(function()
-	local start = os.clock()
 	while true do
-		task.wait(5)
+		task.wait(1)
 		local d = State.data
-		local ph = state:GetAttribute("Phase")
-		if d and (d.offerShown or d.starter) then
+		if d and (d.firstBox or Own.freeBoxes(d) <= 0 or (d.sessions or 1) > 1) then
 			break
 		end
-		if d and os.clock() - start >= Config.OfferAfter and (ph == "Lobby" or ph == "Waiting") then
-			d.offerShown = true
-			task.spawn(act, "offerShown")
-			UI.offer({
-				title = "BAKER STARTER PACK",
-				text = "2,000 coins + 3 Mystery Boxes · one time only!",
-				glyph = "🧁",
-				price = "R$ " .. Config.Products.Starter.price,
-				color = "pink",
-				seconds = 30,
-				onBuy = function()
-					buy("product", "Starter")
-				end,
-			})
+		local age = ctx.sessionAge()
+		local ph = tostring(state:GetAttribute("Phase") or "")
+		local busy = ph == "Vote" or ph == "Results" or Panels.anyOpen()
+		if d and age >= 40 and (not busy or age >= 55) and Panels.welcomeGift() then
 			break
+		end
+	end
+end)
+
+-- Offers: the starter pack once (first 10 minutes after the first join, from minute 2.5, in a lobby), and the
+-- 9 R$ intro for players who never bought anything, at most once a session after the starter window.
+task.spawn(function()
+	local introShown = false
+	while true do
+		task.wait(3)
+		local d = State.data
+		local ph = state:GetAttribute("Phase")
+		local calm = (ph == "Lobby" or ph == "Waiting") and not Panels.anyOpen() and ctx.canPrompt()
+		if d and calm then
+			if not d.offerShown and Own.starterLeft(d) > 0 and ctx.sessionAge() >= Config.OfferAfter then
+				d.offerShown = true
+				task.spawn(act, "offerShown")
+				Panels.starterOffer()
+			elseif not introShown and Own.introOk(d) and Own.starterLeft(d) <= 0 and ctx.sessionAge() >= 240 then
+				introShown = true
+				Panels.introOffer()
+			end
 		end
 	end
 end)

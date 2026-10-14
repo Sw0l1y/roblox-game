@@ -35,7 +35,7 @@ end
 local function randomTopping(r: Random): string
 	local pool: { { key: string, weight: number } } = {}
 	for _, t in ipairs(Config.Toppings) do
-		if t.source ~= "box" and t.source ~= "vip" then
+		if t.source ~= "box" and t.source ~= "vip" and t.source ~= "event" then
 			local w = ({ Common = 6, Uncommon = 4, Rare = 3, Epic = 1.5, Legendary = 0.6 })[t.tier] or 0
 			if w > 0 then
 				table.insert(pool, { key = t.id, weight = w })

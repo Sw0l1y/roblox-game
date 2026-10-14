@@ -822,6 +822,100 @@ function CakeBuilder.topping(parent: Instance, id: string, cf: CFrame, s: number
 			rod(V(0.66 * sx, 0.88, 0), V(0.4 * sx, 0.68, 0), 0.12, GOLD, { r = 0.4 })
 		end
 		ball(V(0, 0.95, -0.47), 0.22, WHITE, { n = true })
+	-- Caketober toppings ------------------------------------------------------------------------------------
+	elseif id == "CandyEyes" then
+		for _, e in ipairs({ { -0.32, 0.36, 0, 0.72 }, { 0.36, 0.33, 0.04, 0.66 }, { 0.04, 0.24, 0.48, 0.48 } }) do
+			local p = V(e[1], e[2], e[3])
+			local d = e[4]
+			ball(p, d, WHITE, { r = 0.15 })
+			ball(p + V(0, 0.04, -d * 0.38), d * 0.44, INK, { r = 0.25 })
+			ball(p + V(d * 0.1, d * 0.16, -d * 0.55), d * 0.13, WHITE)
+		end
+	elseif id == "Bat" then
+		local body = C(70, 46, 96)
+		rod(V(0, 0, 0), V(0, 0.62, 0), 0.08, C(235, 225, 210))
+		ball(V(0, 0.92, 0), 0.72, body, { r = 0.1 })
+		ball(V(0, 1.36, -0.04), 0.52, body, { r = 0.1 })
+		for _, sx in ipairs({ 1, -1 }) do
+			local u = V(sx, 0.32, 0).Unit
+			local v = V(-0.32 * sx, 1, 0).Unit
+			tri(V(0.22 * sx, 0.98, 0.04), u, v, 0.34, 1.05, 0.08, C(52, 34, 74))
+			tri(V(0.14 * sx, 1.56, -0.02), V(0.25 * sx, 1, 0).Unit, V(1, -0.25 * sx, 0).Unit, 0.1, 0.26, 0.06, body)
+			ball(V(0.12 * sx, 1.42, -0.26), 0.13, C(255, 230, 90), { n = true })
+		end
+		ball(V(0, 1.26, -0.27), 0.1, C(255, 160, 190))
+	elseif id == "Spider" then
+		local jelly = C(96, 44, 150)
+		ball(V(0, 0.44, 0.16), 0.82, jelly, { r = 0.25 })
+		ball(V(0, 0.4, -0.36), 0.48, jelly, { r = 0.25 })
+		ball(V(0, 0.62, 0.3), 0.28, C(255, 140, 40), { r = 0.2 })
+		for i = 1, 4 do
+			local z = -0.3 + (i - 1) * 0.22
+			for _, sx in ipairs({ 1, -1 }) do
+				local knee = V(0.62 * sx, 0.78, z * 1.35)
+				rod(V(0.2 * sx, 0.42, z), knee, 0.09, jelly)
+				rod(knee, V(0.98 * sx, 0.04, z * 1.7), 0.08, jelly)
+			end
+		end
+		for _, sx in ipairs({ 1, -1 }) do
+			ball(V(0.1 * sx, 0.5, -0.56), 0.17, WHITE)
+			ball(V(0.1 * sx, 0.5, -0.63), 0.08, INK)
+		end
+	elseif id == "Web" then
+		local silk = C(245, 245, 255)
+		local center = V(0, 1.35, 0)
+		rod(V(0, 0, 0), V(0, 0.4, 0), 0.08, C(235, 225, 210))
+		local function at(a: number, r: number): Vector3
+			return center + V(math.cos(a) * r, math.sin(a) * r, 0)
+		end
+		for k = 0, 5 do
+			rod(center, at(RAD(k * 60 + 30), 1.0), 0.05, silk, { r = 0.2 })
+		end
+		for _, r in ipairs({ 0.42, 0.82 }) do
+			for k = 0, 5 do
+				rod(at(RAD(k * 60 + 30), r), at(RAD(k * 60 + 90), r), 0.05, silk, { r = 0.2 })
+			end
+		end
+		ball(at(RAD(45), 0.62) + V(0, 0, -0.05), 0.24, INK)
+	elseif id == "WitchHat" then
+		discFlat(V(0, 0.07, 0), 1.75, 0.12, tint, { r = 0.08 })
+		for k = 0, 4 do
+			cyl(V(0, 0.12 + k * 0.3, 0), 0.32, 1.0 - k * 0.18, tint, { r = 0.08 })
+		end
+		rod(V(0, 1.58, 0), V(0.26, 1.92, 0.08), 0.2, tint, { r = 0.08 })
+		ball(V(0.3, 1.97, 0.1), 0.18, tint)
+		cyl(V(0, 0.13, 0), 0.18, 1.04, C(255, 140, 30))
+		box(CF(0, 0.22, -0.53), V(0.28, 0.2, 0.05), GOLD, { r = 0.3 })
+	elseif id == "Cauldron" then
+		local iron = C(52, 46, 64)
+		for k = 0, 2 do
+			local a = RAD(k * 120 + 30)
+			rod(V(math.cos(a) * 0.38, 0.22, math.sin(a) * 0.38), V(math.cos(a) * 0.5, 0, math.sin(a) * 0.5), 0.13, iron)
+		end
+		ball(V(0, 0.68, 0), 1.3, iron, { r = 0.15 })
+		cyl(V(0, 1.12, 0), 0.14, 1.18, C(78, 70, 92), { r = 0.1 })
+		cyl(V(0, 1.1, 0), 0.1, 1.02, C(120, 240, 70), { n = true })
+		local bubble = ball(V(0.2, 1.26, 0.1), 0.3, C(160, 255, 120), { n = true, a = 0.1 })
+		ball(V(-0.24, 1.3, -0.16), 0.22, C(160, 255, 120), { n = true, a = 0.1 })
+		if fxOn then
+			emitter(bubble, ColorSequence.new(C(170, 255, 130), C(90, 220, 60)), 6, 0.2, 1.2, 1.1)
+		end
+	elseif id == "Moon" then
+		local glow = C(255, 240, 160)
+		rod(V(0, 0, 0), V(0, 0.9, 0), 0.08, C(235, 225, 210))
+		local center = V(0, 1.6, 0)
+		for k = 0, 8 do
+			local t = k / 8
+			local a = RAD(110 + t * 140)
+			ball(center + V(math.cos(a) * 0.72, math.sin(a) * 0.72, 0), 0.24 + 0.5 * math.sin(t * math.pi), glow, { n = true })
+		end
+		local bat = V(0.5, 2.2, -0.05)
+		ball(bat, 0.22, INK)
+		for _, sx in ipairs({ 1, -1 }) do
+			tri(bat + V(0.06 * sx, 0, 0), V(sx, 0.3, 0).Unit, V(-0.3 * sx, 1, 0).Unit, 0.1, 0.32, 0.04, INK)
+		end
+		ball(V(0.62, 1.3, -0.05), 0.16, WHITE, { n = true })
+		ball(V(0.38, 0.95, 0.05), 0.12, WHITE, { n = true })
 	else
 		ball(V(0, 0.4, 0), 0.8, tint)
 	end

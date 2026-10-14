@@ -4,9 +4,18 @@ local Config = {}
 local C = Color3.fromRGB
 local V = Vector3.new
 
-Config.Name = "Cake Off! 🎂"
+-- The game's display name: every banner, pill and sign in game reads it, so a rename is this one line.
+-- Keep the emoji out of Title (TitleGlyph adds it); the DataStore name must NOT change with a rename.
+Config.Title = "Cake Off!"
+Config.TitleGlyph = "🎂"
+Config.Name = Config.Title .. " " .. Config.TitleGlyph
 Config.Tagline = "Decorate the Cake!"
 Config.DataStore = "CakeOff_v1"
+
+-- "🎂 CAKE OFF!" for banners, the phase pill and signs.
+function Config.titleCaps(): string
+	return Config.TitleGlyph .. " " .. string.upper(Config.Title)
+end
 
 -- Palette (DESIGN.md art bible) --------------------------------------------------------------------
 Config.Palette = {
@@ -35,8 +44,9 @@ Config.Round = {
 	firstWait = 14, -- first round starts within ~20 s of the first join
 	intermission = 10,
 	theme = 6,
-	build = 100,
+	build = 150, -- DTI 360 s, Style Showdown 180 s: 100 s felt rushed (FIXES B.5)
 	overtime = 30, -- +30 s Build Time pass (whole server)
+	personal = 60, -- Overtime product: keep decorating while the first cakes are judged, shown last
 	showMin = 5,
 	showMax = 7,
 	judgeAt = 0.5, -- fraction of a showcase slot when judges lift their cards
@@ -47,6 +57,8 @@ Config.Round = {
 	minEntrants = 4, -- NPC bakers fill up to this many cakes
 	eventEvery = 600, -- Celebrity Judge round every ~10 minutes
 	earlyEndMin = 25, -- "I'm done" can end the build after this many seconds
+	hourlyMult = 3, -- the Hourly Grand Gala (a bigger Celebrity round at :00) pays 3x
+	hourlyBoost = 600, -- ...and starts a 10-minute server 2x coins boost
 }
 
 -- World geometry --------------------------------------------------------------------------------------
@@ -98,7 +110,8 @@ Config.Cake = {
 }
 
 -- Colours (frosting, drips, piping, topping tint) ------------------------------------------------------
-export type ColorDef = { key: string, name: string, color: Color3, price: number, pass: string?, gloss: number?, neon: boolean?, special: string? }
+-- pass = sold in that game pass; event = only from the Caketober track (owned once claimed)
+export type ColorDef = { key: string, name: string, color: Color3, price: number, pass: string?, event: boolean?, gloss: number?, neon: boolean?, special: string? }
 Config.Colors = {
 	{ key = "Vanilla", name = "Vanilla", color = C(255, 244, 222), price = 0 },
 	{ key = "Pink", name = "Strawberry", color = C(255, 172, 196), price = 0 },
@@ -125,6 +138,10 @@ Config.Colors = {
 	{ key = "Galaxy", name = "Galaxy", color = C(44, 28, 92), price = 0, pass = "PremiumColors", special = "galaxy" },
 	{ key = "Electric", name = "Electric Pink", color = C(255, 70, 180), price = 0, pass = "PremiumColors", neon = true },
 	{ key = "Rainbow", name = "Rainbow", color = C(255, 120, 120), price = 0, pass = "Rainbow", special = "rainbow" },
+	-- Caketober track rewards
+	{ key = "Slime", name = "Slime Green", color = C(120, 240, 70), price = 0, event = true, neon = true },
+	{ key = "PumpkinSpice", name = "Pumpkin Spice", color = C(226, 120, 40), price = 0, event = true, gloss = 0.1 },
+	{ key = "WitchPurple", name = "Witch Purple", color = C(104, 44, 150), price = 0, event = true, gloss = 0.2 },
 } :: { ColorDef }
 Config.ColorByKey = {} :: { [string]: ColorDef }
 for _, c in ipairs(Config.Colors) do
@@ -147,7 +164,8 @@ for _, s in ipairs(Config.Shapes) do
 end
 
 -- Toppings (the collection) -------------------------------------------------------------------------
--- source: "free" (starter), "shop" (coins), "box" (Mystery Sprinkle Box only), "vip" (VIP pass)
+-- source: "free" (starter), "shop" (coins), "box" (Mystery Sprinkle Box only), "vip" (VIP pass),
+--         "event" (Caketober track only: never in boxes)
 export type ToppingDef = {
 	id: string,
 	name: string,
@@ -205,6 +223,14 @@ Config.Toppings = {
 	{ id = "Sparkler", name = "Sparklers", tier = "Mythic", glyph = "🎇", price = 0, source = "box", topOnly = true },
 	-- Secret
 	{ id = "Trophy", name = "Golden Trophy", tier = "Secret", glyph = "🏆", price = 0, source = "box", topOnly = true, mesh = "Trophy" },
+	-- Caketober (track rewards, see Config.Track)
+	{ id = "CandyEyes", name = "Candy Eyes", tier = "Uncommon", glyph = "👀", price = 0, source = "event" },
+	{ id = "Bat", name = "Little Bat", tier = "Rare", glyph = "🦇", price = 0, source = "event" },
+	{ id = "Spider", name = "Jelly Spider", tier = "Rare", glyph = "🕷️", price = 0, source = "event" },
+	{ id = "Web", name = "Sugar Web", tier = "Epic", glyph = "🕸️", price = 0, source = "event", topOnly = true },
+	{ id = "WitchHat", name = "Witch Hat", tier = "Epic", glyph = "🧙", price = 0, source = "event", topOnly = true, tint = C(110, 50, 160) },
+	{ id = "Cauldron", name = "Bubbling Cauldron", tier = "Legendary", glyph = "🍲", price = 0, source = "event", topOnly = true },
+	{ id = "Moon", name = "Haunted Moon", tier = "Mythic", glyph = "🌙", price = 0, source = "event", topOnly = true },
 } :: { ToppingDef }
 Config.ToppingById = {} :: { [string]: ToppingDef }
 for _, t in ipairs(Config.Toppings) do
@@ -222,8 +248,9 @@ Config.Box = {
 		{ key = "Mythic", weight = 1 },
 		{ key = "Secret", weight = 0.1 },
 	},
-	luck = 2.5, -- Lucky Sprinkles product
+	luck = 2.5, -- Lucky Sprinkles product (multiplies with a server luck boost)
 	luckSeconds = 900,
+	blockedCoins = 300, -- a paid box a RandomBlocked player still holds opens as this many coins instead
 	refund = { Common = 20, Uncommon = 40, Rare = 100, Epic = 250, Legendary = 600, Mythic = 1500, Secret = 5000 } :: { [string]: number },
 	firstTier = "Rare", -- the very first box is at least Rare (FTUE rare moment)
 }
@@ -236,12 +263,48 @@ for _, t in ipairs(Config.Toppings) do
 	end
 end
 
+-- Server boost multiplier (kit Boosts keeps it in ReplicatedStorage attributes, so both sides can read it).
+function Config.serverBoost(kind: string): number
+	local rs = game:GetService("ReplicatedStorage")
+	local ends = rs:GetAttribute("BoostEnd_" .. kind)
+	if type(ends) ~= "number" or ends <= workspace:GetServerTimeNow() then
+		return 1
+	end
+	local m = rs:GetAttribute("Boost_" .. kind)
+	return if type(m) == "number" then m else 1
+end
+
+-- Box luck right now: Lucky Sprinkles (personal) x a server luck boost. The odds shown use the same number.
+function Config.boxLuck(luckUntil: number?): number
+	local personal = if (luckUntil or 0) > os.time() then Config.Box.luck else 1
+	return personal * Config.serverBoost("luck")
+end
+
+-- Chance (percent) of one topping from a box: tier chance x its share of the tier. A duplicate re-rolls once
+-- inside the tier, so unowned toppings are a little likelier: share = 1/n if unowned, plus k/n * 1/n where k
+-- toppings of the tier are owned. Matches Progress.openBox exactly.
+function Config.itemOdds(id: string, owned: { [string]: boolean }, luck: number, percents: { [string]: number }): number
+	local def = Config.ToppingById[id]
+	local pool = def and Config.BoxPool[def.tier]
+	if not def or not pool or not table.find(pool, id) then
+		return 0
+	end
+	local n, k = #pool, 0
+	for _, other in ipairs(pool) do
+		if owned[other] then
+			k += 1
+		end
+	end
+	local share = (if owned[id] then 0 else 1 / n) + (k / n) * (1 / n)
+	return (percents[def.tier] or 0) * share
+end
+
 -- Themes -------------------------------------------------------------------------------------------------
 export type ThemeDef = { key: string, name: string, glyph: string, toppings: { string }, colors: { string }, shapes: { string } }
 Config.Themes = {
 	{ key = "Birthday", name = "Birthday Bash", glyph = "🎉", toppings = { "Candle", "Sprinkles", "Star", "Cherry", "Cupcake", "Swirl", "Sparkler" }, colors = { "Pink", "Sky", "Lemon", "Mint", "Bubblegum" }, shapes = { "Round" } },
 	{ key = "Rainbow", name = "Over the Rainbow", glyph = "🌈", toppings = { "Rainbow", "Sprinkles", "Star", "Lollipop", "Candy", "Unicorn" }, colors = { "Rainbow", "Cherry", "Orange", "Lemon", "Lime", "Sky", "Grape" }, shapes = { "Star" } },
-	{ key = "Spooky", name = "Spooky Night", glyph = "🎃", toppings = { "Pumpkin", "Ghost", "Candy", "ChocChunk", "Star" }, colors = { "Licorice", "Orange", "Grape", "Lime" }, shapes = { "Hexagon" } },
+	{ key = "Spooky", name = "Spooky Night", glyph = "🎃", toppings = { "Pumpkin", "Ghost", "Candy", "ChocChunk", "Star", "Bat", "Spider", "CandyEyes", "WitchHat", "Web", "Cauldron", "Moon" }, colors = { "Licorice", "Orange", "Grape", "Lime", "Slime", "PumpkinSpice", "WitchPurple" }, shapes = { "Hexagon" } },
 	{ key = "Jungle", name = "Jungle Party", glyph = "🌴", toppings = { "Palm", "Leaf", "Butterfly", "Flower", "Strawberry" }, colors = { "Lime", "Mint", "Chocolate", "Caramel" }, shapes = { "Round" } },
 	{ key = "Princess", name = "Princess Palace", glyph = "👑", toppings = { "Crown", "Castle", "HeartCandy", "Flower", "Pearls", "Bow", "Diamond" }, colors = { "Pink", "Lavender", "White", "Bubblegum", "Gold" }, shapes = { "Heart" } },
 	{ key = "Space", name = "Outer Space", glyph = "🚀", toppings = { "Planet", "Rocket", "Star", "GalaxyOrb", "Sparkler", "Pearls" }, colors = { "Navy", "Licorice", "Grape", "Galaxy", "Silver" }, shapes = { "Star" } },
@@ -256,6 +319,7 @@ Config.Themes = {
 	{ key = "Gala", name = "Galaxy Gala", glyph = "🌌", toppings = { "Planet", "GalaxyOrb", "Rocket", "Star", "Sparkler" }, colors = { "Galaxy", "Navy", "Grape", "Licorice" }, shapes = { "Star" } },
 	{ key = "UnicornDream", name = "Unicorn Dream", glyph = "🦄", toppings = { "Unicorn", "Rainbow", "Star", "Flower", "Swirl" }, colors = { "Rainbow", "Lavender", "Pink", "Sky" }, shapes = { "Heart", "Star" } },
 	{ key = "Golden", name = "Golden Gala", glyph = "🏆", toppings = { "Trophy", "Crown", "Star", "Sparkler", "Diamond" }, colors = { "Gold", "White", "Licorice", "RoseGold" }, shapes = { "Round", "Star" } },
+	{ key = "Haunted", name = "Haunted Gala", glyph = "🦇", toppings = { "Moon", "Bat", "Cauldron", "WitchHat", "Ghost", "Pumpkin", "Web", "Spider" }, colors = { "Licorice", "WitchPurple", "Slime", "Orange", "PumpkinSpice" }, shapes = { "Hexagon", "Star" } },
 } :: { ThemeDef }
 Config.RegularThemes = 12 -- the first 12 are regular, the rest are Celebrity specials
 Config.ThemeByKey = {} :: { [string]: ThemeDef }
@@ -288,6 +352,11 @@ Config.Rewards = {
 	goldenXp = 1.25,
 	newTopping = 15, -- XP for every new Index entry
 	indexMilestones = { 10, 20, 30 }, -- free Mystery Box at each
+	ftue = { frost = 25, topping = 25 } :: { [string]: number }, -- one-time coins: first frosting / first topping
+	fair = 2, -- coins for a rating within 1 star of the cake's final score ("fair judge")
+	fairCap = 12, -- fair-judge coins per round at most
+	flagAt = 3, -- 1-star ratings on cakes that scored 3.5+: after this many in a session a voter counts 0.3x
+	flagWeight = 0.3,
 }
 function Config.xpFor(level: number): number
 	return 60 + 45 * level
@@ -318,8 +387,27 @@ Config.Daily = { 50, 80, 120, 160, 220, 300, 400 } -- day 7 also gives a Mystery
 Config.DailyCooldown = 20 * 3600
 Config.DailyReset = 48 * 3600
 
--- Monetization ladder (PROTOCOL §6). ids are 0 until created; Studio simulates purchases. ---------------
-export type ProductDef = { id: number, name: string, price: number, glyph: string, desc: string, order: number }
+-- Monetization ladder (FIXES A.P1.4). ids are 0 until tools/launch.py creates them; Studio simulates purchases.
+-- Keep every item on ONE line: tools/launch.py reads the name/price/desc of each `id = 0` line.
+-- Kit fields: once (one purchase per player), random (paid random item: refused under Roblox's paid-random
+-- restriction, kit Policy), gift = "PassKey" (gift copy of that pass), boost (server-wide timed boost).
+-- Game fields: section (where the Robux shop lists it), order (sort inside the section).
+export type BoostDef = { kind: string, mult: number, minutes: number, needs: number?, label: string }
+export type ProductDef = {
+	id: number,
+	name: string,
+	price: number,
+	glyph: string,
+	desc: string,
+	order: number,
+	section: string?,
+	once: boolean?,
+	random: boolean?,
+	gift: string?,
+	boost: BoostDef?,
+	intro: boolean?, -- kit Shop: refused once the player has spent anything
+	window: number?, -- kit Shop: refused after this many seconds of the player's first session
+}
 Config.Passes = {
 	Rainbow = { id = 0, name = "Rainbow Frosting", price = 79, glyph = "🌈", desc = "Layered rainbow frosting + rainbow drips", order = 1 },
 	PremiumColors = { id = 0, name = "Premium Colours", price = 99, glyph = "✨", desc = "Gold, Silver, Rose Gold, Pearl, Galaxy, Electric Pink", order = 2 },
@@ -327,19 +415,162 @@ Config.Passes = {
 	ExtraTime = { id = 0, name = "+30s Build Time", price = 149, glyph = "⏰", desc = "+30 s build time for you AND your whole server", order = 4 },
 	DoubleCoins = { id = 0, name = "2x Coins", price = 249, glyph = "💰", desc = "Double coins from every round, forever", order = 5 },
 	VIP = { id = 0, name = "VIP Bakery", price = 299, glyph = "👑", desc = "3 VIP toppings, VIP tag, +20% coins", order = 6 },
-	GoldenOven = { id = 0, name = "Golden Oven", price = 1299, glyph = "🏆", desc = "Golden station + sparkle aura + golden tag, +25% XP", order = 7 },
+	Caketober = { id = 0, name = "Caketober Pass", price = 399, glyph = "🎃", desc = "Premium Caketober rewards on all 30 tiers: Witch Hat, Cauldron, Haunted Moon, Slime frosting, 🎃 tag", order = 7 },
+	GoldenOven = { id = 0, name = "Golden Oven", price = 1299, glyph = "🏆", desc = "Golden station + sparkle aura + golden tag, +25% XP", order = 8 },
 } :: { [string]: ProductDef }
 Config.Products = {
-	Coins1 = { id = 0, name = "1,000 Coins", price = 25, glyph = "💰", desc = "A handful of coins", order = 1 },
-	Box1 = { id = 0, name = "Mystery Sprinkle Box", price = 29, glyph = "🎁", desc = "1 box, odds shown in the Box menu", order = 2 },
-	Luck = { id = 0, name = "Lucky Sprinkles", price = 39, glyph = "🍀", desc = "2.5x luck on boxes for 15 minutes", order = 3 },
-	PickTheme = { id = 0, name = "Pick Next Theme", price = 49, glyph = "🎡", desc = "Choose the next round's theme for the server", order = 4 },
-	Starter = { id = 0, name = "Starter Pack", price = 49, once = true, glyph = "🧁", desc = "2,000 coins + 3 Mystery Boxes (once)", order = 5 },
-	Coins2 = { id = 0, name = "6,000 Coins", price = 99, glyph = "💰", desc = "A bag of coins", order = 6 },
-	Box5 = { id = 0, name = "5 Mystery Boxes", price = 119, glyph = "🎁", desc = "5 boxes, odds shown in the Box menu", order = 7 },
-	Coins3 = { id = 0, name = "18,000 Coins", price = 249, glyph = "💰", desc = "A vault of coins", order = 8 },
+	-- deals
+	Intro = { id = 0, name = "Baker's Treat", price = 9, once = true, intro = true, glyph = "🍰", desc = "2,000 coins + Mini Cupcake topping (first purchase only)", order = 1, section = "deal" },
+	Starter = { id = 0, name = "Starter Pack", price = 49, once = true, window = 600, glyph = "🧁", desc = "2,000 coins + 3 Mystery Boxes (once)", order = 2, section = "deal" },
+	Coins6Deal = { id = 0, name = "250,000 Coins First-Time Deal", price = 1199, once = true, glyph = "🏦", desc = "-40% the first time: 250,000 coins", order = 3, section = "deal" },
+	-- server boosts (15 minutes, the whole server, buyer shoutout)
+	SrvXP = { id = 0, name = "2x XP Server Boost", price = 79, glyph = "⭐", desc = "2x XP stars for EVERYONE for 15 minutes", order = 1, section = "boost", boost = { kind = "xp", mult = 2, minutes = 15, label = "XP" } },
+	SrvCoins2 = { id = 0, name = "2x Coins Server Boost", price = 99, glyph = "⚡", desc = "2x coins for EVERYONE for 15 minutes", order = 2, section = "boost", boost = { kind = "coins", mult = 2, minutes = 15, label = "COINS" } },
+	SrvParty = { id = 0, name = "Full Bakery Party", price = 199, glyph = "🎉", desc = "2x coins AND 2x XP for everyone, 15 minutes", order = 3, section = "boost" },
+	SrvCoins4 = { id = 0, name = "4x Coins Server Boost", price = 249, glyph = "⚡", desc = "4x coins for everyone, 15 min (while 2x runs)", order = 4, section = "boost", boost = { kind = "coins", mult = 4, minutes = 15, needs = 2, label = "COINS" } },
+	SrvCoins8 = { id = 0, name = "8x Coins Server Boost", price = 499, glyph = "⚡", desc = "8x coins for everyone, 15 min (while 4x runs)", order = 5, section = "boost", boost = { kind = "coins", mult = 8, minutes = 15, needs = 4, label = "COINS" } },
+	SrvLuck2 = { id = 0, name = "Server Lucky Sprinkles", price = 149, random = true, glyph = "🍀", desc = "2x box luck for everyone for 15 minutes", order = 6, section = "boost", boost = { kind = "luck", mult = 2, minutes = 15, label = "LUCK" } },
+	SrvLuck4 = { id = 0, name = "Server Super Luck", price = 349, random = true, glyph = "🍀", desc = "4x box luck for everyone, 15 min (while 2x runs)", order = 7, section = "boost", boost = { kind = "luck", mult = 4, minutes = 15, needs = 2, label = "LUCK" } },
+	-- coins
+	Coins1 = { id = 0, name = "1,000 Coins", price = 25, glyph = "💰", desc = "A handful of coins", order = 1, section = "coins" },
+	Coins2 = { id = 0, name = "6,000 Coins", price = 99, glyph = "💰", desc = "A bag of coins", order = 2, section = "coins" },
+	Coins3 = { id = 0, name = "18,000 Coins", price = 249, glyph = "💰", desc = "A vault of coins", order = 3, section = "coins" },
+	Coins4 = { id = 0, name = "45,000 Coins", price = 499, glyph = "💰", desc = "A bakery safe full of coins", order = 4, section = "coins" },
+	Coins5 = { id = 0, name = "110,000 Coins", price = 999, glyph = "💰", desc = "A coin mountain", order = 5, section = "coins" },
+	Coins6 = { id = 0, name = "250,000 Coins", price = 1999, glyph = "🏦", desc = "The whole coin bank", order = 6, section = "coins" },
+	-- boxes and luck (paid random: odds in the Box menu)
+	Box1 = { id = 0, name = "Mystery Sprinkle Box", price = 29, random = true, glyph = "🎁", desc = "1 box, odds shown in the Box menu", order = 1, section = "box" },
+	Luck = { id = 0, name = "Lucky Sprinkles", price = 39, random = true, glyph = "🍀", desc = "2.5x luck on your boxes for 15 minutes", order = 2, section = "box" },
+	Box5 = { id = 0, name = "5 Mystery Boxes", price = 119, random = true, glyph = "🎁", desc = "5 boxes, odds shown in the Box menu", order = 3, section = "box" },
+	Box15 = { id = 0, name = "15 Mystery Boxes", price = 299, random = true, glyph = "🎁", desc = "15 boxes, odds shown in the Box menu", order = 4, section = "box" },
+	-- this round
+	React1 = { id = 0, name = "Sprinkle Burst", price = 29, glyph = "🎊", desc = "Cheer the cake on the turntable: sprinkle explosion + 50 coins for its baker", order = 1, section = "round" },
+	React2 = { id = 0, name = "Golden Spatula", price = 39, glyph = "🥄", desc = "A golden salute to the cake on show + 100 coins for its baker", order = 2, section = "round" },
+	Overtime = { id = 0, name = "Overtime +60s", price = 39, glyph = "⏰", desc = "Keep decorating while the others are judged (up to +60 s). Your cake goes last", order = 3, section = "round" },
+	React3 = { id = 0, name = "Chef's Kiss", price = 49, glyph = "💋", desc = "The biggest compliment: hearts for the cake on show + 150 coins for its baker", order = 4, section = "round" },
+	PickTheme = { id = 0, name = "Pick Next Theme", price = 49, glyph = "🎡", desc = "Choose the next round's theme for the server", order = 5, section = "round" },
+	-- Caketober track skips
+	Track1 = { id = 0, name = "Caketober +1 Tier", price = 29, glyph = "🍬", desc = "Skip ahead 1 Caketober tier", order = 1, section = "track" },
+	Track5 = { id = 0, name = "Caketober +5 Tiers", price = 119, glyph = "🍬", desc = "Skip ahead 5 Caketober tiers", order = 2, section = "track" },
+	Track10 = { id = 0, name = "Caketober +10 Tiers", price = 199, glyph = "🍬", desc = "Skip ahead 10 Caketober tiers", order = 3, section = "track" },
+	-- gift copies of every pass (shown next to each pass)
+	GiftRainbow = { id = 0, name = "Gift: Rainbow Frosting", price = 79, gift = "Rainbow", glyph = "🎁", desc = "Rainbow Frosting for a player in your server", order = 1, section = "gift" },
+	GiftPremiumColors = { id = 0, name = "Gift: Premium Colours", price = 99, gift = "PremiumColors", glyph = "🎁", desc = "Premium Colours for a player in your server", order = 2, section = "gift" },
+	GiftExtraToppings = { id = 0, name = "Gift: Topping Tray+", price = 99, gift = "ExtraToppings", glyph = "🎁", desc = "Topping Tray+ for a player in your server", order = 3, section = "gift" },
+	GiftExtraTime = { id = 0, name = "Gift: +30s Build Time", price = 149, gift = "ExtraTime", glyph = "🎁", desc = "+30s Build Time for a player in your server", order = 4, section = "gift" },
+	GiftDoubleCoins = { id = 0, name = "Gift: 2x Coins", price = 249, gift = "DoubleCoins", glyph = "🎁", desc = "2x Coins for a player in your server", order = 5, section = "gift" },
+	GiftVIP = { id = 0, name = "Gift: VIP Bakery", price = 299, gift = "VIP", glyph = "🎁", desc = "VIP Bakery for a player in your server", order = 6, section = "gift" },
+	GiftCaketober = { id = 0, name = "Gift: Caketober Pass", price = 399, gift = "Caketober", glyph = "🎁", desc = "Caketober Pass for a player in your server", order = 7, section = "gift" },
+	GiftGoldenOven = { id = 0, name = "Gift: Golden Oven", price = 1299, gift = "GoldenOven", glyph = "🎁", desc = "Golden Oven for a player in your server", order = 8, section = "gift" },
 } :: { [string]: ProductDef }
-Config.OfferAfter = 300 -- seconds of play before the one-time starter offer may show (never before minute 2)
+-- Robux shop sections, in order (gifts sit next to their pass on the Passes tab instead).
+Config.ShopSections = {
+	{ key = "deal", title = "🔥 DEALS" },
+	{ key = "boost", title = "⚡ SERVER BOOSTS · 15 MIN FOR EVERYONE" },
+	{ key = "round", title = "🎂 THIS ROUND" },
+	{ key = "coins", title = "💰 COINS" },
+	{ key = "box", title = "🎁 MYSTERY BOXES & LUCK" },
+	{ key = "track", title = "🎃 CAKETOBER" },
+}
+-- The Starter Pack holds boxes, so it is not `random`: a player under Roblox's paid-random restriction is shown
+-- (and gets) this fixed pack instead. Box products and luck are `random` and hidden from them.
+Config.StarterBlocked = { coins = 3500, desc = "3,500 coins (once)" }
+-- Reactions on the cake being judged (never touch its score: cheering only).
+export type ReactionDef = { name: string, glyph: string, coins: number, color: string }
+Config.Reactions = {
+	React1 = { name = "Sprinkle Burst", glyph = "🎊", coins = 50, color = "pink" },
+	React2 = { name = "Golden Spatula", glyph = "🥄", coins = 100, color = "gold" },
+	React3 = { name = "Chef's Kiss", glyph = "💋", coins = 150, color = "red" },
+} :: { [string]: ReactionDef }
+Config.ReactionOrder = { "React1", "React2", "React3" }
+Config.PromptGrace = 120 -- no purchase prompt or offer popup before minute 2 of a player's first session
+Config.OfferAfter = 150 -- the starter offer pops up (once) at the first lobby after this many seconds
+Config.StarterWindow = Config.Products.Starter.window or 600 -- the starter pack: first 10 minutes of the first session only
+
+-- Caketober prize track (Halloween; FIXES B.5): candy 🍬 from every round fills 30 tiers. The free row pays
+-- everyone, the Caketober Pass row adds exclusive toppings and frostings. Ends 2026-11-03 00:00 UTC.
+export type TrackReward = { coins: number?, boxes: number?, topping: string?, color: string? }
+Config.Track = {
+	name = "Caketober",
+	ends = 1793664000,
+	tiers = 30,
+	cost = 100, -- candy per tier
+	candy = { round = 10, perStar = 4, place = { 15, 10, 5 }, vote = 1, voteCap = 12, hourly = 2 },
+	boxCoins = 300, -- a box reward for a RandomBlocked player (tiers can be bought) is paid as coins
+	ownedCoins = 500, -- a topping/frosting reward the player already has is paid as coins
+	free = {} :: { TrackReward },
+	premium = {} :: { TrackReward },
+}
+for k = 1, Config.Track.tiers do
+	Config.Track.free[k] = { coins = 60 + 10 * k }
+	Config.Track.premium[k] = { coins = 200 + 30 * k }
+end
+for _, k in ipairs({ 5, 10, 20, 25 }) do
+	Config.Track.free[k] = { boxes = 1 }
+end
+Config.Track.free[30] = { boxes = 3 }
+Config.Track.free[3] = { topping = "CandyEyes" }
+Config.Track.free[9] = { topping = "Bat" }
+Config.Track.free[14] = { color = "PumpkinSpice" }
+Config.Track.free[18] = { topping = "Spider" }
+Config.Track.premium[1] = { color = "Slime" }
+Config.Track.premium[6] = { topping = "Web" }
+Config.Track.premium[12] = { topping = "WitchHat" }
+Config.Track.premium[16] = { color = "WitchPurple" }
+Config.Track.premium[22] = { topping = "Cauldron" }
+Config.Track.premium[30] = { topping = "Moon" }
+Config.TrackSkips = { Track1 = 1, Track5 = 5, Track10 = 10 }
+
+function Config.trackLive(): boolean
+	return os.time() < Config.Track.ends
+end
+
+-- Tier reached with this much candy (0..30).
+function Config.trackTier(candy: number): number
+	return math.clamp(math.floor((candy or 0) / Config.Track.cost), 0, Config.Track.tiers)
+end
+
+-- Glyph + short text of a track reward; `blocked` = paid-random restricted (boxes show as coins).
+function Config.rewardText(r: TrackReward, blocked: boolean): (string, string)
+	if r.topping then
+		local t = Config.ToppingById[r.topping]
+		return t.glyph, t.name
+	elseif r.color then
+		return "🎨", Config.ColorByKey[r.color].name
+	elseif r.boxes then
+		if blocked then
+			return "💰", tostring(r.boxes * Config.Track.boxCoins)
+		end
+		return "🎁", r.boxes .. " Box" .. (if r.boxes > 1 then "es" else "")
+	end
+	return "💰", tostring(r.coins or 0)
+end
+
+-- Launch features (kit Live): codes, group gift, playtime gifts, daily quests, badges, invites, friend bonus.
+-- Rewards: coins, boxes (free boxes), candy (Caketober). Sized to about one session (~7 rounds ≈ 1,000 coins).
+Config.Live = {
+	codes = { LAUNCH = { reward = { coins = 500, boxes = 1, text = "500 coins + 1 box" } } },
+	group = { id = 0, reward = { coins = 1000, boxes = 2, text = "1,000 coins + 2 boxes" } },
+	playtime = {
+		{ minutes = 5, reward = { coins = 150, text = "150 coins" } },
+		{ minutes = 10, reward = { boxes = 1, text = "1 Mystery Box" } },
+		{ minutes = 30, reward = { coins = 500, candy = 50, text = "500 coins + 50 🍬" } },
+		{ minutes = 60, reward = { coins = 1000, boxes = 1, text = "1,000 coins + 1 box" } },
+	},
+	quests = {
+		{ key = "bake", text = "Bake 3 cakes", goal = 3, reward = { coins = 300, candy = 20, text = "300 coins + 20 🍬" } },
+		{ key = "vote", text = "Rate 15 cakes", goal = 15, reward = { coins = 250, candy = 20, text = "250 coins + 20 🍬" } },
+		{ key = "top3", text = "Finish top 3 twice", goal = 2, reward = { coins = 400, candy = 30, text = "400 coins + 30 🍬" } },
+		{ key = "stars", text = "Score ⭐ 4+ on a cake", goal = 1, reward = { boxes = 1, candy = 20, text = "1 box + 20 🍬" } },
+		{ key = "toppings", text = "Place 40 toppings", goal = 40, reward = { coins = 300, candy = 20, text = "300 coins + 20 🍬" } },
+		{ key = "theme", text = "Use 10 🎯 theme toppings", goal = 10, reward = { coins = 350, candy = 20, text = "350 coins + 20 🍬" } },
+		{ key = "friend", text = "Bake a round with a friend", goal = 1, reward = { coins = 500, boxes = 1, text = "500 coins + 1 box" } },
+		{ key = "celebrity", text = "Bake in a Celebrity round", goal = 1, reward = { coins = 400, candy = 30, text = "400 coins + 30 🍬" } },
+	},
+	badges = { Welcome = 0, FirstCake = 0, FirstWin = 0, StarBaker = 0, TenWins = 0, Collector = 0 },
+	invite = { reward = { coins = 500, boxes = 1, text = "500 coins + 1 box" } },
+	friendBonus = 0.1,
+}
 
 -- Hero meshes: AI-generated later (ids 0 now). Every use has a primitive fallback in CakeBuilder.
 export type MeshDef = { mesh: number, texture: number, size: Vector3, prompt: string }
@@ -363,7 +594,11 @@ Config.Icons = {
 	daily = "📅",
 	music = "🔊",
 	mute = "🔇",
-	box = "🎁",
+	box = "📦", -- HUD Mystery Box button (🎁 is the FREE button)
+	free = "🎁",
+	track = "🎃",
+	candy = "🍬",
+	gift = "🎁",
 	theme = "🎡",
 	boost = "💰",
 	vip = "👑",

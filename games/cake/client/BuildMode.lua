@@ -1,7 +1,9 @@
 -- Decorating: finds your bakery, guides you there (pink beam + "YOUR BAKERY" marker), then during the build
--- phase gives you an orbit camera around your cake and the decorating tray (shape, tiers, frosting, drips,
--- piping, toppings with size/turn/colour, undo, clear, DONE). Tap the cake to place the selected topping
--- (desktop shows a ghost preview); in the Cake tab, tapping a tier paints it. The server validates everything.
+-- phase, the lobby/theme warm-up and your paid Overtime gives you an orbit camera around your cake and the
+-- decorating tray (shape, tiers, frosting, drips, piping, toppings with size/turn/colour, undo, clear, DONE).
+-- Everything is preset: tap the cake to place the selected topping model (desktop shows a ghost preview); in
+-- the Cake tab, tapping a tier paints it, and piping is a preset rim in a chosen colour (no freehand drawing).
+-- The server validates everything.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
@@ -42,6 +44,8 @@ local padPos: Vector3? = nil
 local active = false
 local exited = false
 local wasBuild = false
+local wasPhase = ""
+local autoTp = false -- a brand-new baker is taken to their bakery once, so they decorate within seconds
 local page = "Cake"
 local mode = "Frost" -- Frost | Drip | Piping
 local target = 0 -- 0 = every tier
@@ -86,6 +90,7 @@ local tintRow: ScrollingFrame
 local tintSwatches: { Widgets.Swatch } = {}
 local rotBtn: TextButton
 local clearBtn: TextButton
+local overtimeBtn: TextButton
 
 -- world helpers
 local fxFolder = Instance.new("Folder")
@@ -112,6 +117,20 @@ end
 local function attr(name: string): any
 	local st = station
 	return if st then st:GetAttribute(name) else nil
+end
+
+-- Seconds left of my paid Overtime (my station stays open while the first cakes are judged).
+local function overtimeLeft(): number
+	return math.max(0, (tonumber(attr("Overtime")) or 0) - workspace:GetServerTimeNow())
+end
+
+local function warmup(ph: string): boolean
+	return ph == "Lobby" or ph == "Theme"
+end
+
+-- Mirrors Stations.isOpen on the server: build, lobby/theme warm-up, or my Overtime.
+local function canBake(ph: string): boolean
+	return ph == "Build" or warmup(ph) or overtimeLeft() > 0
 end
 
 local function tierCount(): number
@@ -273,13 +292,31 @@ local function tierAtWorld(p: Vector3): number
 end
 
 -- Actions ------------------------------------------------------------------------------------------------------
+-- A locked pass item: the pass prompt, except in a first session's first 2 minutes (then the Passes tab).
+local function passPrompt(key: string)
+	if ctx.canPrompt() then
+		ctx.buy("pass", key)
+	else
+		ctx.openShop("Passes")
+	end
+end
+
+local function trackPrize(name: string)
+	UI.toast(name .. " is a " .. I.track .. " " .. Config.Track.name .. " prize! Earn " .. I.candy .. " candy every round", "orange")
+	ctx.openTrack()
+end
+
 local function locked(kind: string, key: string)
 	if kind == "color" then
 		local def = Config.ColorByKey[key]
 		if def and def.pass then
 			local pass = Config.Passes[def.pass]
 			UI.toast(string.format("%s is in %s %s", def.name, pass.glyph, pass.name), "purple")
-			ctx.buy("pass", def.pass)
+			passPrompt(def.pass)
+			return
+		end
+		if def and def.event then
+			trackPrize(def.name)
 			return
 		end
 		UI.toast(string.format("Unlock %s in the Shop for 💰 %s", if def then def.name else key, Fmt.num(if def then def.price else 0)), "orange")
@@ -291,8 +328,10 @@ local function locked(kind: string, key: string)
 		if def and def.source == "box" then
 			UI.toast(def.glyph .. " " .. def.name .. " only comes from Mystery Boxes!", "purple")
 			ctx.openBox()
+		elseif def and def.source == "event" then
+			trackPrize(def.glyph .. " " .. def.name)
 		elseif def and def.source == "vip" then
-			ctx.buy("pass", "VIP")
+			passPrompt("VIP")
 		else
 			ctx.openShop("Toppings")
 		end
@@ -471,8 +510,18 @@ local function refreshTray()
 	countLabel.Text = string.format("%s %d/%d", I.toppings, count, limit)
 	countLabel.TextColor3 = if count >= limit then Color3.fromRGB(255, 140, 140) else Color3.fromRGB(255, 255, 255)
 	local isReady = attr("Ready") == true
-	doneBtn.Text = if isReady then "⏳ WAITING" else I.done .. " DONE"
-	UI.recolor(doneBtn, if isReady then "grey" else "green")
+	local ph = phase()
+	local ot = overtimeLeft()
+	if ot > 0 then
+		doneBtn.Text = "⏰ " .. Fmt.time(ot)
+		UI.recolor(doneBtn, "gold")
+	elseif warmup(ph) then
+		doneBtn.Text = "🎨 WARM-UP"
+		UI.recolor(doneBtn, "grey")
+	else
+		doneBtn.Text = if isReady then "⏳ WAITING" else I.done .. " DONE"
+		UI.recolor(doneBtn, if isReady then "grey" else "green")
+	end
 
 	for key, chip in pairs(shapeChips) do
 		chip.sel.Visible = key == shape
@@ -541,6 +590,8 @@ local function refreshTray()
 				card.foot.Text = "🔒 " .. Fmt.num(def.price)
 			elseif def.source == "box" then
 				card.foot.Text = "🎁 Box"
+			elseif def.source == "event" then
+				card.foot.Text = I.track .. " Track"
 			else
 				card.foot.Text = "👑 VIP"
 			end
@@ -588,6 +639,14 @@ local function buildTray()
 
 	doneBtn = UI.button(tray, I.done .. " DONE", "green", { Name = "Done", Position = UDim2.fromOffset(870, 12), Size = UDim2.fromOffset(130, 72) })
 	doneBtn.MouseButton1Click:Connect(function()
+		local ph = phase()
+		if overtimeLeft() > 0 then
+			UI.toast("⏰ Keep decorating: your cake is judged last!", "gold", 2.5)
+			return
+		elseif warmup(ph) then
+			UI.toast("🎨 Warm-up! Your cake carries into the round: keep going!", "pink", 2.5)
+			return
+		end
 		local isReady = attr("Ready") == true
 		buildRemote:FireServer("ready", not isReady)
 		if not isReady then
@@ -621,6 +680,20 @@ local function buildTray()
 	end)
 	camBtn("ZoomOut", I.zoomOut, function()
 		dist = math.clamp(dist + 4, 10, 34)
+	end)
+
+	-- +60 s Overtime (paid, personal): offered in the last minute of the build, above the tray's left end
+	overtimeBtn = UI.button(tray, "", "gold", { Name = "Overtime", Position = UDim2.fromOffset(0, -62), Size = UDim2.fromOffset(190, 56), Visible = false })
+	overtimeBtn.TextSize = 20
+	overtimeBtn.MouseButton1Click:Connect(function()
+		local d = data
+		if d and (d.overtime or 0) > 0 then
+			UI.toast("⏰ Overtime ready: when the bell rings you keep decorating for +" .. Config.Round.personal .. "s!", "gold", 3)
+		elseif ctx.canPrompt() then
+			ctx.buy("product", "Overtime")
+		else
+			ctx.openShop("Robux")
+		end
 	end)
 
 	local area = UI.frame(tray, { Name = "Pages", BackgroundTransparency = 1, Position = UDim2.fromOffset(146, 8), Size = UDim2.fromOffset(714, 190) })
@@ -825,7 +898,7 @@ local function buildTray()
 	-- captions as child labels (Widgets.captioned): with the kit's gradient on the button text they read as disabled
 	goBtn = Widgets.captioned(rootUI, I.go .. " GO TO MY BAKERY", "pink", { Name = "GoToStation", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -120), Size = UDim2.fromOffset(380, 84), Visible = false })
 	goBtn.MouseButton1Click:Connect(function()
-		ctx.act("tp")
+		task.spawn(ctx.act, "tp")
 		Sfx.play("whoosh", 0.5)
 		exited = false
 	end)
@@ -843,7 +916,12 @@ local function setActive(on: boolean)
 		Sfx.play("open", 0.5)
 		UI.punch(tray, 0.12)
 		local theme = Config.ThemeByKey[themeKey]
-		if theme then
+		local ph = phase()
+		if overtimeLeft() > 0 then
+			UI.toast("⏰ OVERTIME! Keep decorating: your cake is judged last", "gold", 3)
+		elseif warmup(ph) then
+			UI.toast("🎨 Warm-up! Decorate now: your cake carries into the round", "pink", 3)
+		elseif theme then
 			UI.toast(theme.glyph .. " Theme: " .. theme.name .. " · look for 🎯 toppings!", "pink", 3)
 		end
 		refreshTray()
@@ -858,6 +936,16 @@ end
 -- API ------------------------------------------------------------------------------------------------------------------
 function BuildMode.isActive(): boolean
 	return active
+end
+
+-- Seconds left of my Overtime while I am decorating in it (0 otherwise): Main gives me the camera then.
+function BuildMode.overtimeLeft(): number
+	return if active then overtimeLeft() else 0
+end
+
+-- Seconds left of my Overtime (for the HUD pill), decorating or not.
+function BuildMode.overtime(): number
+	return if station then overtimeLeft() else 0
 end
 
 function BuildMode.camera(): CFrame?
@@ -895,10 +983,14 @@ function BuildMode.tip(): string?
 		return nil
 	end
 	if active then
-		if t < 1 then
+		if overtimeLeft() > 0 then
+			return "⏰ OVERTIME! Keep decorating: your cake is judged last"
+		elseif t < 1 then
 			return "🎨 Tap a colour to frost your cake (or tap a tier to paint it)!"
 		elseif t < 2 then
 			return "🍒 Open TOPPINGS, then tap your cake to place them!"
+		elseif warmup(ph) and t < 4 then
+			return "🎨 Warm-up! Your cake carries into the round"
 		elseif t < 3 then
 			return "👆 Drag to spin your cake · press ✅ DONE when you're happy!"
 		end
@@ -907,8 +999,8 @@ function BuildMode.tip(): string?
 	if (ph == "Build" or ph == "Theme") and not nearStation() then
 		return "🏃 Run to YOUR bakery: follow the pink beam!"
 	end
-	if (ph == "Lobby" or ph == "Waiting") and t < 1 then
-		return "⏳ A round starts soon! Your bakery has the pink beam ⬇"
+	if ph == "Lobby" and t < 1 and not nearStation() then
+		return "🎨 Warm up at YOUR bakery: tap GO or follow the pink beam!"
 	end
 	return nil
 end
@@ -916,16 +1008,25 @@ end
 function BuildMode.tick(_dt: number)
 	local ph = phase()
 	local isBuild = ph == "Build"
-	if isBuild and not wasBuild then
-		exited = false
-		target = 0
-		page = "Cake"
-		setPage("Cake")
-		local tk = state:GetAttribute("Theme")
-		if type(tk) == "string" then
-			themeKey = tk
+	if ph ~= wasPhase then
+		if ph == "Lobby" then -- a fresh cake: start the warm-up on the Cake page
+			exited = false
+			target = 0
+			setPage("Cake")
+		elseif isBuild then
+			exited = false
+			local tk = state:GetAttribute("Theme")
+			if type(tk) == "string" then
+				themeKey = tk
+			end
+			local theme = Config.ThemeByKey[themeKey]
+			if active and theme then
+				UI.toast(theme.glyph .. " Theme: " .. theme.name .. " · look for 🎯 toppings!", "pink", 3)
+			end
 		end
-	elseif wasBuild and not isBuild then
+		wasPhase = ph
+	end
+	if wasBuild and not isBuild then
 		local d = data
 		if d and (d.tut or 0) == 2 then
 			tut(3)
@@ -933,15 +1034,37 @@ function BuildMode.tick(_dt: number)
 	end
 	wasBuild = isBuild
 	local near = nearStation()
-	local should = isBuild and station ~= nil and not exited and near
+	local bake = canBake(ph)
+	local ot = overtimeLeft()
+	-- a brand-new baker goes straight to their bakery once (the core verb within seconds of joining)
+	local d = data
+	if not autoTp and bake and station ~= nil and d and (d.rounds or 0) == 0 and (d.tut or 0) < 1 and hrp() ~= nil then
+		autoTp = true
+		if not near then
+			task.spawn(ctx.act, "tp")
+		end
+	end
+	local should = bake and station ~= nil and not exited and near
 	if should ~= active then
 		setActive(should)
 	end
-	goBtn.Visible = (ph == "Build" or ph == "Theme") and station ~= nil and not active and not near
-	decorateBtn.Visible = isBuild and station ~= nil and not active and near
+	goBtn.Visible = (bake or ph == "Theme") and station ~= nil and not active and not near
+	decorateBtn.Visible = bake and station ~= nil and not active and near
+	-- the +60 s Overtime offer: last minute of the build (never in a first session's first 2 minutes)
+	local left = (tonumber(state:GetAttribute("PhaseEnds")) or 0) - workspace:GetServerTimeNow()
+	local owned = d ~= nil and (d.overtime or 0) > 0
+	local offer = active and isBuild and left <= Config.Round.personal and left > 2 and ot <= 0 and ctx.canPrompt()
+	overtimeBtn.Visible = offer
+	if offer then
+		local text = if owned then "⏰ OVERTIME READY ✔" else "⏰ +" .. Config.Round.personal .. "s · R$ " .. Config.Products.Overtime.price
+		if overtimeBtn.Text ~= text then
+			overtimeBtn.Text = text
+			UI.recolor(overtimeBtn, if owned then "green" else "gold")
+		end
+	end
 
 	-- beacon
-	local show = station ~= nil and not active and (ph == "Waiting" or ph == "Lobby" or ph == "Theme" or ph == "Build")
+	local show = station ~= nil and not active and (ph == "Waiting" or ph == "Lobby" or ph == "Theme" or ph == "Build" or ot > 0)
 	local parent: Instance? = if show then fxFolder else nil
 	if pillar.Parent ~= parent then
 		pillar.Parent = parent
@@ -954,7 +1077,8 @@ function BuildMode.tick(_dt: number)
 		ring.Size = Vector3.new(0.2, 8 + math.sin(t * 4) * 0.8, 8 + math.sin(t * 4) * 0.8)
 	end
 	local h = hrp()
-	local wantBeam = show and (ph == "Theme" or ph == "Build") and h ~= nil and not near
+	local newbie = d ~= nil and (d.tut or 0) < 3
+	local wantBeam = show and (ph == "Theme" or ph == "Build" or ot > 0 or (ph == "Lobby" and newbie)) and h ~= nil and not near
 	if wantBeam and h then
 		local att = beamStart
 		if not att or att.Parent ~= h then

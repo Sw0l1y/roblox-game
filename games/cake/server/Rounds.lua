@@ -1,6 +1,9 @@
--- The round loop (~3 min): Lobby -> Theme reveal -> Build -> Vote (turntable showcase) -> Results (podium +
--- giant winner cake). State lives in attributes on ReplicatedStorage.CakeState so late joiners see it;
--- one-off moments go out on the "Round" remote. Every ~10 minutes a Celebrity Judge round pays 2x.
+-- The round loop (~4 min): Lobby (warm-up: stations already take edits) -> Theme reveal -> Build -> Vote
+-- (turntable showcase; Overtime bakers keep decorating and go last) -> Results (podium + giant winner cake).
+-- State lives in attributes on ReplicatedStorage.CakeState so late joiners see it; one-off moments go out on
+-- the "Round" remote. Every ~10 minutes a Celebrity Judge round pays 2x; at :00 the Hourly Grand Gala pays 3x.
+-- Scores are troll-proofed: the top and bottom human rating are dropped (4+ voters), ratings near the final
+-- score earn a "fair judge" bonus, and repeat 1-star outliers count less for the rest of their session.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -15,6 +18,8 @@ local Bots = require(script.Parent:WaitForChild("Bots"))
 local Judging = require(script.Parent:WaitForChild("Judging"))
 local Progress = require(script.Parent:WaitForChild("Progress"))
 local Plaza = require(script.Parent:WaitForChild("Plaza"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Live = require(script.Parent:WaitForChild("Live"))
 
 type Station = Stations.Station
 type Cake = CakeBuilder.Cake
@@ -30,6 +35,7 @@ type Entry = {
 	celeb: number?,
 	score: number,
 	golden: boolean,
+	late: boolean, -- Overtime: shown last, its cake is copied when its slot starts
 }
 
 local Rounds = {}
@@ -59,6 +65,11 @@ local voteCoins: { [Player]: number } = {}
 local minEntrants = R.minEntrants
 local lastWinner: Entry? = nil
 local rng = Random.new()
+local hourly = false -- this round is the Hourly Grand Gala
+local hourlyPending = false
+local strikes: { [Player]: number } = {} -- 1-star ratings on cakes the server liked (3.5+), this session
+local fairCoins: { [Player]: number } = {} -- fair-judge coins this round
+local voteCandy: { [Player]: number } = {} -- Caketober candy from votes this round
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -109,6 +120,9 @@ end
 
 local function chooseTheme(): (string, string?)
 	if celebrity then
+		if hourly and Config.trackLive() and Config.ThemeByKey.Haunted then
+			return "Haunted", nil -- Caketober: the Hourly Grand Gala is always the Haunted Gala
+		end
 		local specials = {}
 		for i = Config.RegularThemes + 1, #Config.Themes do
 			table.insert(specials, Config.Themes[i].key)
@@ -130,14 +144,27 @@ local function chooseTheme(): (string, string?)
 end
 
 local function scoreOf(e: Entry): number
-	local sum, w, voters = 0, 0, 0
 	local hw = if e.isBot then 0.5 else 1
+	local list: { { v: number, w: number } } = {}
 	for p, v in pairs(e.votes) do
 		if p.Parent then
-			sum += v * hw
-			w += hw
-			voters += 1
+			local flagged = (strikes[p] or 0) >= Config.Rewards.flagAt
+			table.insert(list, { v = v, w = hw * (if flagged then Config.Rewards.flagWeight else 1) })
 		end
+	end
+	local voters = #list
+	-- troll-proof: with 4+ ratings the single highest and lowest are dropped
+	if #list >= 4 then
+		table.sort(list, function(a: { v: number, w: number }, b: { v: number, w: number }): boolean
+			return a.v < b.v
+		end)
+		table.remove(list, #list)
+		table.remove(list, 1)
+	end
+	local sum, w = 0, 0
+	for _, r in ipairs(list) do
+		sum += r.v * r.w
+		w += r.w
 	end
 	local jw = if voters < 3 then 1 elseif voters < 6 then 0.6 else 0.35
 	for _, v in ipairs(e.judges) do
@@ -155,8 +182,121 @@ local function scoreOf(e: Entry): number
 	return math.floor(sum / w * 10 + 0.5) / 10
 end
 
+-- After a cake is scored: fair-judge coins for ratings within 1 star of the result, strikes for 1-star
+-- ratings on cakes everyone else liked.
+local function judgeVoters(e: Entry)
+	local rw = Config.Rewards
+	for p, v in pairs(e.votes) do
+		if p.Parent then
+			if math.abs(v - e.score) <= 1 then
+				local d = Data.get(p)
+				local got = fairCoins[p] or 0
+				if d and got < rw.fairCap then
+					fairCoins[p] = got + rw.fair
+					Progress.addCoins(p, d, rw.fair)
+					rewardRemote:FireClient(p, { kind = "vote", coins = rw.fair, fair = true })
+				end
+			elseif v == 1 and e.score >= 3.5 then
+				strikes[p] = (strikes[p] or 0) + 1
+				if strikes[p] == rw.flagAt then
+					Shop.notify(p, "🤨 Your 1-star ratings are far from everyone else's, so they count less now. Rate fairly for 🎯 bonus coins!", "orange")
+				end
+			end
+		end
+	end
+end
+
 local function giantPayload(e: Entry): { [string]: any }
 	return { cake = e.cake, name = e.name, ownerId = e.ownerId, golden = e.golden, score = e.score, theme = themeKey }
+end
+
+-- Fresh cakes for the next round: owned stations reset when the lobby opens, so players can warm up on them.
+local function freshCakes()
+	for _, st in ipairs(Stations.list) do
+		if st.owner then
+			Stations.reset(st)
+		end
+	end
+end
+
+-- Rewards, quests, badges and candy for one ranked entry.
+local function payEntry(e: Entry, place: number, count: number)
+	local owner = e.owner
+	if not owner or not owner.Parent then
+		return
+	end
+	local d = Data.get(owner)
+	if not d then
+		return
+	end
+	local rw = Config.Rewards
+	local mult = if hourly then R.hourlyMult elseif celebrity then rw.celebrityMult else 1
+	local boost = Boosts.mult("coins")
+	local friends = Live.friendMult(owner)
+	local coins = (rw.participate + rw.perStar * e.score + (rw.place[place] or 0)) * mult * Progress.coinMult(owner) * boost * friends
+	local xp = (rw.xpBase + rw.xpPerStar * e.score + (rw.xpPlace[place] or 0)) * mult * Progress.xpMult(owner)
+	Progress.addCoins(owner, d, coins)
+	d.rounds = (d.rounds or 0) + 1
+	if place <= 3 then
+		d.top3 = (d.top3 or 0) + 1
+	end
+	local won = place == 1 and count >= 2
+	if won then
+		d.wins = (d.wins or 0) + 1
+	end
+	d.bestScore = math.max(d.bestScore or 0, e.score)
+	local boxes = 0
+	if hourly then
+		boxes = if place == 1 then 3 elseif place <= 3 then 1 else 0
+	elseif celebrity and place == 1 then
+		boxes = 1
+	end
+	if boxes > 0 then
+		d.boxes = (d.boxes or 0) + boxes
+	end
+	local T = Config.Track.candy
+	local candy = Progress.addCandy(owner, d, (T.round + T.perStar * e.score + (T.place[place] or 0)) * (if hourly then T.hourly else 1))
+	local levels = Progress.addXP(owner, d, xp)
+	-- quests and badges
+	Live.quest(owner, "bake", 1)
+	if place <= 3 and count >= 2 then
+		Live.quest(owner, "top3", 1)
+	end
+	if e.score >= 4 then
+		Live.quest(owner, "stars", 1)
+	end
+	if (tonumber(owner:GetAttribute("Friends")) or 0) > 0 then
+		Live.quest(owner, "friend", 1)
+	end
+	if celebrity then
+		Live.quest(owner, "celebrity", 1)
+	end
+	Live.badge(owner, "FirstCake")
+	if won then
+		Live.badge(owner, "FirstWin")
+		if (d.wins or 0) >= 10 then
+			Live.badge(owner, "TenWins")
+		end
+	end
+	if e.score >= 4.5 then
+		Live.badge(owner, "StarBaker")
+	end
+	rewardRemote:FireClient(owner, {
+		kind = "round",
+		place = place,
+		of = count,
+		score = e.score,
+		coins = math.floor(coins),
+		xp = math.floor(xp),
+		levels = levels,
+		celebrity = celebrity,
+		hourly = hourly,
+		box = boxes > 0,
+		boxes = boxes,
+		boost = boost,
+		friends = friends,
+		candy = candy,
+	})
 end
 
 -- One round --------------------------------------------------------------------------------------------
@@ -169,6 +309,9 @@ local function playRound()
 	end
 
 	celebrity = forceEvent or now() >= eventAt - 5
+	hourly = celebrity and hourlyPending
+	hourlyPending = false
+	state:SetAttribute("HourlyNext", false)
 	if celebrity then
 		forceEvent = false
 		eventAt = now() + R.eventEvery
@@ -180,20 +323,19 @@ local function playRound()
 	if #recentThemes > 4 then
 		table.remove(recentThemes, 1)
 	end
+	Stations.theme = themeKey
 	state:SetAttribute("Theme", themeKey)
 	state:SetAttribute("Celebrity", celebrity)
+	state:SetAttribute("Hourly", hourly)
 	state:SetAttribute("Round", round)
 	state:SetAttribute("ShowIndex", 0)
 	state:SetAttribute("Overtime", "")
 
-	-- fresh cakes and NPC bakers
+	-- NPC bakers (players' stations were reset when the lobby opened and may hold a warm-up cake)
 	graceUsed = 0
 	voteCoins = {}
-	for _, st in ipairs(Stations.list) do
-		if st.owner then
-			Stations.reset(st)
-		end
-	end
+	fairCoins = {}
+	voteCandy = {}
 	local easy = false
 	for _, p in ipairs(humans()) do
 		local d = Data.get(p)
@@ -205,8 +347,10 @@ local function playRound()
 	stageMood(celebrity)
 
 	setPhase("Theme", R.theme)
-	roundRemote:FireAllClients("theme", { theme = themeKey, celebrity = celebrity, by = by })
-	if celebrity then
+	roundRemote:FireAllClients("theme", { theme = themeKey, celebrity = celebrity, hourly = hourly, by = by })
+	if hourly then
+		announce:FireAllClients("👑 HOURLY GRAND GALA! 3x coins & XP, boxes for the top 3!", "gold", true)
+	elseif celebrity then
 		announce:FireAllClients("🌟 CELEBRITY JUDGE ROUND! 2x coins and XP!", "gold", true)
 	elseif by then
 		announce:FireAllClients("🎡 " .. by .. " picked the theme: " .. Config.ThemeByKey[themeKey].name .. "!", "pink", false)
@@ -229,6 +373,13 @@ local function playRound()
 		buildTime += R.overtime
 		state:SetAttribute("Overtime", overtimeBy)
 	end
+	for _, st in ipairs(Stations.list) do
+		if st.owner and st.ready then
+			st.ready = false
+			Stations.publish(st)
+		end
+	end
+	Stations.warmup = false
 	Stations.buildOpen = true
 	setPhase("Build", buildTime)
 	if overtimeBy then
@@ -268,14 +419,28 @@ local function playRound()
 			st.edits = math.max(st.edits, 1)
 		end
 	end
+	-- Overtime (paid): those bakers keep their station open while the first cakes are judged
+	local late: { [Station]: boolean } = {}
+	for _, st in ipairs(Stations.list) do
+		local owner = st.owner
+		local d = owner and Data.get(owner)
+		if owner and d and (d.overtime or 0) > 0 and st.edits > 0 then
+			d.overtime -= 1
+			Data.dirty(owner)
+			Stations.setOvertime(st, now() + R.personal)
+			late[st] = true
+			Shop.notify(owner, "⏰ OVERTIME! Keep decorating: your cake is judged last", "gold")
+		end
+	end
 	task.wait(0.6)
 
 	-- VOTE --------------------------------------------------------------------------------------------
 	local entries: { Entry } = {}
+	local lateEntries: { Entry } = {}
 	for _, st in ipairs(Stations.list) do
 		local owner = st.owner
 		if (owner and owner.Parent and st.edits > 0) or (st.botName and not owner) then
-			table.insert(entries, {
+			local e: Entry = {
 				st = st,
 				owner = owner,
 				ownerId = if owner then owner.UserId else 0,
@@ -287,14 +452,19 @@ local function playRound()
 				celeb = nil,
 				score = 0,
 				golden = st.golden,
-			})
+				late = late[st] == true,
+			}
+			table.insert(if e.late then lateEntries else entries, e)
 		end
+	end
+	rng:Shuffle(entries)
+	for _, e in ipairs(lateEntries) do
+		table.insert(entries, e)
 	end
 	if #entries == 0 then
 		announce:FireAllClients("Nobody baked this round... 😅", "orange", false)
 		return
 	end
-	rng:Shuffle(entries)
 	local slot = math.clamp(70 / #entries, R.showMin, R.showMax)
 	setPhase("Vote", (slot + 0.2) * #entries + 0.5)
 	state:SetAttribute("ShowTotal", #entries)
@@ -303,6 +473,10 @@ local function playRound()
 			return
 		end
 		local owner = e.owner
+		if e.late then -- Overtime ends when its cake comes up: judge what is on the plate now
+			Stations.setOvertime(e.st, 0)
+			e.cake = CakeBuilder.copy(e.st.cake)
+		end
 		if owner == nil or owner.Parent then
 			current = e
 			local ends = now() + slot
@@ -318,12 +492,18 @@ local function playRound()
 			roundRemote:FireAllClients("judges", { scores = e.judges, celeb = e.celeb })
 			waitUntil(ends)
 			e.score = scoreOf(e)
+			judgeVoters(e)
 			roundRemote:FireAllClients("score", { idx = i, score = e.score, name = e.name, ownerId = e.ownerId })
 			current = nil
 			task.wait(0.2)
 		end
 	end
 	current = nil
+	for _, st in ipairs(Stations.list) do
+		if st.overtimeUntil > 0 then
+			Stations.setOvertime(st, 0)
+		end
+	end
 	if not alive() then
 		return
 	end
@@ -361,45 +541,10 @@ local function playRound()
 			Bots.toPodium(e.st, top)
 		end
 	end
-	roundRemote:FireAllClients("results", { podium = podium, theme = themeKey, celebrity = celebrity, count = #ranked })
+	roundRemote:FireAllClients("results", { podium = podium, theme = themeKey, celebrity = celebrity, hourly = hourly, count = #ranked })
 
-	-- rewards
-	local mult = if celebrity then Config.Rewards.celebrityMult else 1
 	for place, e in ipairs(ranked) do
-		local owner = e.owner
-		if owner and owner.Parent then
-			local d = Data.get(owner)
-			if d then
-				local rw = Config.Rewards
-				local coins = (rw.participate + rw.perStar * e.score + (rw.place[place] or 0)) * mult * Progress.coinMult(owner)
-				local xp = (rw.xpBase + rw.xpPerStar * e.score + (rw.xpPlace[place] or 0)) * mult * Progress.xpMult(owner)
-				Progress.addCoins(owner, d, coins)
-				d.rounds = (d.rounds or 0) + 1
-				if place <= 3 then
-					d.top3 = (d.top3 or 0) + 1
-				end
-				if place == 1 and #ranked >= 2 then
-					d.wins = (d.wins or 0) + 1
-				end
-				d.bestScore = math.max(d.bestScore or 0, e.score)
-				local bonusBox = celebrity and place == 1
-				if bonusBox then
-					d.boxes = (d.boxes or 0) + 1
-				end
-				local levels = Progress.addXP(owner, d, xp)
-				rewardRemote:FireClient(owner, {
-					kind = "round",
-					place = place,
-					of = #ranked,
-					score = e.score,
-					coins = math.floor(coins),
-					xp = math.floor(xp),
-					levels = levels,
-					celebrity = celebrity,
-					box = bonusBox,
-				})
-			end
-		end
+		payEntry(e, place, #ranked)
 	end
 	local winner = ranked[1]
 	lastWinner = winner
@@ -421,12 +566,15 @@ function Rounds.run()
 	local first = true
 	while true do
 		if #Players:GetPlayers() == 0 then
+			Stations.warmup = false
 			setPhase("Waiting", 0)
 			repeat
 				task.wait(0.5)
 			until #Players:GetPlayers() > 0
 			first = true
 		end
+		freshCakes()
+		Stations.warmup = true
 		setPhase("Lobby", if first then R.firstWait else R.intermission)
 		first = false
 		waitUntil(phaseEnds)
@@ -437,6 +585,7 @@ function Rounds.run()
 				Stations.buildOpen = false
 				current = nil
 			end
+			Stations.warmup = false
 			Bots.goHome()
 		end
 	end
@@ -463,6 +612,8 @@ function Rounds.init(b: Plaza.Built)
 	state:SetAttribute("ShowOwner", "")
 	state:SetAttribute("ShowOwnerId", 0)
 	state:SetAttribute("Overtime", "")
+	state:SetAttribute("Hourly", false)
+	state:SetAttribute("HourlyNext", false)
 
 	voteRemote.OnServerEvent:Connect(function(player: Player, stars: any, idx: any)
 		local e = current
@@ -480,6 +631,7 @@ function Rounds.init(b: Plaza.Built)
 		local firstVote = e.votes[player] == nil
 		e.votes[player] = v
 		if firstVote then
+			Live.quest(player, "vote", 1)
 			local d = Data.get(player)
 			local got = voteCoins[player] or 0
 			if d and got < Config.Rewards.voteCap * Config.Rewards.vote then
@@ -489,7 +641,18 @@ function Rounds.init(b: Plaza.Built)
 				d.votes = (d.votes or 0) + 1
 				rewardRemote:FireClient(player, { kind = "vote", coins = c })
 			end
+			local T = Config.Track.candy
+			local candy = voteCandy[player] or 0
+			if d and candy < T.voteCap then
+				voteCandy[player] = candy + Progress.addCandy(player, d, T.vote)
+			end
 		end
+	end)
+	Players.PlayerRemoving:Connect(function(p: Player)
+		strikes[p] = nil
+		fairCoins[p] = nil
+		voteCandy[p] = nil
+		voteCoins[p] = nil
 	end)
 
 	-- a late joiner gets a short grace so they can still make a cake
@@ -543,6 +706,42 @@ function Rounds.forceEvent()
 	end
 end
 
+-- The Hourly Grand Gala (kit Live.onHour): the next round is a 3x Celebrity round and the whole server gets
+-- a 10-minute 2x coins boost right away.
+function Rounds.hourly()
+	hourlyPending = true
+	forceEvent = true
+	eventAt = now()
+	state:SetAttribute("EventAt", eventAt)
+	state:SetAttribute("HourlyNext", true)
+	Boosts.add("coins", 2, R.hourlyBoost, "the Hourly Gala")
+	announce:FireAllClients("👑 HOURLY GRAND GALA next round! 2x coins for everyone for 10 minutes!", "gold", true)
+end
+
+function Rounds.isHourly(): boolean
+	return hourly
+end
+
+-- A paid reaction on the cake being judged right now (not your own). Returns false when there is none, so
+-- the grant can keep it as a credit for the next cake. Never changes the score: cheering only.
+function Rounds.react(player: Player, key: string): boolean
+	local def = Config.Reactions[key]
+	local e = current
+	if not def or phase ~= "Vote" or not e or e.owner == player then
+		return false
+	end
+	local owner = e.owner
+	if owner and owner.Parent then
+		local d = Data.get(owner)
+		if d then
+			Progress.addCoins(owner, d, def.coins)
+			Shop.notify(owner, def.glyph .. " " .. player.DisplayName .. " sent you a " .. def.name .. "! +" .. def.coins .. " 💰", "gold")
+		end
+	end
+	roundRemote:FireAllClients("react", { key = key, by = player.DisplayName, to = e.name, idx = state:GetAttribute("ShowIndex") })
+	return true
+end
+
 function Rounds.setMinEntrants(n: number)
 	minEntrants = math.clamp(n, 0, Config.World.stationCount)
 end
@@ -569,12 +768,13 @@ function Rounds.stateText(): string
 		end
 	end
 	return string.format(
-		"round=%d phase=%s left=%.0fs theme=%s celebrity=%s nextEvent=%.0fs players=%d bots=%d queue=%d showing=%s",
+		"round=%d phase=%s left=%.0fs theme=%s celebrity=%s hourly=%s nextEvent=%.0fs players=%d bots=%d queue=%d showing=%s",
 		round,
 		phase,
 		math.max(0, phaseEnds - now()),
 		themeKey,
 		tostring(celebrity),
+		tostring(hourly or hourlyPending),
 		math.max(0, eventAt - now()),
 		owners,
 		bots,

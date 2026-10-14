@@ -3,9 +3,15 @@
 --   give <n>                      coins to every player
 --   give [player] coins|xp|box <n>
 --   unlockall [player]            every topping, colour, shape, 4 tiers, slots, all passes
---   pass [player] <PassKey>       grant one pass (VIP, DoubleCoins, ExtraTime, PremiumColors, Rainbow, ExtraToppings, GoldenOven)
---   reset [player]                wipe the save back to a brand-new player
+--   pass [player] <PassKey>       grant one pass (VIP, DoubleCoins, ExtraTime, PremiumColors, Rainbow, ExtraToppings,
+--                                 GoldenOven, Caketober)
+--   product [player] <Key>        run a product grant as if bought (Studio test purchase), e.g. product Overtime
+--   reset [player]                wipe the save back to a brand-new player (first session again: FTUE, offers)
 --   event                         next round is a Celebrity Judge round (skips the lobby wait)
+--   hourly                        run the hourly event now (Grand Gala next round + 10 min server 2x coins)
+--   candy [player] <n>            add Caketober candy
+--   policy [player] on|off        paid-random restriction on/off (RandomBlocked) to test the fixed rewards
+--   boost <kind> <mult> [min]     start a server boost (coins, xp, luck)
 --   clip                          play the giant-winner-cake moment now
 --   skip                          end the current phase now
 --   time <seconds>                set the current phase's remaining time
@@ -24,6 +30,7 @@ local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
 local Rounds = require(script.Parent:WaitForChild("Rounds"))
 local Progress = require(script.Parent:WaitForChild("Progress"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
 
 local Debug = {}
 
@@ -118,12 +125,46 @@ local function run(cmd: string, defaults: { [string]: any }): string
 		for k, v in pairs(Data.deepCopy(defaults)) do
 			d[k] = v
 		end
+		d.firstJoin = os.time()
+		d.lastJoin = os.time()
+		d.sessions = 1
 		Data.dirty(p)
 		Progress.refreshTag(p)
 		return "reset " .. p.Name
 	elseif c == "event" then
 		Rounds.forceEvent()
 		return "celebrity round queued"
+	elseif c == "hourly" then
+		Rounds.hourly()
+		return "hourly gala queued"
+	elseif c == "candy" then
+		local p = findPlayer(if args[3] then args[2] else nil)
+		local d = p and Data.get(p)
+		local n = tonumber(args[3] or args[2]) or 100
+		if not p or not d then
+			return "no player"
+		end
+		return "added " .. Progress.addCandy(p, d, n) .. " candy"
+	elseif c == "policy" then
+		local p = findPlayer(if args[3] then args[2] else nil)
+		local on = string.lower(args[3] or args[2] or "on") ~= "off"
+		if not p then
+			return "no player"
+		end
+		p:SetAttribute("RandomBlocked", on)
+		return "RandomBlocked=" .. tostring(on) .. " for " .. p.Name
+	elseif c == "boost" then
+		local kind = args[2] or "coins"
+		local m = Boosts.add(kind, tonumber(args[3]) or 2, (tonumber(args[4]) or 15) * 60, "Debug")
+		return "boost " .. kind .. " x" .. m
+	elseif c == "product" then
+		local p = findPlayer(if args[3] then args[2] else nil)
+		local key = args[3] or args[2]
+		if not p or not key or not Config.Products[key] then
+			return "product [player] <key>"
+		end
+		Shop.prompt(p, "product", key)
+		return "product " .. key
 	elseif c == "clip" then
 		return Rounds.clip()
 	elseif c == "skip" then
