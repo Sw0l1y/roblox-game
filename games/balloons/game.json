@@ -1,1 +1,7 @@
-{"name": "Pop All The Balloons!", "walkSpeed": 20, "jumpPower": 50, "maxPlayers": 12}
+{
+ "universeId": null,
+ "placeId": null,
+ "name": "Pop All The Balloons! 🎈",
+ "description": "Throw darts and POP EVERYTHING! 🎈\n\n🎯 Pop balloons for coins and upgrade your darts\n🍭 Unlock Candy Hills, Sky Islands and Space\n🎈 Team up on the MEGA BALLOON every 5 minutes\n🌈 Find all 28 balloons, 4 are SECRET\n🔁 Rebirth for permanent boosts\n\n👍 Like and ⭐ Favorite for new zones!",
+ "privateServerPrice": 100
+}

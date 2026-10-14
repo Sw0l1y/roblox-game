@@ -1,1 +1,7 @@
-{"name": "Marble Mayhem 🔮", "walkSpeed": 20, "jumpPower": 50, "maxPlayers": 12}
+{
+ "universeId": null,
+ "placeId": null,
+ "name": "Marble Mayhem 🔮",
+ "description": "Race marbles down a brand-new track every round! 🔮\n\n🃏 Pick your marble and a power-up\n⚡ Hit BOOST when you glow\n🎁 Open packs: 68 marbles, Gold, Rainbow and Cosmic mutations\n🏁 Grand Prix every few minutes\n📸 Photo finishes!\n\n👍 Like and ⭐ Favorite for new tracks every week!",
+ "privateServerPrice": 100
+}
