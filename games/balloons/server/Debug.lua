@@ -14,6 +14,10 @@ local Shop = require(script.Parent:WaitForChild("Shop"))
 local Progress = require(script.Parent:WaitForChild("Progress"))
 local Balloons = require(script.Parent:WaitForChild("Balloons"))
 local Mega = require(script.Parent:WaitForChild("Mega"))
+local Boss = require(script.Parent:WaitForChild("Boss"))
+local Live = require(script.Parent:WaitForChild("Live"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Policy = require(script.Parent:WaitForChild("Policy"))
 
 local Debug = {}
 
@@ -57,11 +61,16 @@ local function state(): string
 			end
 			local coins: number = tonumber(d.coins) or 0
 			local pump: number = tonumber(d.pump) or 0
+			local meter = {}
+			for z = 1, #Config.Zones do
+				table.insert(meter, string.format("%d%%%s", math.floor(Econ.meterFrac(d, z) * 100), Econ.bossBeaten(d, z) > 0 and "*" or ""))
+			end
 			table.insert(lines, string.format(
-				"%s: coins=%s pops=%s zones=%s rebirths=%s power=%s luck=%.2f aura=%.1f megaDarts=%s pump=%s index=%d zone=%d",
+				"%s: coins=%s pops=%s zones=%s rebirths=%s power=%s luck=%.2f aura=%.1f megaDarts=%s pump=%s index=%d zone=%d meter=%s factory=%s blocked=%s income=x%.2f spent=%s",
 				p.Name, Fmt.num(coins), tostring(d.pops or 0), tostring(d.zones or 1), tostring(d.rebirths or 0),
-				Fmt.num(Econ.power(d)), Econ.luck(d, os.time()), Econ.auraRadius(d), tostring(d.megaDarts or 0),
-				Fmt.num(pump), idx, Progress.zoneOf(p)
+				Fmt.num(Econ.power(d)), Progress.luck(p, d), Econ.auraRadius(d), tostring(d.megaDarts or 0),
+				Fmt.num(pump), idx, Progress.zoneOf(p), table.concat(meter, "/"), tostring(d.factory == true),
+				tostring(Policy.randomBlocked(p)), Econ.coinMult(d) * Progress.income(p), tostring(d.spent or 0)
 			))
 		end
 	end
@@ -82,8 +91,15 @@ local function run(cmd: string): string
 	elseif c == "clip" then
 		Mega.clip()
 		return "MEGA BALLOON forced to pop in 1.5 s (coin rain + rare shower)"
+	elseif c == "hourly" then
+		Mega.hourly()
+		return "HOURLY MEGA BALLOON + 2x coins boost started"
+	elseif c == "boost" then
+		local kind = words[2] or "coins"
+		local m = Boosts.add(kind, tonumber(words[3]) or 2, (tonumber(words[4]) or 15) * 60, "Debug")
+		return string.format("server boost %s now x%s", kind, tostring(m))
 	elseif c == "help" then
-		return "give [player] [coins|megadarts|pops] n | event | clip | reset [player] | state | spawn key [player] | rare [player] | zones [player] n | index [player] | upgrade [player] key n | rebirth [player] | daily [player] | pump [player] seconds | luck [player] minutes | tp [player] zone | pass [player] key | buy [player] key"
+		return "give [player] [coins|megadarts|pops] n | event | clip | hourly | boost kind mult minutes | reset [player] | state | spawn key [player] | rare [player] | zones [player] n | index [player] | upgrade [player] key n | rebirth [player] | daily [player] | pump [player] seconds | luck [player] minutes | tp [player] zone | pass [player] key | buy [player] key | boss [player] | bosses [player] | factory [player] | blocked [player] on|off | trial [player] pass minutes | starter [player] | friends [player] n | minutes [player] n | quest [player] key n | live [player]"
 	end
 	local p, i = target(words, 2)
 	if not p then
@@ -191,10 +207,91 @@ local function run(cmd: string): string
 		local key = words[i]
 		local kind = key and ((Config.Passes[key] and "pass") or (Config.Products[key] and "product")) or nil
 		if not key or not kind then
-			return "buy <key>: passes Coins2x Aura Lucky VIP GoldenDart; products MegaDarts LuckBoost SummonMega Starter Coins1 Coins2 Coins3"
+			local keys = {}
+			for k in pairs(Config.Passes) do
+				table.insert(keys, k)
+			end
+			for k in pairs(Config.Products) do
+				table.insert(keys, k)
+			end
+			table.sort(keys)
+			return "buy <key>: " .. table.concat(keys, " ")
 		end
-		Shop.prompt(p, kind, key)
-		return "bought " .. kind .. " " .. key .. " for " .. p.Name
+		-- gifts need a target: the second player in the server (Shop.prompt refuses gifting to yourself)
+		local target: number? = nil
+		if kind == "product" and Config.Products[key].gift then
+			for _, other in ipairs(Players:GetPlayers()) do
+				if other ~= p then
+					target = other.UserId
+					break
+				end
+			end
+		end
+		Shop.prompt(p, kind, key, target)
+		return "prompted " .. kind .. " " .. key .. " for " .. p.Name .. " (simulated purchase unless the shop refused it)"
+	elseif c == "boss" then
+		-- fill the meter of the zone you stand in (or your best zone) and summon its boss
+		local zone: number = Progress.zoneOf(p)
+		if zone < 1 then
+			zone = tonumber(d.zones) or 1
+			Progress.teleport(p, zone)
+		end
+		d.meter = d.meter or { 0, 0, 0, 0 }
+		d.meter[zone] = Config.Boss.goal[zone]
+		Progress.touch(p)
+		local ok: boolean = Boss.summon(p)
+		local how: string = if ok then "summoned" else "not summoned (stand in the zone)"
+		return "zone " .. zone .. " meter full, boss " .. how
+	elseif c == "bosses" then
+		d.bosses = { 1, 1, 1, 1 }
+		Progress.touch(p)
+		return "every zone boss marked beaten (the factory can open)"
+	elseif c == "factory" then
+		Progress.factory(p)
+		return "factory tried: done=" .. tostring(d.factory == true)
+	elseif c == "blocked" then
+		local on = words[i] ~= "off"
+		p:SetAttribute("RandomBlocked", on)
+		return "RandomBlocked=" .. tostring(on)
+	elseif c == "trial" then
+		local pass = words[i] or "Aura"
+		Progress.giveTrial(p, d, pass, tonumber(words[i + 1]) or 15)
+		return "trial " .. pass
+	elseif c == "starter" then
+		d.firstJoin = os.time()
+		d.sessions = 1 -- the window is first-session only (kit Shop `window`)
+		d.starter = false
+		d.spent = 0 -- also reopens the 9 R$ Welcome Deal (kit Shop `intro`)
+		if d.bought then
+			d.bought.Starter = nil
+		end
+		Progress.touch(p)
+		return "starter window reopened (10 min)"
+	elseif c == "friends" then
+		p:SetAttribute("Friends", tonumber(words[i]) or 1)
+		return "Friends=" .. tostring(p:GetAttribute("Friends"))
+	elseif c == "minutes" then
+		d.live = d.live or {}
+		d.live.minutes = (tonumber(d.live.minutes) or 0) + (tonumber(words[i]) or 60)
+		Progress.touch(p)
+		return "playtime minutes today=" .. tostring(d.live.minutes)
+	elseif c == "quest" then
+		Live.quest(p, words[i] or "pop", tonumber(words[i + 1]) or 1000)
+		return "quest progress added"
+	elseif c == "live" then
+		local l: { [string]: any } = d.live or {}
+		local qs = {}
+		for _, q: any in ipairs(l.quests or {}) do
+			local done: string = if q.done then " done" else ""
+			table.insert(qs, tostring(q.key) .. " " .. tostring(q.n) .. done)
+		end
+		return string.format("day=%s minutes=%s quests=[%s] codes=%d", tostring(l.day), tostring(l.minutes), table.concat(qs, ", "), (function()
+			local n = 0
+			for _ in pairs(l.codes or {}) do
+				n += 1
+			end
+			return n
+		end)())
 	end
 	return "unknown command (try help)"
 end

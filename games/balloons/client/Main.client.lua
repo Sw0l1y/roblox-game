@@ -1,7 +1,8 @@
 -- Pop All The Balloons! 🎈 — client entry point.
--- Builds the HUD and menus, starts the balloon / MEGA BALLOON views and the guide, routes server "Ui" messages
--- to the right effects, and runs the small local systems: zone ambience, gates you already own, booth pads that
--- open their menu, the VIP chat tag, music + mute and the one-time Starter Pack offer.
+-- Builds the HUD and menus, starts the balloon / MEGA BALLOON views, the guide and the FREE panel (kit LiveUI),
+-- routes server "Ui" messages to the right effects, and runs the small local systems: zone ambience, gates you
+-- already own, booth pads that open their menu, the VIP chat tag, music + mute, the story intro and the offers
+-- (none in the first two minutes; the Starter Pack only in the first 10 minutes; the 9 R$ Welcome Deal later).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
@@ -23,11 +24,13 @@ local MegaView = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChil
 local BalloonView = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("BalloonView"))
 local Guide = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("Guide"))
 local LiveUI = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("LiveUI"))
+local Prices = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("Prices"))
 
 local player = Players.LocalPlayer
 local I = Config.Icons
 local P = Config.Palette
 local buyRemote = Net.event("Buy")
+local actionRemote = Net.event("Action")
 
 local function hrp(): BasePart?
 	local c = player.Character
@@ -49,7 +52,39 @@ MegaView.init()
 BalloonView.init()
 Guide.init()
 LiveUI.init(Config.Live)
+-- live Robux prices (regional pricing) replace the planned ones in the catalog; redraw the open shop pages
+Prices.sync(Config.Passes, Config.Products)
+Prices.onChange(Panels.refresh)
+-- running server boosts (bought ones and the hourly event), above the goal bar
+LiveUI.boostPill(UI.root, { coins = "COINS", luck = "LUCK" }, {
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -96),
+	Size = UDim2.fromOffset(380, 34),
+})
+LiveUI.onClaimable(function(n: number)
+	Hud.buttons.Free.setBadge(n > 0 and n or nil)
+end)
 
+local function randomBlocked(): boolean
+	return player:GetAttribute("RandomBlocked") ~= false
+end
+
+Hud.onButton.Free = function()
+	LiveUI.open()
+end
+Hud.onButton.Starter = function()
+	Panels.open("Starter")
+end
+-- the zone meter: full = summon the zone boss
+Hud.onButton.Meter = function()
+	local d = State.data
+	if Hud.meterIsFull() then
+		actionRemote:FireServer("boss")
+	elseif d and Config.Zones[Hud.zone] then
+		local pct = math.floor(Econ.meterFrac(d, Hud.zone) * 100)
+		UI.toast(I.boss .. " Pop " .. (100 - pct) .. "% more " .. Config.Zones[Hud.zone].name .. " balloons to call its BOSS!", "orange", 3)
+	end
+end
 Hud.onButton.Upgrades = function()
 	Panels.toggle("Upgrades")
 end
@@ -69,13 +104,14 @@ Hud.onButton.Daily = function()
 	Panels.toggle("Daily")
 end
 Hud.onButton.Boost = function()
-	Panels.open("Shop", "Boosts")
+	-- paid luck is not sold to players under the paid random item restriction: this slot sells coin boosts then
+	Panels.open("Shop", randomBlocked() and "Server" or "Items")
 end
 Hud.onButton.Summon = function()
-	Panels.open("Shop", "Boosts")
+	Panels.open("Shop", "Items")
 end
 Hud.onButton.MegaShop = function()
-	Panels.open("Shop", "Boosts")
+	Panels.open("Shop", "Items")
 end
 Hud.onButton.Mega = function()
 	Hud.toggleMega()
@@ -269,12 +305,12 @@ handlers.bought = function(key: any, amount: any)
 	end
 	local n = tonumber(amount) or 0
 	local text = item.glyph .. " " .. item.name .. "!"
-	if key == "MegaDarts" then
+	if item.darts and not item.base then
 		text = I.megaDart .. " +" .. n .. " Mega Darts! Tap the " .. I.megaDart .. " button to arm them."
 	elseif key == "LuckBoost" then
 		text = I.luck .. " Lucky Boost for " .. n .. " minutes: rarer balloons spawn near you!"
 	elseif key ~= "SummonMega" then
-		text = item.glyph .. " +" .. I.coin .. " " .. Fmt.num(n) .. "!"
+		text = item.glyph .. " +" .. I.coin .. " " .. Fmt.num(n) .. (item.darts and (" + " .. I.megaDart .. " Mega Darts") or "") .. "!"
 		UI.fly(UI.center(), Hud.coinTarget(), 14, I.coin, Hud.punchCoins)
 	end
 	UI.toast(text, item.color, 4)
@@ -292,6 +328,105 @@ handlers.pass = function(key: any)
 	UI.confetti(90)
 	Sfx.play("purchase", 0.6)
 	Sfx.play("victory", 0.4)
+end
+
+-- Free rewards: the FTUE welcome gift (before minute 1) and the FREE panel (playtime, quests, codes, group,
+-- invites; the kit already toasts their text).
+handlers.gift = function(coins: any, darts: any, luck: any, source: any)
+	local c, md = tonumber(coins) or 0, tonumber(darts) or 0
+	if source == "welcome" then
+		UI.banner(I.gift .. " FREE GIFT!", "green", 2.4)
+		UI.toast(I.megaDart .. " +" .. md .. " FREE Mega Darts! Each one pops everything around it.", "green", 5)
+		Guide.hint(I.megaDart .. " Tap the " .. I.megaDart .. " button, then throw at a big balloon!", 10, "Mega")
+	elseif (tonumber(luck) or 0) > 0 then
+		UI.floater(I.luck .. " +" .. tostring(luck) .. " min Luck", "green", UI.center() - Vector2.new(0, 80), 40)
+	end
+	if c > 0 then
+		UI.fly(UI.center(), Hud.coinTarget(), 12, I.coin, Hud.punchCoins)
+	end
+	if md > 0 then
+		UI.punch(Hud.buttons.Mega.button, 0.25)
+	end
+	UI.confetti(60)
+	Sfx.play("cash", 0.6)
+end
+
+handlers.meterFull = function(zone: any)
+	UI.banner(I.boss .. " " .. zoneName(zone) .. " 100% POPPED!", "red", 2.6)
+	UI.toast(I.boss .. " " .. (UI.isMobile and "Tap" or "Click") .. " the meter at the top to fight the BOSS!", "red", 5)
+	Sfx.play("unlock", 0.6)
+end
+
+handlers.bossSpawned = function(id: any, zone: any)
+	if type(id) ~= "number" then
+		return
+	end
+	local zi = tonumber(zone) or 1
+	Guide.setBoss(id, zi)
+	BalloonView.markRare(id)
+	UI.banner(I.boss .. " " .. string.upper(Config.Zones[zi] and Config.Zones[zi].name or "") .. " BOSS!", "red", 2.4)
+	UI.shake(0.6)
+	Sfx.play("reveal", 0.6, 0.8)
+end
+
+handlers.bossDown = function(zone: any, unlocked: any, darts: any, _count: any)
+	Guide.setBoss(nil)
+	UI.banner(I.boss .. " " .. zoneName(zone) .. " BOSS DEFEATED!", "gold", 3)
+	UI.toast(I.megaDart .. " +" .. tostring(darts) .. " Mega Darts for beating the boss!", "gold", 4)
+	UI.confetti(160)
+	UI.flash("yellow", 0.3)
+	Sfx.play("victory", 0.7)
+	local u = tonumber(unlocked) or 0
+	if u > 0 then
+		task.delay(3, function()
+			handlers.zone(u)
+		end)
+	end
+	local d = State.data
+	if d and not d.factory and Econ.bossCount(d) >= #Config.Zones then
+		task.delay(6, function()
+			UI.toast(I.factory .. " Balloons still pour out of somewhere... Find the secret Balloon Factory!", "purple", 6)
+		end)
+	end
+end
+
+handlers.bossEscaped = function(_zone: any)
+	Guide.setBoss(nil)
+	UI.toast(I.boss .. " The boss floated away! Your meter is still full: tap it to call the boss back.", "orange", 5)
+	Sfx.play("whoosh", 0.4)
+end
+
+handlers.trial = function(pass: any, minutes: any)
+	local item = type(pass) == "string" and Config.Passes[pass] or nil
+	if not item then
+		return
+	end
+	UI.banner(item.glyph .. " " .. string.upper(item.name) .. " ON!", item.color, 2.4)
+	UI.toast(item.glyph .. " " .. item.name .. " for " .. tostring(minutes) .. " minutes. Love it? Keep it forever in the Shop!", item.color, 5)
+	UI.confetti(60)
+	Sfx.play("purchase", 0.6)
+end
+
+handlers.trialEnd = function(pass: any)
+	local item = type(pass) == "string" and Config.Passes[pass] or nil
+	if item then
+		UI.toast(item.glyph .. " Your " .. item.name .. " trial ended. Keep it forever in the " .. I.shop .. " Shop!", item.color, 6)
+	end
+end
+
+handlers.factory = function(coins: any, darts: any)
+	UI.banner(I.factory .. " FACTORY SHUT DOWN!", "gold", 4)
+	UI.toast(I.house .. " The town is safe: no more balloons carry it away! +" .. I.coin .. " " .. Fmt.num(tonumber(coins) or 0) .. " + " .. I.megaDart .. " " .. tostring(darts), "gold", 7)
+	UI.confetti(220)
+	UI.flash("white", 0.4)
+	UI.fly(UI.center(), Hud.coinTarget(), 18, I.coin, Hud.punchCoins)
+	Sfx.play("victory", 0.8)
+end
+
+handlers.hourly = function()
+	UI.banner(I.clock .. " HOURLY MEGA BALLOON!", "gold", 3)
+	UI.toast(I.clock .. " A GIANT MEGA BALLOON + " .. Config.Event.hourly.boost .. "x coins for everyone for " .. Config.Event.hourly.boostMinutes .. " minutes!", "gold", 5)
+	Sfx.play("magic", 0.6)
 end
 
 Net.event("Ui").OnClientEvent:Connect(function(kind: any, ...: any)
@@ -358,6 +493,7 @@ task.spawn(function()
 		local r = hrp()
 		if r then
 			local zi = Econ.zoneAt(r.Position)
+			Hud.setZone(zi)
 			if zi > 0 and zi ~= currentZone then
 				local first = currentZone == 0
 				currentZone = zi
@@ -418,34 +554,56 @@ pcall(function()
 end)
 
 ---------------------------------------------------------------------------------------------------------------
--- Welcome and the one-time Starter Pack offer (never before minute 4, never during the event)
+-- Story intro (first 10 seconds) and offers: none in the first two minutes of a session, never during the MEGA
+-- event or over a menu. The Starter Pack only in the first 10 minutes after the first join (its own panel with
+-- the countdown); the 9 R$ Welcome Deal once for players who never bought anything, after that window.
 ---------------------------------------------------------------------------------------------------------------
 
 task.delay(1.5, function()
-	UI.banner("POP ALL THE BALLOONS! " .. I.pop, "pink", 2.6)
+	UI.banner(string.upper(Config.Title), "pink", 2.6)
 	Sfx.play("reveal", 0.4, 1.2)
+end)
+task.delay(4.5, function()
+	UI.toast(I.house .. " " .. Config.Story .. " Pop them ALL to save it!", "pink", 5)
 end)
 
 task.spawn(function()
-	local offered = false
-	while not offered do
+	while Guide.sessionTime() < Config.Ftue.offerAfter do
+		task.wait(1)
+	end
+	Hud.offersOpen = true
+	Hud.update()
+	local starterDone, introDone = false, false
+	while not (starterDone and introDone) do
 		task.wait(5)
 		local d = State.data
-		if d and not d.starter and Guide.sessionTime() >= Config.Ftue.offerAfter and not Panels.anyOpen() and MegaView.phase() == "idle" then
-			offered = true
-			local item = Config.Products.Starter
-			UI.offer({
-				title = "STARTER PACK",
-				text = I.coin .. " " .. Fmt.num(Econ.packCoins(item.base or 2000, d)) .. " coins + 15 Mega Darts + 30 min Lucky Boost. Only once!",
-				glyph = item.glyph,
-				price = "R$ " .. item.price,
-				color = item.color,
-				onBuy = function()
-					buyRemote:FireServer("product", "Starter")
-				end,
-			})
-		elseif d and d.starter then
-			offered = true
+		if d then
+			if Econ.starterLeft(d) <= 30 then
+				starterDone = true
+			end
+			if not Econ.introOpen(d) then
+				introDone = true
+			end
+			if not Panels.anyOpen() and MegaView.phase() == "idle" then
+				if not starterDone then
+					starterDone = true
+					Panels.open("Starter")
+				elseif not introDone and Econ.starterLeft(d) <= 0 and Guide.sessionTime() >= Config.Ftue.introAfter then
+					introDone = true
+					local item = Config.Products.Intro
+					UI.offer({
+						title = "WELCOME DEAL",
+						text = I.coin .. " " .. Fmt.num(Econ.packCoins(item.base or 3000, d)) .. " coins + " .. I.megaDart .. " " .. (item.darts or 10) .. " Mega Darts. Only once, only for you!",
+						glyph = item.glyph,
+						price = "R$ " .. Fmt.commas(item.price),
+						color = item.color,
+						seconds = 30,
+						onBuy = function()
+							buyRemote:FireServer("product", "Intro")
+						end,
+					})
+				end
+			end
 		end
 	end
 end)

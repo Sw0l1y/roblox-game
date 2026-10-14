@@ -1,5 +1,6 @@
--- Player progression on the server: coins, pop rewards and the Index, upgrades, zone unlocks and teleports,
--- rebirth, daily gift, character stats (walk speed, VIP tag), zone tracking and fall recovery.
+-- Player progression on the server: coins, pop rewards and the Index, zone meters and zone bosses, upgrades,
+-- zone unlocks and teleports, rebirth, daily gift, tool trials, the secret Balloon Factory ending, character
+-- stats (walk speed, VIP tag, dart looks), zone tracking and fall recovery.
 -- Every client request is validated here; the client only asks.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,6 +14,9 @@ local Econ = require(Shared:WaitForChild("Econ"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
 local Map = require(script.Parent:WaitForChild("Map"))
+local Live = require(script.Parent:WaitForChild("Live"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
+local Policy = require(script.Parent:WaitForChild("Policy"))
 
 local Progress = {}
 Progress.actions = {} :: { [string]: (Player, any) -> () }
@@ -65,6 +69,16 @@ function Progress.zoneOf(player: Player): number
 	return zoneOf[player] or 0
 end
 
+-- Income multiplier on top of the save's own (Econ.coinMult): server coin boost x friends in the server.
+function Progress.income(player: Player): number
+	return Boosts.mult("coins") * Live.friendMult(player)
+end
+
+-- Spawn luck near this player (paid luck is off for players under the paid random item restriction).
+function Progress.luck(player: Player, d: PData?): number
+	return Econ.luck(d, os.time(), Policy.randomBlocked(player))
+end
+
 function Progress.addCoins(player: Player, d: PData, n: number): number
 	n = math.max(0, math.floor(n))
 	d.coins = (d.coins or 0) + n
@@ -81,7 +95,8 @@ function Progress.applyStats(player: Player)
 	end
 	local vip = Econ.has(d, "VIP")
 	player:SetAttribute("VIP", vip)
-	player:SetAttribute("Golden", Econ.has(d, "GoldenDart"))
+	player:SetAttribute("Golden", Econ.perk(d, "GoldenDart"))
+	player:SetAttribute("Pumpkin", Econ.has(d, "Pumpkin"))
 	local c = player.Character
 	if not c then
 		return
@@ -126,7 +141,27 @@ end
 -- Pop rewards and the Index
 ---------------------------------------------------------------------------------------------------------------
 
-export type RewardOpts = { id: number, pos: Vector3, share: number, shower: boolean?, aura: boolean? }
+export type RewardOpts = { id: number, pos: Vector3, share: number, shower: boolean?, aura: boolean?, owner: Player? }
+
+-- A zone boss went down: its summoner clears the zone (the next zone opens for free the first time).
+function Progress.bossDown(player: Player, d: PData, zone: number)
+	d.meter = d.meter or { 0, 0, 0, 0 }
+	d.bosses = d.bosses or { 0, 0, 0, 0 }
+	d.meter[zone] = 0
+	d.bosses[zone] = (tonumber(d.bosses[zone]) or 0) + 1
+	d.megaDarts = (d.megaDarts or 0) + Config.Boss.darts
+	local unlocked = 0
+	if (d.zones or 1) == zone and zone < #Config.Zones then
+		d.zones = zone + 1
+		unlocked = zone + 1
+	end
+	Live.badge(player, "ZoneBoss")
+	Progress.touch(player)
+	Progress.ui(player, "bossDown", zone, unlocked, Config.Boss.darts, d.bosses[zone])
+	local z = Config.Zones[zone]
+	local extra = unlocked > 0 and (" " .. Config.Zones[unlocked].glyph .. " " .. Config.Zones[unlocked].name .. " is open!") or ""
+	Shop.notifyAll(Config.Icons.boss .. " " .. player.DisplayName .. " beat the " .. z.name .. " BOSS!" .. extra, "pink")
+end
 
 function Progress.reward(player: Player, key: string, o: RewardOpts)
 	local d = Data.get(player)
@@ -134,7 +169,15 @@ function Progress.reward(player: Player, key: string, o: RewardOpts)
 	if not d or not def then
 		return
 	end
-	local coins = math.max(1, math.floor(Econ.popValue(key, d, o.shower) * o.share))
+	local coins = math.max(1, math.floor(Econ.popValue(key, d, o.shower) * o.share * Progress.income(player)))
+	if def.boss then
+		Progress.addCoins(player, d, coins)
+		Progress.ui(player, "reward", o.id, key, coins, o.pos, false, o.share < 1, false)
+		if player == o.owner then
+			Progress.bossDown(player, d, def.zone)
+		end
+		return
+	end
 	d.index = d.index or {}
 	local wasComplete = Econ.zoneComplete(d, def.zone)
 	local first = (d.index[key] or 0) == 0
@@ -147,6 +190,28 @@ function Progress.reward(player: Player, key: string, o: RewardOpts)
 		d.ftue.rare = true
 	end
 	Progress.ui(player, "reward", o.id, key, coins, o.pos, first, o.share < 1, o.aura == true)
+	if o.share >= 1 then
+		Live.quest(player, "pop", 1)
+		if ti >= 3 then
+			Live.quest(player, "rare", 1)
+			Live.badge(player, "FirstRare")
+		end
+		if def.tier == "Secret" then
+			Live.badge(player, "Secret")
+		end
+		-- the zone's "popped %" meter toward its boss (the zone's own balloons, not MEGA bonus ones)
+		local goal = Config.Boss.goal[def.zone]
+		if goal and not o.shower then
+			d.meter = d.meter or { 0, 0, 0, 0 }
+			local n = tonumber(d.meter[def.zone]) or 0
+			if n < goal then
+				d.meter[def.zone] = n + 1
+				if n + 1 >= goal then
+					Progress.ui(player, "meterFull", def.zone)
+				end
+			end
+		end
+	end
 
 	if first and not wasComplete and Econ.zoneComplete(d, def.zone) then
 		local z = Config.Zones[def.zone]
@@ -177,6 +242,10 @@ Progress.actions.upgrade = function(player: Player, key: any)
 	if not u or not d then
 		return
 	end
+	if key == "luck" and Policy.randomBlocked(player) then
+		Shop.notify(player, u.name .. " isn't available in your region.", "orange")
+		return
+	end
 	local lvl = Econ.level(d, key)
 	if lvl >= u.max then
 		Shop.notify(player, u.name .. " is maxed!", "green")
@@ -194,6 +263,7 @@ Progress.actions.upgrade = function(player: Player, key: any)
 	Progress.touch(player)
 	Progress.applyStats(player)
 	Progress.ui(player, "upgraded", key, lvl + 1)
+	Live.quest(player, "upgrade", 1)
 end
 
 function Progress.unlockZone(player: Player, zone: number)
@@ -259,6 +329,7 @@ Progress.actions.rebirth = function(player: Player)
 	d.rebirths = (d.rebirths or 0) + 1
 	Progress.touch(player)
 	Progress.ui(player, "rebirth", d.rebirths)
+	Live.badge(player, "Rebirth")
 	Shop.notifyAll("🔄 " .. player.DisplayName .. " rebirthed! Now x" .. string.format("%.1f", Econ.rebirthMult(d.rebirths)) .. " coins", "orange")
 end
 
@@ -287,6 +358,40 @@ Progress.actions.daily = function(player: Player)
 	end
 	Progress.touch(player)
 	Progress.ui(player, "daily", streak, coins, r.megaDarts or 0, r.luckMinutes or 0)
+end
+
+-- Tool trial product: lend a pass's effect for some minutes (stacks).
+function Progress.giveTrial(player: Player, d: PData, pass: string, minutes: number)
+	d.trial = d.trial or {}
+	local now = os.time()
+	d.trial[pass] = math.max(now, tonumber(d.trial[pass]) or 0) + minutes * 60
+	Progress.applyStats(player)
+	Progress.touch(player)
+	Progress.ui(player, "trial", pass, minutes)
+end
+
+-- The secret ending: the hidden Balloon Factory behind Space Rainbow shuts down once every zone boss is beaten.
+function Progress.factory(player: Player)
+	local d = Data.get(player)
+	if not d then
+		return
+	end
+	if d.factory then
+		Shop.notify(player, Config.Icons.factory .. " You already shut down the Balloon Factory. The town is safe!", "green")
+		return
+	end
+	local beaten = Econ.bossCount(d)
+	if beaten < #Config.Zones then
+		Shop.notify(player, Config.Icons.factory .. " The machines are too strong... Beat the BOSS of every zone first! (" .. beaten .. "/" .. #Config.Zones .. ")", "orange")
+		return
+	end
+	d.factory = true
+	local coins = Progress.addCoins(player, d, Econ.packCoins(Config.Factory.coins, d))
+	d.megaDarts = (d.megaDarts or 0) + Config.Factory.darts
+	Live.badge(player, "Factory")
+	Progress.touch(player)
+	Progress.ui(player, "factory", coins, Config.Factory.darts)
+	Shop.notifyAll(Config.Icons.factory .. " " .. player.DisplayName .. " found the secret Balloon Factory and shut it down!", "gold")
 end
 
 ---------------------------------------------------------------------------------------------------------------
@@ -396,9 +501,22 @@ function Progress.init()
 	task.spawn(function()
 		while true do
 			task.wait(1)
+			local now = os.time()
 			for p, d in pairs(Data.all()) do
 				if p.Parent then
 					d.playTime = (d.playTime or 0) + 1
+					-- tool trials that just ran out
+					local t = d.trial
+					if type(t) == "table" then
+						for pass, ends in pairs(t) do
+							if type(ends) ~= "number" or ends <= now then
+								t[pass] = nil
+								Progress.applyStats(p)
+								Progress.touch(p)
+								Progress.ui(p, "trialEnd", pass)
+							end
+						end
+					end
 				end
 			end
 		end

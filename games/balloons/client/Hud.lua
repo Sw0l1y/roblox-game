@@ -1,6 +1,7 @@
--- HUD: coin counter (top centre) with the MEGA BALLOON pill / server HP bar under it, the left icon grid
--- (Shop, Upgrades, Index, Zones, Rebirth), the right gift/boost grid (Daily gift, Mega Darts, Lucky Boost,
--- Summon, Music) and the goal bar at the bottom. Main wires the button handlers through Hud.onButton.
+-- HUD: coin counter (top centre) with the MEGA BALLOON pill / server HP bar and the zone's "popped %" boss
+-- meter under it, the left icon grid (Shop, Upgrades, Index, Zones, FREE, Rebirth), the right gift/boost grid
+-- (Mega Darts, Daily gift, Lucky Boost, Summon, Music, the Starter Pack timer) and the goal bar at the bottom.
+-- Main wires the button handlers through Hud.onButton.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -15,7 +16,6 @@ local State = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("
 local Hud = {}
 
 local I = Config.Icons
-local _player = Players.LocalPlayer
 
 Hud.buttons = {} :: { [string]: UI.IconButton }
 Hud.onButton = {} :: { [string]: () -> () }
@@ -29,10 +29,17 @@ local pillText: TextLabel
 local hpHolder: Frame
 local hpBar: UI.Bar
 local hpTitle: TextLabel
+local meterHolder: Frame
+local meterBar: UI.Bar
+local meterZone = 0
+local meterFull = false
 local goalHolder: Frame
 local goalText: TextLabel
 local goalBar: UI.Bar
 local megaLocalUsed = 0
+local player = Players.LocalPlayer
+
+Hud.zone = 0 -- the zone the player stands in (Main's zone loop), 0 on a bridge
 
 type Pulse = { arrow: TextLabel, token: number }
 local pulses: { [string]: Pulse } = {}
@@ -151,6 +158,9 @@ end
 local shownHp, shownMax = -1, -1
 function Hud.setMegaHp(visible: boolean, hp: number?, maxHp: number?, title: string?)
 	hpHolder.Visible = visible
+	if visible then
+		meterHolder.Visible = false -- the boss meter sits where the HP bar goes
+	end
 	if visible and hp and maxHp and (hp ~= shownHp or maxHp ~= shownMax) then
 		shownHp, shownMax = hp, maxHp
 		hpBar.set(hp / math.max(1, maxHp), "❤️ " .. Fmt.commas(math.max(0, math.ceil(hp))) .. " / " .. Fmt.commas(maxHp))
@@ -223,6 +233,45 @@ function Hud.toggleMega()
 	Hud.update()
 end
 
+-- The zone's "popped %" meter: fills with the zone's own pops; full = tap to summon the zone boss.
+local function drawMeter(d: { [string]: any })
+	local z = Hud.zone
+	local zd = Config.Zones[z]
+	local show = zd ~= nil and z <= (d.zones or 1) and (d.pops or 0) >= Config.Ftue.meterAfterPops and not hpHolder.Visible
+	meterHolder.Visible = show
+	if not show or not zd then
+		return
+	end
+	local frac = Econ.meterFrac(d, z)
+	local full = frac >= 1
+	if z ~= meterZone or full ~= meterFull then
+		meterZone = z
+		meterFull = full
+		UI.recolor(meterBar.fill, full and "red" or zd.accent)
+		if full then
+			UI.punch(meterHolder, 0.2)
+		end
+	end
+	local name = string.upper(zd.name)
+	if full then
+		meterBar.set(1, I.boss .. " " .. (UI.isMobile and "TAP" or "CLICK") .. ": FIGHT THE " .. name .. " BOSS!")
+	else
+		local done = Econ.bossBeaten(d, z) > 0 and (" " .. I.check) or ""
+		meterBar.set(frac, zd.glyph .. " " .. name .. " " .. math.floor(frac * 100) .. "% POPPED" .. done)
+	end
+end
+
+function Hud.meterIsFull(): boolean
+	return meterHolder.Visible and meterFull
+end
+
+function Hud.setZone(z: number)
+	if z ~= Hud.zone then
+		Hud.zone = z
+		Hud.update()
+	end
+end
+
 local lastCoins: number? = nil
 
 function Hud.update()
@@ -235,8 +284,10 @@ function Hud.update()
 		UI.punch(coin.frame, -0.06)
 	end
 	lastCoins = d.coins or 0
-	local mult = Econ.coinMult(d)
+	local friends = tonumber(player:GetAttribute("Friends")) or 0
+	local mult = Econ.incomeMult(d, 1 + (Config.Live.friendBonus or 0) * friends)
 	multLabel.Text = mult > 1.001 and string.format("x%.2f coins", mult) or ""
+	drawMeter(d)
 
 	-- mega darts
 	local md = Hud.megaDarts()
@@ -282,14 +333,36 @@ local function tick()
 	end
 	local bb = Hud.buttons.Boost
 	local luckLeft = (tonumber(d.luckUntil) or 0) - now
+	local isBlocked = player:GetAttribute("RandomBlocked") ~= false
+	local icon = bb.icon
+	if icon:IsA("TextLabel") then
+		-- paid luck is not sold under the paid random item restriction: the slot sells server coin boosts then
+		icon.Text = isBlocked and "⚡" or I.luck
+	end
 	if luckLeft > 0 then
 		bb.label.Text = Fmt.time(luckLeft)
 		UI.recolor(bb.button, "teal")
+	elseif isBlocked then
+		bb.label.Text = "2x Coins"
+		UI.recolor(bb.button, "gold")
 	else
 		bb.label.Text = "Luck x2"
 		UI.recolor(bb.button, "green")
 	end
+	-- Starter Pack: only in the first 10 minutes, shown from minute 2 with its countdown
+	local starterLeft = Econ.starterLeft(d)
+	local sb = Hud.buttons.Starter
+	local showStarter = starterLeft > 0 and Hud.offersOpen
+	sb.button.Visible = showStarter
+	Hud.buttons.Mute.button.Position = UDim2.fromOffset((showStarter and 0 or 0.5) * (BTN + GAP_X), 2 * (BTN + GAP_Y))
+	if showStarter then
+		sb.label.Text = Fmt.time(math.floor(starterLeft))
+	end
+	drawMeter(d)
 end
+
+-- Main turns this on after minute 2 of the session (no offers in the first two minutes).
+Hud.offersOpen = false
 
 function Hud.init()
 	-- coins
@@ -339,7 +412,32 @@ function Hud.init()
 	end
 	UI.rainbow(hpBar.fill)
 
-	UI.setToastTop(146) -- toasts go below our top stack (coins, event pill, HP bar)
+	-- zone boss meter (same slot as the HP bar, which hides it during the MEGA fight)
+	meterHolder = UI.frame(UI.root, {
+		Name = "ZoneMeter",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 122),
+		Size = UDim2.fromOffset(400, 34),
+		Visible = false,
+	})
+	meterBar = UI.bar(meterHolder, "pink", { Size = UDim2.fromScale(1, 1) })
+	local meterButton = Instance.new("TextButton")
+	meterButton.Name = "MeterButton"
+	meterButton.BackgroundTransparency = 1
+	meterButton.Text = ""
+	meterButton.AutoButtonColor = false
+	meterButton.Size = UDim2.fromScale(1, 1)
+	meterButton.ZIndex = meterBar.frame.ZIndex + 4
+	meterButton.Parent = meterHolder
+	meterButton.MouseButton1Click:Connect(function()
+		local f = Hud.onButton.Meter
+		if f then
+			f()
+		end
+	end)
+
+	UI.setToastTop(164) -- toasts go below our top stack (coins, event pill, HP bar / boss meter)
 
 	-- left grid: the inner (right-hand) column holds the buttons the guide points at
 	local left = menu("Left")
@@ -347,15 +445,18 @@ function Hud.init()
 	addButton(left, "Upgrades", I.upgrades, "Upgrades", "blue", 1, 0)
 	addButton(left, "Index", I.index, "Index", "purple", 0, 1)
 	addButton(left, "Zones", I.zones, "Zones", "teal", 1, 1)
-	addButton(left, "Rebirth", I.rebirth, "Rebirth", "orange", 0.5, 2)
+	addButton(left, "Free", I.free, "FREE", "green", 0, 2)
+	addButton(left, "Rebirth", I.rebirth, "Rebirth", "orange", 1, 2)
 
 	-- right grid
 	local right = menu("Right")
-	addButton(right, "Daily", I.daily, "Gift", "green", 0, 0)
-	addButton(right, "Mega", I.megaDart, "Mega Dart", "red", 1, 0)
+	addButton(right, "Mega", I.megaDart, "Mega Dart", "red", 0, 0) -- inner column: the guide may pulse it
+	addButton(right, "Daily", I.calendar, "Daily", "green", 1, 0)
 	addButton(right, "Boost", I.luck, "Luck x2", "green", 0, 1)
 	addButton(right, "Summon", I.mega, "MEGA!", "pink", 1, 1)
 	addButton(right, "Mute", I.music, "Music", "grey", 0.5, 2)
+	addButton(right, "Starter", "🎉", "Starter", "teal", 1, 2)
+	Hud.buttons.Starter.button.Visible = false
 
 	-- goal bar
 	goalHolder = UI.card(UI.root, "dark", {
@@ -372,6 +473,7 @@ function Hud.init()
 		megaLocalUsed = 0
 		Hud.update()
 	end)
+	player:GetAttributeChangedSignal("Friends"):Connect(Hud.update)
 	task.spawn(function()
 		while true do
 			pcall(tick)

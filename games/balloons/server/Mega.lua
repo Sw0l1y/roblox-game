@@ -1,7 +1,9 @@
 -- The recurring server event: every 5 minutes (2.5 minutes after a new server starts) the MEGA BALLOON
 -- inflates on the hub's Mega Pump, a countdown banner runs, it rises with a server-wide HP bar, everyone (plus
 -- four Party Bots, so solo servers work) throws darts at it, and it explodes into a coin rain and a shower of
--- rare balloons — the clip moment. Players can also buy "Summon MEGA Balloon" for the whole server.
+-- rare balloons — the clip moment. Players can also buy "Summon MEGA Balloon" for the whole server (its bonus
+-- shower is a fixed set, shown before purchase). At the top of every hour (kit Live.onHour) the HOURLY MEGA
+-- BALLOON comes: 1.35x bigger, 3x HP and rewards, a bigger shower, plus 10 minutes of 2x coins for the server.
 -- State lives in attributes on ReplicatedStorage.GameState so late joiners see it immediately.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,6 +14,8 @@ local Config = require(Shared:WaitForChild("Config"))
 local Econ = require(Shared:WaitForChild("Econ"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Live = require(script.Parent:WaitForChild("Live"))
+local Boosts = require(script.Parent:WaitForChild("Boosts"))
 local Progress = require(script.Parent:WaitForChild("Progress"))
 local Balloons = require(script.Parent:WaitForChild("Balloons"))
 
@@ -28,7 +32,10 @@ local fightAt = 0 -- when the rise ends and darts start to count
 local popEnd = 0
 local damage: { [Player]: number } = {}
 local summoner: Player? = nil
-local queue: { Player } = {}
+local paid = false -- this one was bought (fixed shower)
+local hourly = false -- the bigger HOURLY MEGA BALLOON
+type Pending = { by: Player?, hourly: boolean }
+local queue: { Pending } = {}
 local lastBot = 0
 local rng = Random.new()
 local dirtyHp = false
@@ -71,7 +78,7 @@ local function computeHp(): number
 end
 
 local function startRise()
-	maxHp = computeHp()
+	maxHp = computeHp() * (hourly and E.hourly.hpMult or 1)
 	hp = maxHp
 	damage = {}
 	fightAt = now() + E.riseTime
@@ -93,16 +100,23 @@ local function explode(last: Player?)
 	setPhase("popped")
 	Progress.uiAll("megaPop", last and last.DisplayName or "")
 
-	-- rewards for everyone who helped (the summoner gets double)
+	-- rewards for everyone who helped (the summoner gets double, the hourly one pays 3x)
 	local maxZone = 1
+	local bigMult = hourly and E.hourly.rewardMult or 1
 	for p, d in pairs(Data.all()) do
 		if p.Parent then
 			maxZone = math.max(maxZone, d.zones or 1)
 			if damage[p] then
-				local mult = (p == summoner) and 2 or 1
-				local coins = Progress.addCoins(p, d, E.reward * Econ.zoneMult(d) * Econ.coinMult(d) * mult)
+				local mult = ((p == summoner) and 2 or 1) * bigMult
+				local coins = Progress.addCoins(p, d, E.reward * Econ.zoneMult(d) * Econ.coinMult(d) * Progress.income(p) * mult)
 				d.megaPops = (d.megaPops or 0) + 1
 				Progress.ui(p, "megaReward", coins, math.floor(damage[p] / math.max(1, maxHp) * 100))
+				Live.quest(p, "mega", 1)
+				Live.badge(p, "MegaPop")
+			end
+			-- "play a round with a friend": everyone here with a friend in the server
+			if (tonumber(p:GetAttribute("Friends")) or 0) > 0 then
+				Live.quest(p, "friend", 1)
 			end
 		end
 	end
@@ -110,7 +124,7 @@ local function explode(last: Player?)
 	-- coin rain: the same coin positions for everyone, each player collects their own copy
 	local pos: { Vector3 } = {}
 	local flat: { number } = {}
-	for _ = 1, E.rainCoins do
+	for _ = 1, (hourly and E.hourly.rainCoins or E.rainCoins) do
 		local a = rng:NextNumber(0, math.pi * 2)
 		local r = 6 + math.sqrt(rng:NextNumber()) * (E.rainRadius - 6)
 		local x, z = math.cos(a) * r, math.sin(a) * r
@@ -123,26 +137,37 @@ local function explode(last: Player?)
 	local r: Rain = { pos = pos, values = {}, taken = {}, untilT = os.clock() + E.rainSeconds }
 	for p, d in pairs(Data.all()) do
 		if p.Parent then
-			local v = math.max(1, math.floor(E.rainValue * Econ.zoneMult(d) * Econ.coinMult(d)))
+			local v = math.max(1, math.floor(E.rainValue * Econ.zoneMult(d) * Econ.coinMult(d) * Progress.income(p)))
 			r.values[p] = v
 			r.taken[p] = {}
 			Progress.ui(p, "rain", flat, v)
 		end
 	end
 	rain = r
-	Balloons.shower(Config.Hub.center, E.showerCount, maxZone)
+	if paid then
+		Balloons.shower(Config.Hub.center, 0, maxZone, E.summonShower)
+	else
+		Balloons.shower(Config.Hub.center, hourly and E.hourly.showerCount or E.showerCount, maxZone)
+	end
 	Shop.notifyAll("🎉 MEGA POP! Grab the coins and the rare balloons!", "gold")
 end
 
--- Start the event: countdown first (seconds), then the rise.
-function Mega.start(countdown: number?, by: Player?)
+local function setHourly(on: boolean)
+	hourly = on
+	state:SetAttribute("Hourly", on)
+end
+
+-- Start the event: countdown first (seconds), then the rise. `by` = a paid summon; `big` = the hourly one.
+function Mega.start(countdown: number?, by: Player?, big: boolean?)
 	if phase ~= "idle" then
-		if by then
-			table.insert(queue, by)
+		if by or big then
+			table.insert(queue, { by = by, hourly = big == true })
 		end
 		return
 	end
 	summoner = by
+	paid = by ~= nil
+	setHourly(big == true)
 	state:SetAttribute("Summoner", by and by.DisplayName or "")
 	schedule(now() + (countdown or E.countdown))
 	setPhase("countdown")
@@ -154,10 +179,19 @@ function Mega.summon(player: Player): boolean
 		Mega.start(E.summonCountdown, player)
 		Shop.notifyAll("📣 " .. player.DisplayName .. " summoned a MEGA BALLOON! " .. E.summonCountdown .. " seconds!", "pink")
 	else
-		table.insert(queue, player)
+		table.insert(queue, { by = player, hourly = false })
 		Shop.notifyAll("📣 " .. player.DisplayName .. " summoned the next MEGA BALLOON!", "pink")
 	end
 	return true
+end
+
+-- Top of the hour: the HOURLY MEGA BALLOON (now, or right after the current one) and 2x coins for everyone.
+function Mega.hourly()
+	local h = E.hourly
+	Boosts.add("coins", h.boost, h.boostMinutes * 60, "HOURLY EVENT")
+	Shop.notifyAll(Config.Icons.clock .. " HOURLY EVENT! A GIANT MEGA BALLOON + " .. h.boost .. "x coins for everyone for " .. h.boostMinutes .. " minutes!", "gold")
+	Progress.uiAll("hourly")
+	Mega.start(E.countdown, nil, true)
 end
 
 -- Debug: skip straight to the explosion (the clip moment).
@@ -190,6 +224,7 @@ function Mega.hit(player: Player, d: { [string]: any }, mega: boolean)
 	if mega and (d.megaDarts or 0) > 0 then
 		d.megaDarts -= 1
 		Progress.touch(player)
+		Live.quest(player, "megadart", 1)
 		dmg *= Config.MegaDart.mult
 		style = 3
 		Progress.uiAll("boom", Config.Hub.megaPos, 10)
@@ -277,13 +312,17 @@ local function step()
 			rain = nil
 			damage = {}
 			summoner = nil
+			paid = false
+			setHourly(false)
 			state:SetAttribute("Summoner", "")
 			setPhase("idle")
 			-- a paid summon still runs for the server when its buyer has left
-			local nextBy = table.remove(queue, 1)
-			if nextBy then
-				summoner = nextBy
-				state:SetAttribute("Summoner", nextBy.DisplayName)
+			local nxt = table.remove(queue, 1)
+			if nxt then
+				summoner = nxt.by
+				paid = nxt.by ~= nil
+				setHourly(nxt.hourly)
+				state:SetAttribute("Summoner", nxt.by and nxt.by.DisplayName or "")
 				schedule(t + 15)
 				setPhase("countdown")
 			else
@@ -306,6 +345,7 @@ function Mega.init()
 	state:SetAttribute("FightAt", 0)
 	state:SetAttribute("PopAt", 0)
 	state:SetAttribute("Summoner", "")
+	state:SetAttribute("Hourly", false)
 	state.Parent = ReplicatedStorage
 	schedule(now() + E.firstDelay)
 	Players.PlayerRemoving:Connect(function(p)
@@ -327,7 +367,7 @@ function Mega.init()
 end
 
 function Mega.summary(): string
-	return string.format("mega=%s hp=%d/%d next=%ds", phase, math.max(0, math.floor(hp)), maxHp, math.floor(nextAt - now()))
+	return string.format("mega=%s%s hp=%d/%d next=%ds queue=%d", phase, hourly and " (HOURLY)" or "", math.max(0, math.floor(hp)), maxHp, math.floor(nextAt - now()), #queue)
 end
 
 return Mega

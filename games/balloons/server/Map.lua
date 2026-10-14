@@ -1,6 +1,7 @@
 -- Builds the world at server start: four floating island clusters (Meadow hub -> Candy Hills -> Sky Islands ->
 -- Space Rainbow), each higher and farther than the last and visible from the previous one, joined by bridges
--- with coin gates. House style: SmoothPlastic palette parts, generated MaterialVariants only on big flat
+-- with coin gates. Story props: little houses carried into the sky by balloon bunches, and the secret Balloon
+-- Factory behind Space Rainbow (the ending: Map.factoryPrompt). House style: SmoothPlastic palette parts, generated MaterialVariants only on big flat
 -- surfaces (white tint when the variant exists, palette colour when it does not), props in clusters, clouds.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
@@ -23,6 +24,7 @@ local rng = Random.new(20261010)
 export type GateInfo = { zone: number, wall: BasePart, prompt: ProximityPrompt }
 Map.gates = {} :: { GateInfo }
 Map.root = nil :: Folder?
+Map.factoryPrompt = nil :: ProximityPrompt?
 
 -- Colour + variant for a surface that may carry a generated texture. The colour stays the palette colour:
 -- World.texture turns it into the right tint when the variant exists.
@@ -277,7 +279,7 @@ local function buildHub(parent: Instance)
 	end
 	-- title over the spawn-side arch
 	local titleCf = CFrame.lookAt(V(0, 10.5, 34), V(0, 10.5, 80))
-	World.sign(hub, titleCf, Vector2.new(18, 3.4), "POP ALL THE BALLOONS!", P.red, WHITE)
+	World.sign(hub, titleCf, Vector2.new(18, 3.4), string.upper(Config.TitlePlain), P.red, WHITE)
 	finalize(hub, true)
 end
 
@@ -406,7 +408,7 @@ local function gate(parent: Instance, zoneIndex: number)
 		l.Font = Enum.Font.LuckiestGuy
 		l.TextScaled = true
 		l.TextColor3 = WHITE
-		l.Text = "🔒 " .. string.upper(z.name) .. "\n💰 " .. Fmt.commas(z.cost)
+		l.Text = "🔒 " .. string.upper(z.name) .. "\n💰 " .. Fmt.commas(z.cost) .. "  or  👹 " .. string.upper(Config.Zones[zoneIndex - 1].name) .. " BOSS"
 		local st = Instance.new("UIStroke")
 		st.Thickness = 4
 		st.Color = P.ink
@@ -425,6 +427,54 @@ local function gate(parent: Instance, zoneIndex: number)
 	prompt:SetAttribute("Zone", zoneIndex)
 	prompt.Parent = wall
 	table.insert(Map.gates, { zone = zoneIndex, wall = wall, prompt = prompt })
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- Story: houses carried off by balloon bunches ("the balloons are carrying the town away!")
+---------------------------------------------------------------------------------------------------------------
+
+local function flyingHouse(parent: Instance, pos: Vector3, wall: Color3, roof: Color3, yaw: number, tilt: number)
+	local m = World.model("FlyingHouse", parent)
+	local cf = CF(pos) * CFrame.Angles(0, RAD(yaw), RAD(tilt))
+	World.box(m, cf, V(8, 6, 7), wall)
+	World.box(m, cf * CF(0, -3.25, 0), V(8.8, 0.6, 7.8), P.meadow.dirt)
+	World.box(m, cf * CF(0, 3, 0) * CFrame.Angles(0, 0, RAD(45)), V(4.2, 4.2, 6.9), wall) -- gable
+	for _, sx in ipairs({ -1, 1 }) do
+		World.box(m, cf * CF(sx * 2.2, 4.35, 0) * CFrame.Angles(0, 0, RAD(-sx * 42)), V(6.4, 0.55, 8.2), roof)
+	end
+	World.box(m, cf * CF(2.3, 5.6, 1.6), V(1.1, 2.6, 1.1), P.red) -- chimney
+	World.box(m, cf * CF(-1.7, -1.3, -3.55), V(1.8, 3.2, 0.2), P.meadow.trunk) -- door
+	for _, wx in ipairs({ 1.9 }) do
+		World.box(m, cf * CF(wx, 0.4, -3.55), V(2, 1.8, 0.2), P.white)
+		World.box(m, cf * CF(wx, 0.4, -3.6), V(1.6, 1.4, 0.2), P.sky)
+	end
+	World.box(m, cf * CF(3.55, 0.4, 0), V(0.2, 1.6, 1.8), P.sky)
+	-- the balloon bunch lifting it, strings tied to the roof ridge
+	local knot = (cf * CF(0, 5.4, 0)).Position
+	local cols = { P.red, P.yellow, P.sky, P.pink, P.mint, P.lilac, P.orange }
+	for i = 1, 12 do
+		local a = i * 2.39996
+		local r = 1.4 + (i % 4) * 1.15
+		local bp = knot + V(math.cos(a) * r, 9 + (i % 3) * 1.7 + r * 0.5, math.sin(a) * r)
+		local d = 2.5 + (i % 2) * 0.5
+		BalloonArt.simple(m, bp, d, cols[i % #cols + 1], 0, nil)
+		World.rod(m, knot, bp - V(0, d * 0.58, 0), 0.07, P.string)
+	end
+	for _, inst in ipairs(m:GetDescendants()) do
+		if inst:IsA("BasePart") then
+			(inst :: BasePart).CanCollide = false
+		end
+	end
+	finalize(m)
+end
+
+local function buildFlyingHouses(parent: Instance)
+	local f = World.folder("FlyingHouses", parent)
+	local m = P.meadow
+	flyingHouse(f, V(-48, 30, 18), P.structure, P.red, 20, 6)
+	flyingHouse(f, V(56, 42, -28), Color3.fromRGB(255, 228, 170), Color3.fromRGB(80, 150, 230), -30, -5)
+	flyingHouse(f, V(-64, 58, -112), Color3.fromRGB(205, 240, 210), m.trunk, 45, 4)
+	flyingHouse(f, V(42, 74, -172), Color3.fromRGB(255, 205, 225), Color3.fromRGB(140, 90, 200), 10, -7)
 end
 
 ---------------------------------------------------------------------------------------------------------------
@@ -756,7 +806,66 @@ end
 
 local SPACE_BLOBS = {
 	{ 0, -826, 24 }, { 0, -892, 46 }, { 84, -890, 36 }, { -84, -890, 36 }, { 0, -956, 30 }, { 52, -944, 20 }, { -52, -944, 20 },
+	{ 0, -1000, 18 }, -- the Balloon Factory's ledge
 }
+
+-- The secret ending: the Balloon Factory where every balloon comes from, at the back of Space Rainbow.
+local function buildFactory(parent: Instance)
+	local f = World.model("BalloonFactory", parent)
+	local c = Config.Factory.pos
+	local y = c.Y
+	local wall = Color3.fromRGB(78, 66, 120)
+	local dark = Color3.fromRGB(46, 38, 78)
+	local pink, cyan = P.space.pink, P.space.cyan
+	local front = c.Z + 6 -- the door side (faces +Z)
+	World.box(f, CF(c + V(0, 5.5, 0)), V(22, 11, 12), wall)
+	World.box(f, CF(c + V(0, 7.6, 6.05)), V(22.2, 0.6, 0.2), pink, { Material = Enum.Material.Neon })
+	World.box(f, CF(c + V(0, 0.4, 0)), V(23, 0.8, 13), dark)
+	-- sawtooth roof
+	for i = -1, 1 do
+		World.box(f, CF(c + V(i * 7.2, 12.2, 0)) * CFrame.Angles(0, 0, RAD(24)), V(7.8, 0.6, 12.4), dark)
+		World.box(f, CF(c + V(i * 7.2 + 3.1, 12.6, 0)), V(0.5, 2.6, 12.2), cyan, { Material = Enum.Material.Neon, Transparency = 0.3 })
+	end
+	-- chimneys puffing out new balloons
+	local cols = { P.red, P.yellow, P.sky, P.pink, P.mint, P.lilac }
+	for k, cx in ipairs({ -6.5, 6 }) do
+		local base = V(c.X + cx, y + 11, c.Z - 3)
+		World.cyl(f, base, 10, 3.2, dark)
+		World.cyl(f, base + V(0, 10, 0), 0.8, 3.8, cyan, { Material = Enum.Material.Neon })
+		for i = 1, 5 do
+			local h = 12 + i * i * 1.1
+			local drift = V(math.sin(i * 1.7 + k) * i * 0.7, h, math.cos(i * 1.3 + k) * i * 0.5)
+			BalloonArt.simple(f, base + drift, 2.2 + i * 0.25, cols[(i + k) % #cols + 1], 2, nil)
+		end
+	end
+	-- a pipe into the island and a conveyor of fresh balloons by the door
+	World.rod(f, V(c.X - 11, y + 8, c.Z + 2), V(c.X - 15, y - 2, c.Z + 4), 2.2, dark)
+	World.box(f, CF(c.X + 7.5, y + 1.2, front + 3), V(6, 1, 2.6), P.ink)
+	for i = 0, 2 do
+		World.cyl(f, V(c.X + 5.2 + i * 2.3, y + 0.2, front + 3), 1, 0.9, Color3.fromRGB(160, 160, 180))
+		BalloonArt.simple(f, V(c.X + 5.6 + i * 2, y + 3.4, front + 3), 1.6, cols[i + 1], 1.2, V(c.X, y + 3.4, front + 20))
+	end
+	-- the door, hazard stripes and a mystery sign
+	local door = World.box(f, CF(c.X, y + 3.6, front + 0.15), V(5, 7, 0.4), P.ink, { Name = "FactoryDoor" })
+	for i = 0, 3 do
+		World.box(f, CF(c.X - 2.25 + i * 1.5, y + 7.35, front + 0.4) * CFrame.Angles(0, 0, RAD(35)), V(0.6, 1.4, 0.15), P.yellow)
+	end
+	World.box(f, CF(c.X, y + 3.6, front + 0.4), V(0.25, 6.6, 0.1), Color3.fromRGB(90, 90, 110))
+	local signCf = CFrame.lookAt(V(c.X, y + 9.4, front + 0.6), V(c.X, y + 9.4, front + 20))
+	World.sign(f, signCf, Vector2.new(12, 2.4), "🏭 ???", pink, WHITE)
+	finalize(f, true)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "FactoryPrompt"
+	prompt.ActionText = "Shut down"
+	prompt.ObjectText = "🏭 ???"
+	prompt.HoldDuration = 1.2
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt.Parent = door
+	Map.factoryPrompt = prompt
+end
 
 local function crystals(parent: Instance, pos: Vector3, scale: number)
 	local cols = { P.space.cyan, P.space.pink, Config.Palette.lilac }
@@ -811,6 +920,7 @@ local function buildSpace(zm: Model)
 		World.rocks(decor, g(p[1], p[2]), { rock = Color3.fromRGB(150, 140, 190), rockDark = Color3.fromRGB(110, 100, 150) }, rng, 1)
 	end
 	signBoard(decor, g(0, -840) + V(0, 6, 0), g(0, -810) + V(0, 6, 0), "🌈 SPACE RAINBOW  x1000 COINS", 20, 2.8, Color3.fromRGB(120, 70, 220))
+	buildFactory(zm)
 	-- star field
 	for _ = 1, 70 do
 		local p = V(rng:NextNumber(-260, 260), y + rng:NextNumber(30, 220), -890 + rng:NextNumber(-260, 220))
@@ -860,6 +970,7 @@ function Map.build(): Folder
 		zones[i] = m
 	end
 	buildMeadow(zones[1])
+	buildFlyingHouses(zones[1])
 	buildCandy(zones[2])
 	buildSky(zones[3])
 	buildSpace(zones[4])

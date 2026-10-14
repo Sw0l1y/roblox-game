@@ -59,6 +59,19 @@ local function attr(name: string, default: any): any
 	return v
 end
 
+-- The HOURLY MEGA BALLOON (kit Live.onHour on the server): bigger, richer, its own title.
+local function hourly(): boolean
+	return attr("Hourly", false) == true
+end
+
+local function megaScale(): number
+	return hourly() and E.hourly.scale or 1
+end
+
+local function title(): string
+	return hourly() and (Config.Icons.clock .. " HOURLY MEGA BALLOON") or (Config.Icons.mega .. " MEGA BALLOON")
+end
+
 local function hrp(): BasePart?
 	local c = player.Character
 	local h = c and c:FindFirstChild("HumanoidRootPart")
@@ -299,24 +312,24 @@ local function onPhase()
 	if p == "countdown" then
 		countdownLen = math.max(3, attr("NextAt", t + E.countdown) - t)
 		lastSecond = -1
-		setScale(0.12)
+		setScale(0.12 * megaScale())
 		show(true)
 		local by = attr("Summoner", "")
-		UI.banner(Config.Icons.mega .. " MEGA BALLOON INCOMING!", "pink", 2.4)
+		UI.banner(title() .. " INCOMING!", hourly() and "gold" or "pink", 2.4)
 		UI.toast(by ~= "" and ("📣 " .. by .. " summoned the MEGA BALLOON! Get to the hub!") or "🎈 The MEGA BALLOON is inflating at the hub! Get there!", "pink", 4)
 		Sfx.play("notify", 0.6)
 		Sfx.play("reveal", 0.4)
 	elseif p == "rise" then
 		show(true)
 		Hud.setPill(nil)
-		Hud.setMegaHp(true, attr("Hp", 1), attr("MaxHp", 1), Config.Icons.mega .. " MEGA BALLOON")
-		UI.banner("POP THE MEGA BALLOON!", "pink", 2.2)
+		Hud.setMegaHp(true, attr("Hp", 1), attr("MaxHp", 1), title())
+		UI.banner("POP THE " .. (hourly() and "HOURLY " or "") .. "MEGA BALLOON!", "pink", 2.2)
 		Sfx.play("reveal", 0.6, 0.9)
 	elseif p == "fight" then
 		show(true)
 		Hud.setPill(nil)
-		setScale(1)
-		Hud.setMegaHp(true, attr("Hp", 1), attr("MaxHp", 1), Config.Icons.mega .. " MEGA BALLOON")
+		setScale(megaScale())
+		Hud.setMegaHp(true, attr("Hp", 1), attr("MaxHp", 1), title())
 		if prev ~= "rise" then
 			UI.toast("🎈 The MEGA BALLOON is up! Throw darts at it!", "pink", 3)
 		end
@@ -343,14 +356,14 @@ local function step(dt: number)
 		local nextAt = attr("NextAt", t)
 		local left = math.max(0, nextAt - t)
 		local k = 1 - math.clamp(left / math.max(1, countdownLen), 0, 1)
-		setScale(0.12 + 0.43 * k)
+		setScale((0.12 + 0.43 * k) * megaScale())
 		local d = H.megaSize * scale
 		center = Vector3.new(0, H.nozzleTop + d * 0.575 - 0.3, 0)
 		radius = d / 2
 		local sec = math.ceil(left)
 		if sec ~= lastSecond then
 			lastSecond = sec
-			Hud.setPill(Config.Icons.mega .. " MEGA BALLOON in " .. Fmt.time(sec) .. "!", "pink")
+			Hud.setPill(title() .. " in " .. Fmt.time(sec) .. "!", hourly() and "gold" or "pink")
 			Hud.pillPunch()
 			if sec <= 5 and sec >= 1 then
 				UI.banner(tostring(sec), "pink", 0.8)
@@ -365,7 +378,7 @@ local function step(dt: number)
 		local fightAt = attr("FightAt", t)
 		local k = 1 - math.clamp((fightAt - t) / E.riseTime, 0, 1)
 		local e = k * k * (3 - 2 * k)
-		setScale(0.55 + 0.45 * e)
+		setScale((0.55 + 0.45 * e) * megaScale())
 		local d = H.megaSize * scale
 		local startY = H.nozzleTop + d * 0.575
 		center = Vector3.new(0, startY + (H.megaPos.Y - startY) * e, 0)
@@ -377,7 +390,7 @@ local function step(dt: number)
 	elseif phase == "fight" then
 		local hp, maxHp = attr("Hp", 1), math.max(1, attr("MaxHp", 1))
 		local frac = math.clamp(hp / maxHp, 0, 1)
-		setScale(1 + 0.2 * (1 - frac))
+		setScale((1 + 0.2 * (1 - frac)) * megaScale())
 		radius = H.megaSize * scale / 2
 		local jitter = frac < 0.25 and (0.25 - frac) * 3 or 0
 		local w = wobble
@@ -390,7 +403,7 @@ local function step(dt: number)
 		local by = attr("Summoner", "")
 		Hud.setPill(nil)
 		if by ~= "" then
-			Hud.setMegaHp(true, nil, nil, Config.Icons.mega .. " MEGA BALLOON · summoned by " .. by)
+			Hud.setMegaHp(true, nil, nil, title() .. " · summoned by " .. by)
 		end
 	elseif phase == "popped" then
 		local sec = math.ceil(math.max(0, coinsUntil - os.clock()))

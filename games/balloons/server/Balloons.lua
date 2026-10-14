@@ -12,6 +12,7 @@ local Tiers = require(Shared:WaitForChild("Tiers"))
 local Config = require(Shared:WaitForChild("Config"))
 local Econ = require(Shared:WaitForChild("Econ"))
 local Data = require(script.Parent:WaitForChild("Data"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Progress = require(script.Parent:WaitForChild("Progress"))
 
 local Balloons = {}
@@ -31,6 +32,7 @@ export type Balloon = {
 	dmg: { [Player]: number },
 	reserved: Player?,
 	reservedUntil: number,
+	owner: Player?, -- zone boss: the player who summoned it (gets the full reward and the zone clear)
 }
 
 -- pop flags (sent to clients)
@@ -85,7 +87,7 @@ function Balloons.hoverY(groundY: number, size: number): number
 	return groundY + Config.Spawn.hoverBase + size * 0.6 + rng:NextNumber(0, Config.Spawn.hoverJitter)
 end
 
-export type SpawnOpts = { shower: boolean?, quiet: boolean?, life: number?, fromMega: boolean?, reserved: Player?, hp: number? }
+export type SpawnOpts = { shower: boolean?, quiet: boolean?, life: number?, fromMega: boolean?, reserved: Player?, hp: number?, owner: Player? }
 
 function Balloons.spawn(key: string, pos: Vector3, o: SpawnOpts?): Balloon?
 	local opts: SpawnOpts = o or {}
@@ -116,6 +118,7 @@ function Balloons.spawn(key: string, pos: Vector3, o: SpawnOpts?): Balloon?
 		dmg = {},
 		reserved = opts.reserved,
 		reservedUntil = opts.reserved and (os.clock() + 20) or 0,
+		owner = opts.owner,
 	}
 	list[b.id] = b
 	if not b.shower then
@@ -146,10 +149,14 @@ local function pop(b: Balloon, popper: Player?, flags: number)
 	end
 	remove(b)
 	table.insert(outPop, { b.id, popper and popper.UserId or 0, flags })
+	local owner = b.owner
+	if owner and owner.Parent and not b.dmg[owner] then
+		b.dmg[owner] = 0 -- a boss's summoner always gets the clear, even if a friend landed every dart
+	end
 	for p in pairs(b.dmg) do
 		if p.Parent then
-			local share = (p == popper) and 1 or Config.Throw.helperShare
-			Progress.reward(p, b.key, { id = b.id, pos = b.pos, share = share, shower = b.shower, aura = (flags == Balloons.AURA) and p == popper })
+			local share = (p == popper or p == owner) and 1 or Config.Throw.helperShare
+			Progress.reward(p, b.key, { id = b.id, pos = b.pos, share = share, shower = b.shower, aura = (flags == Balloons.AURA) and p == popper, owner = owner })
 		end
 	end
 end
@@ -213,6 +220,8 @@ end
 function Balloons.dartStyle(player: Player): number
 	if player:GetAttribute("Golden") then
 		return 2
+	elseif player:GetAttribute("Pumpkin") then
+		return 5
 	elseif player:GetAttribute("VIP") then
 		return 1
 	end
@@ -266,6 +275,7 @@ function Balloons.hit(player: Player, d: { [string]: any }, id: number, mega: bo
 	if mega and not bump and (d.megaDarts or 0) > 0 then
 		d.megaDarts -= 1
 		Progress.touch(player)
+		Live.quest(player, "megadart", 1)
 		local hand = Balloons.handOf(player)
 		if hand then
 			dartRemote:FireAllClients(player.UserId, hand, id, 3)
@@ -279,7 +289,11 @@ function Balloons.hit(player: Player, d: { [string]: any }, id: number, mega: bo
 			dartRemote:FireAllClients(player.UserId, hand, id, Balloons.dartStyle(player))
 		end
 	end
-	if not Balloons.damage(b, player, power, 0) and list[id] and b.reserved and b.reserved ~= player then
+	if Balloons.damage(b, player, power, 0) then
+		if bump then
+			Live.quest(player, "bump", 1)
+		end
+	elseif list[id] and b.reserved and b.reserved ~= player then
 		-- reserved for a new player: tell this client it did not pop
 		remote:FireClient(player, { s = {}, h = { { id, math.ceil(b.hp) } }, p = {}, g = {} })
 	end
@@ -346,7 +360,7 @@ local function spawnIn(zone: number, players: { Player }, quiet: boolean?)
 	local near: Vector3? = nil
 	if target then
 		local d = Data.get(target)
-		luck = Econ.luck(d, os.time())
+		luck = Progress.luck(target, d)
 		local hrp = Progress.root(target)
 		near = hrp and hrp.Position or nil
 	end
@@ -383,8 +397,10 @@ function Balloons.spawnNear(player: Player, key: string, distance: number?, o: S
 	return Balloons.spawn(key, Vector3.new(spot.X, Balloons.hoverY(groundY, def.size), spot.Z), o)
 end
 
--- MEGA BALLOON shower: rare one-hit balloons burst out of the Mega and land around the plaza.
-function Balloons.shower(center: Vector3, count: number, maxZone: number)
+-- MEGA BALLOON shower: rare one-hit balloons burst out of the Mega and land around the plaza. A free event
+-- rolls tiers from Config.Event.showerWeights; a PAID summon passes `fixed` (tier -> count, shown in the shop
+-- before purchase) and gets exactly that set, its zones taken in turn: no random reward is bought.
+function Balloons.shower(center: Vector3, count: number, maxZone: number, fixed: { [string]: number }?)
 	local weights = {}
 	for ti, tier in ipairs(Config.TierOrder) do
 		local w = Config.Event.showerWeights[tier]
@@ -392,11 +408,26 @@ function Balloons.shower(center: Vector3, count: number, maxZone: number)
 			table.insert(weights, { tier = tier, ti = ti, weight = w })
 		end
 	end
+	local picks: { number } = {}
+	if fixed then
+		for ti, tier in ipairs(Config.TierOrder) do
+			for _ = 1, fixed[tier] or 0 do
+				table.insert(picks, ti)
+			end
+		end
+		count = #picks
+	end
 	for i = 1, count do
 		task.delay(0.05 + i * 0.07, function()
-			local e = Tiers.roll(weights, rng, 1)
-			local zone = rng:NextInteger(1, math.max(1, maxZone))
-			local key = Config.ZoneTypes[zone][e.ti]
+			local ti, zone
+			if fixed then
+				ti = picks[i]
+				zone = (i - 1) % math.max(1, maxZone) + 1
+			else
+				ti = Tiers.roll(weights, rng, 1).ti
+				zone = rng:NextInteger(1, math.max(1, maxZone))
+			end
+			local key = Config.ZoneTypes[zone][ti]
 			local def = Config.Balloons[key]
 			if not def then
 				return
@@ -502,6 +533,15 @@ local function ftueStep()
 			end
 			local ft = d.ftue or {}
 			local s = Progress.sessionTime(p)
+			-- a free gift before the first minute is over
+			if not ft.gift and s >= Config.Ftue.giftAt then
+				d.ftue = ft
+				ft.gift = true
+				local g = Config.Ftue.gift
+				d.megaDarts = (d.megaDarts or 0) + (g.megaDarts or 0)
+				Progress.touch(p)
+				Progress.ui(p, "gift", 0, g.megaDarts or 0, 0, "welcome")
+			end
 			local n = seeded[p] or 0
 			if not ft.rare and ((n == 0 and s >= Config.Ftue.rareAt) or (n == 1 and s >= Config.Ftue.rareRetry)) then
 				seeded[p] = n + 1

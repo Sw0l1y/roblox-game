@@ -13,6 +13,7 @@ local Econ = require(Shared:WaitForChild("Econ"))
 local BalloonArt = require(Shared:WaitForChild("BalloonArt"))
 local Data = require(script.Parent:WaitForChild("Data"))
 local Shop = require(script.Parent:WaitForChild("Shop"))
+local Live = require(script.Parent:WaitForChild("Live"))
 local Progress = require(script.Parent:WaitForChild("Progress"))
 
 local Pump = {}
@@ -158,6 +159,7 @@ function Pump.collect(player: Player, s: Spot?)
 	end
 	d.pump = 0
 	Progress.addCoins(player, d, amount)
+	Live.quest(player, "pump", 1)
 	Progress.ui(player, "pump", amount, mine.top)
 	fxRemote:FireAllClients("burst", mine.top + Vector3.new(0, 2, 0), { mine.color, P.yellow, P.white }, 22, 1.2)
 	render(mine)

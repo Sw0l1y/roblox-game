@@ -1,5 +1,6 @@
 -- Pop All The Balloons! 🎈 — server entry point.
--- Order: remotes, lighting, world, data, shop, then the game systems (balloons, MEGA BALLOON event, pumps).
+-- Order: remotes, lighting, world, data, shop, live features, then the game systems (balloons, MEGA BALLOON
+-- event, zone bosses, pumps).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -17,6 +18,8 @@ local Progress = require(script.Parent:WaitForChild("Lib"):WaitForChild("Progres
 local Balloons = require(script.Parent:WaitForChild("Lib"):WaitForChild("Balloons"))
 local Mega = require(script.Parent:WaitForChild("Lib"):WaitForChild("Mega"))
 local Pump = require(script.Parent:WaitForChild("Lib"):WaitForChild("Pump"))
+local Boss = require(script.Parent:WaitForChild("Lib"):WaitForChild("Boss"))
+local Policy = require(script.Parent:WaitForChild("Lib"):WaitForChild("Policy"))
 local Debug = require(script.Parent:WaitForChild("Lib"):WaitForChild("Debug"))
 local Live = require(script.Parent:WaitForChild("Lib"):WaitForChild("Live"))
 
@@ -73,48 +76,84 @@ local function packGrant(key: string): (Player, { [string]: any }) -> boolean
 	end
 end
 
+local function dartsGrant(key: string): (Player, { [string]: any }) -> boolean
+	return function(player, d)
+		local n = Config.Products[key].darts or 10
+		d.megaDarts = (d.megaDarts or 0) + n
+		Progress.touch(player)
+		Progress.ui(player, "bought", key, n)
+		return true
+	end
+end
+
+local function trialGrant(key: string): (Player, { [string]: any }) -> boolean
+	return function(player, d)
+		local item = Config.Products[key]
+		Progress.giveTrial(player, d, item.trial :: string, item.minutes or 15)
+		return true
+	end
+end
+
+-- Products the game grants itself (gift copies and server boosts are granted by the kit Shop).
+local grants: { [string]: (Player, { [string]: any }) -> boolean } = {
+	MegaDarts = dartsGrant("MegaDarts"),
+	MegaDarts50 = dartsGrant("MegaDarts50"),
+	LuckBoost = function(player, d)
+		d.luckUntil = math.max(os.time(), tonumber(d.luckUntil) or 0) + 15 * 60
+		Progress.touch(player)
+		Progress.ui(player, "bought", "LuckBoost", 15)
+		return true
+	end,
+	SummonMega = function(player, _d)
+		return Mega.summon(player)
+	end,
+	Starter = function(player, d)
+		local item = Config.Products.Starter
+		local coins = Progress.addCoins(player, d, Econ.packCoins(item.base or 2000, d))
+		if not d.starter then
+			d.starter = true
+			d.megaDarts = (d.megaDarts or 0) + (item.darts or 15)
+			if Policy.randomBlocked(player) then
+				d.megaDarts += 10 -- no paid luck under the paid random item rule: the fixed swap shown in the shop
+			else
+				d.luckUntil = math.max(os.time(), tonumber(d.luckUntil) or 0) + 30 * 60
+			end
+		end
+		Progress.touch(player)
+		Progress.ui(player, "bought", "Starter", coins)
+		return true
+	end,
+	Intro = function(player, d)
+		local item = Config.Products.Intro
+		local coins = Progress.addCoins(player, d, Econ.packCoins(item.base or 3000, d))
+		d.megaDarts = (d.megaDarts or 0) + (item.darts or 10)
+		Progress.touch(player)
+		Progress.ui(player, "bought", "Intro", coins)
+		return true
+	end,
+}
+for key, item in pairs(Config.Products) do
+	if item.tab == "coins" then
+		grants[key] = packGrant(key)
+	elseif item.trial then
+		grants[key] = trialGrant(key)
+	end
+end
+
 Shop.init({
 	passes = Config.Passes :: any,
 	products = Config.Products :: any,
-	grants = {
-		MegaDarts = function(player, d)
-			d.megaDarts = (d.megaDarts or 0) + 10
-			Progress.touch(player)
-			Progress.ui(player, "bought", "MegaDarts", 10)
-			return true
-		end,
-		LuckBoost = function(player, d)
-			d.luckUntil = math.max(os.time(), tonumber(d.luckUntil) or 0) + 15 * 60
-			Progress.touch(player)
-			Progress.ui(player, "bought", "LuckBoost", 15)
-			return true
-		end,
-		SummonMega = function(player, _d)
-			return Mega.summon(player)
-		end,
-		Starter = function(player, d)
-			local item = Config.Products.Starter
-			local coins = Progress.addCoins(player, d, Econ.packCoins(item.base or 2000, d))
-			if not d.starter then
-				d.starter = true
-				d.megaDarts = (d.megaDarts or 0) + 15
-				d.luckUntil = math.max(os.time(), tonumber(d.luckUntil) or 0) + 30 * 60
-			end
-			Progress.touch(player)
-			Progress.ui(player, "bought", "Starter", coins)
-			return true
-		end,
-		Coins1 = packGrant("Coins1"),
-		Coins2 = packGrant("Coins2"),
-		Coins3 = packGrant("Coins3"),
-	},
+	grants = grants,
 })
 
+-- Live features: codes, group gift, playtime gifts, daily quests, badges, invites, friend bonus (Progress.income).
+-- Coin rewards are pack sizes, scaled to the player's best zone and rebirths like the coin products.
 Live.init({
 	config = Config.Live,
-	grant = function(player, d, reward, _source)
+	grant = function(player, d, reward, source)
+		local coins = 0
 		if reward.coins then
-			Progress.addCoins(player, d, Econ.packCoins(reward.coins, d))
+			coins = Progress.addCoins(player, d, Econ.packCoins(reward.coins, d))
 		end
 		if reward.megaDarts then
 			d.megaDarts = (d.megaDarts or 0) + reward.megaDarts
@@ -123,11 +162,17 @@ Live.init({
 			d.luckUntil = math.max(os.time(), tonumber(d.luckUntil) or 0) + reward.luckMinutes * 60
 		end
 		Progress.touch(player)
+		Progress.ui(player, "gift", coins, reward.megaDarts or 0, reward.luckMinutes or 0, source)
 	end,
 })
+-- Top of every hour: the HOURLY MEGA BALLOON and 10 minutes of 2x coins for the server.
+Live.onHour(function(_hour)
+	Mega.hourly()
+end)
 
 Balloons.init()
 Mega.init()
+Boss.init()
 Pump.init()
 Debug.init()
 
@@ -161,6 +206,9 @@ end
 for k, f in pairs(Mega.actions) do
 	handlers[k] = f
 end
+for k, f in pairs(Boss.actions) do
+	handlers[k] = f
+end
 Net.event("Action").OnServerEvent:Connect(function(player, kind, arg)
 	if type(kind) ~= "string" then
 		return
@@ -176,6 +224,14 @@ end)
 for _, g in ipairs(Map.gates) do
 	g.prompt.Triggered:Connect(function(player)
 		Progress.unlockZone(player, g.zone)
+	end)
+end
+
+-- The secret Balloon Factory (the ending).
+local factoryPrompt = Map.factoryPrompt
+if factoryPrompt then
+	factoryPrompt.Triggered:Connect(function(player)
+		Progress.factory(player)
 	end)
 end
 

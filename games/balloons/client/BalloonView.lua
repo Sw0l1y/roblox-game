@@ -133,6 +133,8 @@ end
 local function myStyle(): number
 	if player:GetAttribute("Golden") then
 		return 2
+	elseif player:GetAttribute("Pumpkin") then
+		return 5
 	elseif player:GetAttribute("VIP") then
 		return 1
 	end
@@ -182,7 +184,7 @@ local function makeLabel(v: View)
 		tl.Font = Enum.Font.LuckiestGuy
 		tl.TextScaled = true
 		tl.TextColor3 = Color3.new(1, 1, 1)
-		tl.Text = (v.shower and "🎁 BONUS " or "") .. string.upper(tier.name)
+		tl.Text = (v.shower and "🎁 BONUS " or "") .. (def.label or string.upper(tier.name))
 		if tier.rainbow then
 			UI.rainbow(tl)
 		else
@@ -439,6 +441,7 @@ local DART_STYLES: { [number]: DartStyle } = {
 	[2] = { shaft = P.gold, fin = P.gold, scale = 1.25, glow = true }, -- Golden Dart
 	[3] = { shaft = P.red, fin = P.orange, scale = 2.4, glow = true }, -- Mega Dart
 	[4] = { shaft = P.sky, fin = P.pink, scale = 1.2, glow = false }, -- Party Bots
+	[5] = { shaft = P.orange, fin = P.meadow.leaf1, scale = 1.15, glow = true }, -- Pumpkin Darts (Halloween)
 }
 local pools: { [number]: { Dart } } = {}
 local flights: { Flight } = {}
@@ -1114,6 +1117,12 @@ function BalloonView.onReward(_id: any, key: any, coins: any, pos: any, first: a
 		flyBudget -= 1
 		local sp = UI.screenPos(at) or UI.center()
 		UI.fly(sp, Hud.coinTarget(), aura and 1 or math.clamp(ti + 1, 2, 7), Config.Icons.coin, Hud.punchCoins)
+	end
+	if helper ~= true and player:GetAttribute("Pumpkin") and near then
+		Fx.burst(at, { P.orange, P.lilac, P.yellow, P.meadow.leaf1 }, 10, 1.2) -- Pumpkin Darts: candy pops
+	end
+	if def.boss then
+		return -- a zone boss: Main's bossDown handler celebrates it
 	end
 	if first == true then
 		Hud.markIndexNew()

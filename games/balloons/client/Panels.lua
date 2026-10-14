@@ -1,6 +1,10 @@
--- Menus: Upgrades, Shop (Passes / Boosts / Coins), Balloon Index (per zone, 3D previews, odds, set bonuses),
--- Zones (unlock + teleport), Rebirth, Daily Gift and the Welcome Back (offline pump earnings) card.
+-- Menus: Upgrades, Shop (Passes with TRY / GIFT, Items, Server boosts, Coins), the live Odds sheet of every
+-- luck item, the Starter Pack offer (first 10 minutes, with its countdown), Balloon Index (per zone, 3D previews,
+-- live odds, set bonuses), Zones (unlock + teleport), Rebirth, Daily Gift and the Welcome Back card.
 -- Every button only asks the server (Action / Buy remotes); panels redraw from State on every data push.
+-- Paid random rule: luck is the only paid random in the game (it changes which balloons spawn). Luck items show
+-- their live odds (NOW vs WITH IT) and are hidden for players under the paid random item restriction.
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Net = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Net"))
@@ -13,12 +17,14 @@ local UI = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("UI"
 local Sfx = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("Sfx"))
 local State = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("State"))
 local Hud = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("Hud"))
+local LiveUI = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("LiveUI"))
 
 local Panels = {}
 
 type PData = { [string]: any }
 
 local I = Config.Icons
+local player = Players.LocalPlayer
 local actionRemote = Net.event("Action")
 local buyRemote = Net.event("Buy")
 
@@ -53,11 +59,60 @@ local function setButton(b: TextButton, text: string, color: any)
 	UI.recolor(b, color)
 end
 
+-- Roblox's paid random item restriction for this player (kit Policy attribute; restricted until it loads).
+local function blocked(): boolean
+	return player:GetAttribute("RandomBlocked") ~= false
+end
+
+local function luckNow(d: PData?): number
+	return Econ.luck(d, Econ.now(), blocked())
+end
+
+-- Planned price from Config until kit Prices.sync writes the live one (regional pricing) into the catalog.
+local function robux(item: Config.CatalogItem): string
+	return "R$ " .. Fmt.commas(item.price)
+end
+
+-- What each paid luck item adds (its odds sheet compares NOW with WITH IT).
+local LUCK_WITH: { [string]: Econ.LuckWith } = {
+	Lucky = { lucky = true },
+	LuckBoost = { boost = true },
+	Starter = { boost = true },
+	LuckServer2 = { server = 2 },
+	LuckServer4 = { server = 4 },
+}
+
+local function catalogItem(key: string): Config.CatalogItem?
+	return Config.Passes[key] or Config.Products[key]
+end
+
+-- The zone whose odds we show: the one the player stands in, else their best zone.
+local function oddsZoneFor(d: PData?): number
+	local best = math.clamp(d and tonumber(d.zones) or 1, 1, #Config.Zones)
+	if Hud.zone >= 1 and Hud.zone <= best then
+		return Hud.zone
+	end
+	return best
+end
+
+-- "🌟 Secret 0.05% → 0.11% 🍀": the zone's rarest balloon now and with this luck item.
+local function topOddsLine(d: PData?, key: string): string
+	local z = oddsZoneFor(d)
+	local now = Econ.zoneOdds(z, luckNow(d))
+	local with = Econ.zoneOdds(z, Econ.luck(d, Econ.now(), blocked(), LUCK_WITH[key]))
+	local top = now[#now]
+	if not top then
+		return ""
+	end
+	local a, b = Tiers.pct(top.pct), Tiers.pct(with[#with].pct)
+	return "🌟 " .. Tiers.get(top.tier).name .. " " .. a .. (a ~= b and ("  →  " .. b .. " " .. I.luck) or "")
+end
+
 ---------------------------------------------------------------------------------------------------------------
 -- Upgrades
 ---------------------------------------------------------------------------------------------------------------
 
-type UpRow = { info: TextLabel, buy: TextButton, level: TextLabel }
+type UpRow = { frame: Frame, info: TextLabel, buy: TextButton, level: TextLabel }
 
 local function buildUpgrades()
 	local p = UI.panel("Upgrades", I.upgrades .. " UPGRADES", "blue", Vector2.new(680, 500))
@@ -80,12 +135,14 @@ local function buildUpgrades()
 		buy.MouseButton1Click:Connect(function()
 			actionRemote:FireServer("upgrade", key)
 		end)
-		rows[key] = { info = info, buy = buy, level = level }
+		rows[key] = { frame = row, info = info, buy = buy, level = level }
 	end
 	refreshers.Upgrades = function(d: PData)
 		for _, key in ipairs(Config.UpgradeOrder) do
 			local u = Config.Upgrades[key]
 			local r = rows[key]
+			-- coins are sold for Robux, so coin-bought luck is paid random too: not offered under the restriction
+			r.frame.Visible = not (key == "luck" and blocked())
 			local lvl = Econ.level(d, key)
 			local cur = Econ.upgradeText(key, Econ.upgradeValue(key, lvl))
 			r.level.Text = "Lv " .. lvl .. "/" .. u.max
@@ -94,7 +151,7 @@ local function buildUpgrades()
 				setButton(r.buy, "MAX", "grey")
 			else
 				local nxt = Econ.upgradeText(key, Econ.upgradeValue(key, lvl + 1))
-				if key == "power" and Econ.has(d, "GoldenDart") then
+				if key == "power" and Econ.perk(d, "GoldenDart") then
 					cur, nxt = cur .. " x3", nxt .. " x3"
 				end
 				r.info.Text = u.desc .. ": " .. cur .. "  →  " .. nxt
@@ -109,14 +166,23 @@ end
 -- Shop
 ---------------------------------------------------------------------------------------------------------------
 
-type ShopCard = { kind: string, key: string, frame: Frame, buy: TextButton, desc: TextLabel }
+type ShopCard = {
+	kind: string,
+	key: string,
+	frame: Frame,
+	buy: TextButton,
+	desc: TextLabel,
+	extra: TextLabel,
+	try: TextButton?,
+	gift: TextButton?,
+	odds: TextButton?,
+}
 
--- Catalog keys in display order; `coins` picks the coin packs (keys "Coins1".."Coins3") or everything else.
-local function sortedKeys(cat: { [string]: Config.CatalogItem }, coins: boolean?): { string }
+-- Catalog keys of one shop tab (nil = passes) in display order.
+local function sortedKeys(cat: { [string]: Config.CatalogItem }, tab: string?): { string }
 	local keys: { string } = {}
-	for k in pairs(cat) do
-		local isCoins = string.sub(k, 1, 5) == "Coins"
-		if coins == nil or isCoins == coins then
+	for k, item in pairs(cat) do
+		if item.tab == tab then
 			table.insert(keys, k)
 		end
 	end
@@ -126,18 +192,57 @@ local function sortedKeys(cat: { [string]: Config.CatalogItem }, coins: boolean?
 	return keys
 end
 
+-- "⚡ 2x COINS 12:04 left" for a running server boost of this kind, else nil.
+local function boostRunning(kind: string): string?
+	local ends = ReplicatedStorage:GetAttribute("BoostEnd_" .. kind)
+	local m = Econ.boostMult(kind)
+	if type(ends) ~= "number" or m <= 1 then
+		return nil
+	end
+	return "⚡ " .. Fmt.num(m) .. "x running: " .. Fmt.time(math.max(0, math.floor(ends - Econ.now())))
+end
+
 local function buildShop()
-	local p = UI.panel("Shop", I.shop .. " SHOP", "pink", Vector2.new(760, 520))
-	local pages, select = UI.tabs(p.body, { "Passes", "Boosts", "Coins" }, { "gold", "green", "orange" })
+	local p = UI.panel("Shop", I.shop .. " SHOP", "pink", Vector2.new(760, 560))
+	local pages, select = UI.tabs(p.body, { "Passes", "Items", "Server", "Coins" }, { "gold", "pink", "purple", "orange" })
 	tabSelect.Shop = select
 	local cards: { ShopCard } = {}
+	local notes: { [string]: TextLabel } = {}
 
 	local function addCard(page: Instance, kind: string, key: string, item: Config.CatalogItem): ()
 		local f = UI.card(page, item.color, { Name = key, LayoutOrder = item.order })
-		UI.text(f, item.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(64, 64), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 8) })
-		UI.text(f, item.name, { Size = UDim2.new(1, -16, 0, 28), Position = UDim2.fromOffset(8, 74) })
-		local desc = body(f, item.desc, { Size = UDim2.new(1, -16, 0, 52), Position = UDim2.fromOffset(8, 104), TextScaled = true })
-		local buy = UI.button(f, "R$ " .. item.price, "green", {
+		UI.text(f, item.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(56, 56), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 6) })
+		UI.text(f, item.name, { Size = UDim2.new(1, -16, 0, 26), Position = UDim2.fromOffset(8, 64) })
+		local desc = body(f, item.desc, { Size = UDim2.new(1, -16, 0, 48), Position = UDim2.fromOffset(8, 92) })
+		local extra = body(f, "", { Size = UDim2.new(1, -16, 0, 20), Position = UDim2.fromOffset(8, 142), TextColor3 = UI.colors.yellow })
+		-- small buttons: TRY (tool trial) and GIFT next to a pass, ODDS on every luck item
+		local row = UI.frame(f, { Name = "Row", BackgroundTransparency = 1, Size = UDim2.new(1, -12, 0, 40), Position = UDim2.fromOffset(6, 164) })
+		UI.list(row, 8, true, Enum.HorizontalAlignment.Center)
+		local card: ShopCard = { kind = kind, key = key, frame = f, buy = nil :: any, desc = desc, extra = extra }
+		local trialKey = kind == "pass" and Config.TrialFor[key]
+		if trialKey then
+			local t = UI.button(row, "TRY", "sky", { Name = "Try", Size = UDim2.fromOffset(92, 38), LayoutOrder = 1 })
+			t.MouseButton1Click:Connect(function()
+				buyRemote:FireServer("product", trialKey)
+			end)
+			card.try = t
+		end
+		if item.random then
+			local o = UI.button(row, I.odds .. " ODDS", "teal", { Name = "Odds", Size = UDim2.fromOffset(92, 38), LayoutOrder = 2 })
+			o.MouseButton1Click:Connect(function()
+				Panels.showOdds(key)
+			end)
+			card.odds = o
+		end
+		local giftKey = kind == "pass" and Config.GiftFor[key]
+		if giftKey then
+			local g = UI.button(row, I.gift .. " GIFT", "pink", { Name = "Gift", Size = UDim2.fromOffset(92, 38), LayoutOrder = 3 })
+			g.MouseButton1Click:Connect(function()
+				LiveUI.gift(giftKey, "GIFT " .. string.upper(item.name))
+			end)
+			card.gift = g
+		end
+		local buy = UI.button(f, robux(item), "green", {
 			Name = "Buy",
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.new(0.5, 0, 1, -10),
@@ -146,51 +251,274 @@ local function buildShop()
 		buy.MouseButton1Click:Connect(function()
 			buyRemote:FireServer(kind, key)
 		end)
-		table.insert(cards, { kind = kind, key = key, frame = f, buy = buy, desc = desc })
+		card.buy = buy
+		table.insert(cards, card)
 	end
 
-	local function grid(page: Frame): ScrollingFrame
-		local s = UI.scroll(page, { Size = UDim2.new(1, 0, 1, -24) })
-		UI.grid(s, UDim2.fromOffset(214, 232), 12)
+	local function grid(page: Frame, note: string): ScrollingFrame
+		local s = UI.scroll(page, { Size = UDim2.new(1, 0, 1, -26) })
+		UI.grid(s, UDim2.fromOffset(214, 266), 12)
+		notes[page.Name] = ink(page, note, {
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 1, 0),
+			Size = UDim2.new(1, 0, 0, 22),
+		})
 		return s
 	end
 
-	local passGrid = grid(pages.Passes)
+	local passGrid = grid(pages.Passes, "⭐ Premium: +10% coins  ·  TRY a pass for 15 min  ·  GIFT it to anyone here")
 	for _, k in ipairs(sortedKeys(Config.Passes, nil)) do
 		addCard(passGrid, "pass", k, Config.Passes[k])
 	end
-	local boostGrid = grid(pages.Boosts)
-	for _, k in ipairs(sortedKeys(Config.Products, false)) do
-		addCard(boostGrid, "product", k, Config.Products[k])
+	local itemGrid = grid(pages.Items, "")
+	for _, k in ipairs(sortedKeys(Config.Products, "items")) do
+		addCard(itemGrid, "product", k, Config.Products[k])
 	end
-	local coinGrid = grid(pages.Coins)
-	for _, k in ipairs(sortedKeys(Config.Products, true)) do
+	local serverGrid = grid(pages.Server, "⚡ For EVERYONE here for 15 min. Bigger boosts unlock while a smaller one runs!")
+	for _, k in ipairs(sortedKeys(Config.Products, "server")) do
+		addCard(serverGrid, "product", k, Config.Products[k])
+	end
+	local coinGrid = grid(pages.Coins, I.coin .. " Packs grow with your best zone and your rebirths")
+	for _, k in ipairs(sortedKeys(Config.Products, "coins")) do
 		addCard(coinGrid, "product", k, Config.Products[k])
 	end
-	ink(pages.Passes, "⭐ Roblox Premium members get +10% coins", {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, 0),
-		Size = UDim2.new(1, 0, 0, 20),
-	})
 
 	refreshers.Shop = function(d: PData)
+		local isBlocked = blocked()
+		notes.Items.Text = isBlocked and (I.megaDart .. " Mega Darts pop everything around the target")
+			or (I.odds .. " Luck items show their live odds: tap ODDS")
 		for _, c in ipairs(cards) do
+			local item = catalogItem(c.key)
+			if not item then
+				continue
+			end
+			-- paid random (luck) is hidden for players under the restriction (the kit refuses it too)
+			c.frame.Visible = not (item.random and isBlocked)
+			local extra = ""
+			if c.odds then
+				extra = topOddsLine(d, c.key)
+			end
 			if c.kind == "pass" then
-				if Econ.has(d, c.key) then
+				local owned = Econ.has(d, c.key)
+				if owned then
 					setButton(c.buy, "OWNED " .. I.check, "grey")
 				else
-					setButton(c.buy, "R$ " .. Config.Passes[c.key].price, "green")
+					setButton(c.buy, robux(item), "green")
+				end
+				local trialKey = Config.TrialFor[c.key]
+				local t = c.try
+				if t and trialKey then
+					local left = Econ.trialLeft(d, c.key)
+					t.Visible = not owned
+					if left > 0 then
+						setButton(t, I.clock .. " " .. Fmt.time(math.floor(left)), "teal")
+						extra = "Trial: " .. Fmt.time(math.floor(left)) .. " left"
+					else
+						setButton(t, "TRY R$" .. Config.Products[trialKey].price, "sky")
+					end
+				end
+				local g = c.gift
+				local giftKey = Config.GiftFor[c.key]
+				if g and giftKey then
+					local credits = d.giftCredits and tonumber(d.giftCredits[c.key]) or 0
+					g.Visible = not (Config.Products[giftKey].random and isBlocked)
+					g.Text = (credits or 0) > 0 and (I.gift .. " SEND") or (I.gift .. " GIFT")
 				end
 			else
-				local item = Config.Products[c.key]
+				local amount = item.base and Econ.packCoins(item.base, d)
 				if c.key == "Starter" then
-					c.frame.Visible = not d.starter
-					c.desc.Text = I.coin .. " " .. Fmt.num(Econ.packCoins(item.base or 2000, d)) .. " + 15 Mega Darts + 30 min Lucky Boost (once!)"
-				elseif item.base then
-					c.desc.Text = I.coin .. " " .. Fmt.num(Econ.packCoins(item.base, d)) .. " coins"
+					local left = Econ.starterLeft(d)
+					c.frame.Visible = left > 0
+					c.desc.Text = I.coin .. " " .. Fmt.num(amount or 0) .. " + "
+						.. (isBlocked and "25 Mega Darts (once!)" or "15 Mega Darts + 30 min Lucky Boost (once!)")
+					extra = I.clock .. " Ends in " .. Fmt.time(math.floor(left))
+				elseif c.key == "Intro" then
+					c.frame.Visible = Econ.introOpen(d)
+					c.desc.Text = I.coin .. " " .. Fmt.num(amount or 0) .. " + " .. (item.darts or 10) .. " Mega Darts. Only once, for new players!"
+				elseif item.tab == "coins" and amount then
+					c.desc.Text = I.coin .. " " .. Fmt.num(amount) .. " coins"
+				elseif c.key == "LuckBoost" then
+					local left = (tonumber(d.luckUntil) or 0) - Econ.now()
+					if left > 0 then
+						extra = I.luck .. " Running: " .. Fmt.time(math.floor(left)) .. " (buy more time)"
+					end
 				end
+				local boost = item.boost
+				local color = "green"
+				if boost then
+					if boost.needs and Econ.boostMult(boost.kind) < boost.needs then
+						color = "grey"
+						extra = I.lock .. " Unlocks while a " .. boost.needs .. "x runs"
+					elseif not c.odds then
+						extra = boostRunning(boost.kind) or ""
+					end
+				end
+				setButton(c.buy, robux(item), color)
+			end
+			c.extra.Text = extra
+		end
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- Odds sheet: every balloon of a zone with its spawn chance NOW and WITH a luck item (paid random rule)
+---------------------------------------------------------------------------------------------------------------
+
+type OddsRow = { frame: Frame, name: TextLabel, now: TextLabel, with: TextLabel }
+
+local oddsKey: string? = nil
+local oddsZone = 1
+
+local function buildOdds()
+	local p = UI.panel("Odds", I.odds .. " BALLOON ODDS", "teal", Vector2.new(660, 560))
+	local b = p.body
+	local zoneRow = UI.frame(b, { Name = "ZonePick", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 20) })
+	UI.list(zoneRow, 10, true, Enum.HorizontalAlignment.Center)
+	local zoneButtons: { TextButton } = {}
+	for zi, z in ipairs(Config.Zones) do
+		local zb = UI.button(zoneRow, z.glyph .. " " .. string.split(z.name, " ")[1], "sky", { Size = UDim2.fromOffset(132, 38), LayoutOrder = zi })
+		zb.MouseButton1Click:Connect(function()
+			oddsZone = zi
+			local d = State.data
+			local fn = refreshers.Odds
+			if d and fn then
+				fn(d)
+			end
+		end)
+		zoneButtons[zi] = zb
+	end
+	local sub = ink(b, "", { Size = UDim2.new(1, -10, 0, 26), Position = UDim2.fromOffset(5, 66) })
+	local head = UI.frame(b, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 96) })
+	ink(head, "BALLOON", { Size = UDim2.new(0.5, -12, 1, 0), Position = UDim2.fromOffset(12, 0), TextXAlignment = Enum.TextXAlignment.Left })
+	ink(head, "NOW", { Size = UDim2.new(0.22, 0, 1, 0), Position = UDim2.fromScale(0.5, 0) })
+	local withHead = ink(head, "WITH IT", { Size = UDim2.new(0.26, 0, 1, 0), Position = UDim2.fromScale(0.73, 0) })
+	local rows: { OddsRow } = {}
+	for i = 1, #Config.TierOrder do
+		local f = UI.card(b, "white", { Size = UDim2.new(1, 0, 0, 36), Position = UDim2.fromOffset(0, 122 + (i - 1) * 40) })
+		local nm = UI.text(f, "", { Font = UI.BODY, Size = UDim2.new(0.5, -14, 0, 26), Position = UDim2.new(0, 12, 0.5, -13), TextXAlignment = Enum.TextXAlignment.Left })
+		local now = UI.text(f, "", { Font = UI.BODY, Size = UDim2.new(0.22, 0, 0, 26), Position = UDim2.new(0.5, 0, 0.5, -13) })
+		local with = UI.text(f, "", { Font = UI.BODY, Size = UDim2.new(0.26, 0, 0, 26), Position = UDim2.new(0.73, 0, 0.5, -13), TextColor3 = UI.colors.yellow })
+		rows[i] = { frame = f, name = nm, now = now, with = with }
+	end
+	local note = ink(b, "", { Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 122 + #Config.TierOrder * 40) })
+	local buy = UI.button(b, "", "green", {
+		Name = "Buy",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -2),
+		Size = UDim2.fromOffset(240, 46),
+	})
+	buy.MouseButton1Click:Connect(function()
+		local key = oddsKey
+		local item = key and catalogItem(key)
+		if not key or not item then
+			Panels.open("Shop", "Items")
+			return
+		end
+		p.close()
+		buyRemote:FireServer(Config.Passes[key] and "pass" or "product", key)
+	end)
+
+	refreshers.Odds = function(d: PData)
+		local key = oddsKey
+		local item = key and catalogItem(key)
+		local isBlocked = blocked()
+		local showWith = item ~= nil and not isBlocked
+		local luck = luckNow(d)
+		local withLuck = showWith and Econ.luck(d, Econ.now(), isBlocked, LUCK_WITH[key or ""]) or luck
+		local now = Econ.zoneOdds(oddsZone, luck)
+		local with = Econ.zoneOdds(oddsZone, withLuck)
+		local index: { [string]: number } = d.index or {}
+		for zi, zb in ipairs(zoneButtons) do
+			UI.recolor(zb, zi == oddsZone and "gold" or "sky")
+		end
+		local zname = Config.Zones[oddsZone].name
+		if showWith and item then
+			sub.Text = item.name .. ": luck x" .. string.format("%.2f", luck) .. "  →  x" .. string.format("%.2f", withLuck) .. " in " .. zname
+		else
+			sub.Text = "Your luck: x" .. string.format("%.2f", luck) .. ". Chance of each balloon in " .. zname
+		end
+		withHead.Visible = showWith
+		for i, r in ipairs(rows) do
+			local e = now[i]
+			r.frame.Visible = e ~= nil
+			if e then
+				local tier = Tiers.get(e.tier)
+				local found = (index[e.key] or 0) > 0
+				UI.recolor(r.frame, tier.color)
+				-- names stay hidden until found (Secrets too), the chance is always shown
+				r.name.Text = string.upper(tier.name) .. ": " .. (found and Config.Balloons[e.key].name or "???")
+				r.now.Text = Tiers.pct(e.pct)
+				r.with.Visible = showWith
+				r.with.Text = Tiers.pct(with[i].pct) .. (with[i].pct > e.pct and (" " .. I.luck) or "")
 			end
 		end
+		note.Text = "All " .. #now .. " add up to 100%. Luck makes rarer balloons spawn near you."
+		if isBlocked then
+			buy.Visible = false
+		elseif key and item then
+			buy.Visible = true
+			local owned = Config.Passes[key] ~= nil and Econ.has(d, key)
+			setButton(buy, owned and ("OWNED " .. I.check) or ("BUY " .. robux(item)), owned and "grey" or "green")
+		else
+			buy.Visible = true
+			setButton(buy, I.luck .. " LUCK ITEMS", "pink")
+		end
+	end
+end
+
+-- Open the odds sheet for a luck item (nil = just the player's own odds) on the zone they are in.
+function Panels.showOdds(key: string?)
+	oddsKey = key
+	oddsZone = oddsZoneFor(State.data)
+	Panels.open("Odds")
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- Starter Pack offer (first 10 minutes after the first join, with its countdown)
+---------------------------------------------------------------------------------------------------------------
+
+local function buildStarter()
+	local item = Config.Products.Starter
+	local p = UI.panel("Starter", item.glyph .. " STARTER PACK", "teal", Vector2.new(540, 440))
+	local b = p.body
+	UI.text(b, item.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(84, 84), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 22) })
+	local contents = ink(b, "", { Size = UDim2.new(1, -20, 0, 100), Position = UDim2.fromOffset(10, 110) })
+	local timer = UI.text(b, "", { Size = UDim2.new(1, -20, 0, 32), Position = UDim2.fromOffset(10, 216), TextColor3 = UI.colors.red })
+	local buy = UI.button(b, "", "green", {
+		Name = "Buy",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -12),
+		Size = UDim2.fromOffset(240, 64),
+	})
+	buy.MouseButton1Click:Connect(function()
+		p.close()
+		buyRemote:FireServer("product", "Starter")
+	end)
+	local odds = UI.button(b, I.odds .. " ODDS", "sky", {
+		Name = "Odds",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -4, 1, -20),
+		Size = UDim2.fromOffset(108, 46),
+	})
+	odds.MouseButton1Click:Connect(function()
+		Panels.showOdds("Starter")
+	end)
+	refreshers.Starter = function(d: PData)
+		local left = Econ.starterLeft(d)
+		if left <= 0 then
+			p.close()
+			return
+		end
+		local isBlocked = blocked()
+		local coins = I.coin .. " " .. Fmt.num(Econ.packCoins(item.base or 2000, d)) .. " coins"
+		if isBlocked then
+			contents.Text = coins .. "\n" .. I.megaDart .. " 25 Mega Darts\nOnly once!"
+		else
+			contents.Text = coins .. "\n" .. I.megaDart .. " " .. (item.darts or 15) .. " Mega Darts\n" .. I.luck .. " 30 min Lucky Boost (x2 luck)"
+		end
+		odds.Visible = not isBlocked
+		timer.Text = I.clock .. " Only in your first 10 minutes: " .. Fmt.time(math.floor(left))
+		setButton(buy, robux(item), "green")
 	end
 end
 
@@ -204,6 +532,7 @@ type IndexCard = {
 	vp: ViewportFrame,
 	name: TextLabel,
 	count: TextLabel,
+	odds: TextLabel,
 	shown: boolean?,
 	model: Model?,
 }
@@ -220,20 +549,22 @@ local function buildIndex()
 	tabSelect.Index = select
 	local cards: { IndexCard } = {}
 	local headers: { TextLabel } = {}
+	local luckLines: { TextLabel } = {}
 	local locks: { Frame } = {}
 
 	for zi, z in ipairs(Config.Zones) do
 		local page = pages[names[zi]]
-		headers[zi] = ink(page, "", { Size = UDim2.new(1, 0, 0, 26), TextXAlignment = Enum.TextXAlignment.Center })
-		local s = UI.scroll(page, { Size = UDim2.new(1, 0, 1, -30), Position = UDim2.fromOffset(0, 30) })
-		UI.grid(s, UDim2.fromOffset(170, 196), 10)
+		headers[zi] = ink(page, "", { Size = UDim2.new(1, 0, 0, 24), TextXAlignment = Enum.TextXAlignment.Center })
+		luckLines[zi] = ink(page, "", { Size = UDim2.new(1, 0, 0, 20), Position = UDim2.fromOffset(0, 25), TextXAlignment = Enum.TextXAlignment.Center })
+		local s = UI.scroll(page, { Size = UDim2.new(1, 0, 1, -48), Position = UDim2.fromOffset(0, 48) })
+		UI.grid(s, UDim2.fromOffset(170, 214), 10)
 		for ti, key in ipairs(Config.ZoneTypes[zi]) do
 			local def = Config.Balloons[key]
 			local tier = Tiers.get(def.tier)
 			local f = UI.card(s, tier.color, { Name = key, LayoutOrder = ti })
 			local vp = Instance.new("ViewportFrame")
 			vp.BackgroundTransparency = 1
-			vp.Size = UDim2.new(1, -12, 0, 104)
+			vp.Size = UDim2.new(1, -12, 0, 96)
 			vp.Position = UDim2.fromOffset(6, 4)
 			vp.Ambient = Color3.fromRGB(190, 190, 200)
 			vp.LightColor = Color3.fromRGB(255, 255, 255)
@@ -245,21 +576,22 @@ local function buildIndex()
 			cam.CFrame = CFrame.lookAt(Vector3.new(0.6, 0.2, -9), Vector3.new(0, -0.5, 0))
 			cam.Parent = vp
 			vp.CurrentCamera = cam
-			local nm = UI.text(f, "???", { Size = UDim2.new(1, -10, 0, 24), Position = UDim2.fromOffset(5, 108), ZIndex = f.ZIndex + 2 })
-			local tl = UI.text(f, string.upper(tier.name), { Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 132), ZIndex = f.ZIndex + 2 })
+			local nm = UI.text(f, "???", { Size = UDim2.new(1, -10, 0, 24), Position = UDim2.fromOffset(5, 100), ZIndex = f.ZIndex + 2 })
+			local tl = UI.text(f, string.upper(tier.name), { Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 124), ZIndex = f.ZIndex + 2 })
 			local g = Instance.new("UIGradient")
 			g.Color = Tiers.gradient(def.tier)
 			g.Rotation = 90
 			g.Parent = tl
-			local count = body(f, Econ.odds(key), { Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 158), ZIndex = f.ZIndex + 2 })
-			table.insert(cards, { key = key, frame = f, vp = vp, name = nm, count = count })
+			local count = body(f, "", { Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 148), ZIndex = f.ZIndex + 2 })
+			local odds = body(f, Econ.odds(key), { Size = UDim2.new(1, -10, 0, 26), Position = UDim2.fromOffset(5, 176), ZIndex = f.ZIndex + 2, TextColor3 = UI.colors.yellow })
+			table.insert(cards, { key = key, frame = f, vp = vp, name = nm, count = count, odds = odds })
 		end
 		local lock = UI.frame(page, {
 			Name = "Lock",
 			BackgroundColor3 = Color3.fromRGB(20, 22, 40),
 			BackgroundTransparency = 0.35,
-			Size = UDim2.new(1, 0, 1, -30),
-			Position = UDim2.fromOffset(0, 30),
+			Size = UDim2.new(1, 0, 1, -48),
+			Position = UDim2.fromOffset(0, 48),
 			ZIndex = 40,
 			Visible = false,
 		})
@@ -293,12 +625,18 @@ local function buildIndex()
 			return
 		end
 		local index: { [string]: number } = d.index or {}
+		local luck = luckNow(d)
 		for _, c in ipairs(cards) do
 			local def = Config.Balloons[c.key]
 			local n = index[c.key] or 0
 			setModel(c, n > 0)
 			c.name.Text = n > 0 and def.name or "???"
-			c.count.Text = (n > 0 and ("x" .. Fmt.num(n) .. " · ") or "") .. Econ.odds(c.key)
+			c.count.Text = n > 0 and ("Popped x" .. Fmt.num(n)) or "Not found yet"
+			c.odds.Text = Econ.odds(c.key, luck) -- base chance, then the chance at this player's luck
+		end
+		local luckText = I.luck .. " Your luck x" .. string.format("%.2f", luck) .. ": the chances show base  →  with your luck"
+		if luck == 1 then
+			luckText = I.odds .. " Chance of each balloon spawning in its zone (they add up to 100%)"
 		end
 		for zi, z in ipairs(Config.Zones) do
 			local found, total, secret = Econ.zoneProgress(d, zi)
@@ -306,6 +644,7 @@ local function buildIndex()
 			local done = found >= total
 			headers[zi].Text = string.format("%s Found %d/%d  ·  Complete the set: +%d%% coins forever %s  ·  Secret: +%d%% %s",
 				z.glyph, found, total, bonus, done and I.check or "", math.floor(Config.Index.secretBonus * 100), secret and I.check or "❔")
+			luckLines[zi].Text = luckText
 			locks[zi].Visible = zi > (d.zones or 1)
 		end
 	end
@@ -327,13 +666,14 @@ local function buildZones()
 	local p = UI.panel("Zones", I.zones .. " ZONES", "teal", Vector2.new(680, 520))
 	local list = UI.scroll(p.body)
 	topList(list, 10)
-	type ZRow = { info: TextLabel, btn: TextButton }
+	type ZRow = { info: TextLabel, btn: TextButton, stats: string }
 	local rows: { ZRow } = {}
 	for i, z in ipairs(Config.Zones) do
 		local row = UI.card(list, z.accent, { Name = z.key, Size = UDim2.new(1, -10, 0, 92), LayoutOrder = i })
 		UI.text(row, z.glyph, { Font = Enum.Font.GothamBold, Size = UDim2.fromOffset(66, 66), Position = UDim2.fromOffset(10, 13) })
 		UI.text(row, z.name, { Size = UDim2.fromOffset(300, 34), Position = UDim2.fromOffset(86, 8), TextXAlignment = Enum.TextXAlignment.Left })
-		local info = body(row, string.format("Balloons x%s coins · x%s HP", Fmt.num(z.valueMult), Fmt.num(z.hpMult)), {
+		local stats = string.format("Balloons x%s coins · x%s HP", Fmt.num(z.valueMult), Fmt.num(z.hpMult))
+		local info = body(row, stats, {
 			Size = UDim2.fromOffset(330, 28),
 			Position = UDim2.fromOffset(86, 50),
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -359,15 +699,18 @@ local function buildZones()
 				Sfx.play("error", 0.4)
 			end
 		end)
-		rows[i] = { info = info, btn = btn }
+		rows[i] = { info = info, btn = btn, stats = stats }
 	end
 	refreshers.Zones = function(d: PData)
 		local cur = d.zones or 1
 		for i, z in ipairs(Config.Zones) do
 			local r = rows[i]
+			r.info.Text = r.stats
 			if i <= cur then
 				setButton(r.btn, "TELEPORT", "green")
 			elseif i == cur + 1 then
+				-- the free way in: beat the previous zone's boss (fill its "popped %" meter first)
+				r.info.Text = "Buy it, or beat the " .. I.boss .. " " .. Config.Zones[i - 1].name .. " BOSS (" .. math.floor(Econ.meterFrac(d, i - 1) * 100) .. "%)"
 				setButton(r.btn, I.lock .. " " .. I.coin .. " " .. Fmt.num(z.cost), (d.coins or 0) >= z.cost and "gold" or "grey")
 			else
 				setButton(r.btn, I.lock .. " LOCKED", "grey")
@@ -529,7 +872,7 @@ function Panels.isOpen(name: string): boolean
 end
 
 function Panels.anyOpen(): boolean
-	for _, n in ipairs({ "Upgrades", "Shop", "Index", "Zones", "Rebirth", "Daily", "Welcome", "__offer" }) do
+	for _, n in ipairs({ "Upgrades", "Shop", "Odds", "Starter", "Index", "Zones", "Rebirth", "Daily", "Welcome", "Live", "LiveGift", "__offer" }) do
 		if Panels.isOpen(n) then
 			return true
 		end
@@ -552,6 +895,8 @@ end
 function Panels.init()
 	buildUpgrades()
 	buildShop()
+	buildOdds()
+	buildStarter()
 	buildIndex()
 	buildZones()
 	buildRebirth()
@@ -560,13 +905,19 @@ function Panels.init()
 	State.onChange(function()
 		Panels.refresh()
 	end)
-	-- the daily timer ticks while its panel is open
+	player:GetAttributeChangedSignal("RandomBlocked"):Connect(Panels.refresh)
+	-- timers (daily gift, trials, boosts, the Starter countdown) and live odds tick while their panel is open
 	task.spawn(function()
 		while true do
 			task.wait(1)
 			local d = State.data
-			if d and Panels.isOpen("Daily") and refreshers.Daily then
-				refreshers.Daily(d)
+			if d then
+				for _, name in ipairs({ "Daily", "Shop", "Odds", "Starter", "Index" }) do
+					local fn = refreshers[name]
+					if fn and Panels.isOpen(name) then
+						fn(d)
+					end
+				end
 			end
 		end
 	end)

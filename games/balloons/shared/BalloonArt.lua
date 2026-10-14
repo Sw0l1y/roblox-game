@@ -481,12 +481,49 @@ local function face(m: Instance, d: number, info: Info)
 	end
 end
 
+-- Zone boss face: narrowed eyes under slanted brows and a frown.
+local function angry(m: Instance, d: number, info: Info)
+	for _, sx in ipairs({ -1, 1 }) do
+		onFront(m, info, "Eye", V(0.13 * d, 0.12 * d, 0.05 * d), sx * 0.25, 0.08, INK, 0)
+		ball(m, "Glint", 0.04 * d, surf(Vector3.zero, info.rx, info.ry, info.rz, sx * 0.25 - 0.03, 0.12, false, 0.02).Position, WHITE)
+		local a = surf(Vector3.zero, info.rx, info.ry, info.rz, sx * 0.44, 0.3, false, 0.03).Position
+		local b = surf(Vector3.zero, info.rx, info.ry, info.rz, sx * 0.1, 0.18, false, 0.03).Position
+		rod(m, "Brow", a, b, 0.06 * d, INK)
+	end
+	for _, f in ipairs({ { -0.2, -0.27 }, { -0.1, -0.21 }, { 0, -0.19 }, { 0.1, -0.21 }, { 0.2, -0.27 } }) do
+		ball(m, "Frown", 0.07 * d, surf(Vector3.zero, info.rx, info.ry, info.rz, f[1], f[2], false, 0).Position, INK)
+	end
+end
+
+-- Gold crown on top of a boss: a band, five spikes and gems.
+local function crown(m: Instance, d: number, info: Info)
+	local gold = Config.Palette.gold
+	local y = info.ry * 0.9
+	local r = info.rx * 0.46
+	local band = cylY(m, "Crown", 0.14 * d, r * 2, CF(0, y, 0), gold)
+	band.Reflectance = 0.3
+	for i = 0, 4 do
+		local a = RAD(i * 72 + 18)
+		local base = V(math.cos(a) * r * 0.82, y + 0.07 * d, math.sin(a) * r * 0.82)
+		local spike = rod(m, "CrownSpike", base, base + V(0, 0.2 * d, 0), 0.09 * d, gold)
+		spike.Reflectance = 0.3
+		local gem = ball(m, "CrownGem", 0.07 * d, base + V(0, 0.23 * d, 0), i % 2 == 0 and Config.Palette.red or Config.Palette.sky)
+		gem.Material = Enum.Material.Neon
+	end
+end
+
 local function details(m: Instance, def: Def, d: number, info: Info)
 	if has(def, "stripes") then
 		stripes(m, def, d, info)
 	end
+	if has(def, "crown") then
+		crown(m, d, info)
+	end
 	if not info.front then
 		return
+	end
+	if has(def, "angry") then
+		angry(m, d, info)
 	end
 	if has(def, "dots") then
 		for _, p in ipairs({ { -0.5, 0.25 }, { 0.42, 0.4 }, { 0.05, -0.1 }, { -0.3, -0.5 }, { 0.5, -0.32 } }) do

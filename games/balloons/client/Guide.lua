@@ -1,6 +1,7 @@
 -- "What next?" guidance: the goal bar at the bottom, a glowing beam + bouncing arrow in the world, and pulsing
--- HUD buttons. FTUE order: pop your first balloon -> buy your first upgrade -> pop the seeded rare -> unlock the
--- next zone -> ... -> rebirth. Interrupts for the MEGA BALLOON event, coin rain and a full Balloon Pump.
+-- HUD buttons. FTUE order: pop your first balloon -> buy your first upgrade -> pop the seeded rare -> fill the
+-- zone meter and beat its boss (or buy the next zone) -> ... -> the secret Balloon Factory -> rebirth. Interrupts
+-- for the MEGA BALLOON event, your zone boss, a short hint (e.g. the free gift), coin rain and a full Balloon Pump.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -32,6 +33,11 @@ local a1: Attachment
 local a0: Attachment? = nil
 local rareId: number? = nil
 local rareUntil = 0
+local bossId: number? = nil
+local bossZone = 0
+local hintText: string? = nil
+local hintUntil = 0
+local hintPulse: string? = nil
 local pumpShownAt = -1000
 local pulsing: string? = nil
 local joinedAt = os.clock()
@@ -92,6 +98,23 @@ local function compute(d: PData, pos: Vector3): Goal?
 		rareId = nil
 	end
 
+	-- your zone boss is out
+	local bid = bossId
+	if bid then
+		local bp = BalloonView.posOf(bid)
+		local bz = Config.Zones[bossZone]
+		if bp and bz then
+			return { text = I.boss .. " Pop the " .. string.upper(bz.name) .. " BOSS! Mega Darts hit hard", target = bp, pulse = Hud.megaDarts() > 0 and not Hud.megaArmed and "Mega" or nil }
+		end
+		bossId = nil
+	end
+
+	-- a short hint (free gift, trials)
+	local hint = hintText
+	if hint and os.clock() < hintUntil then
+		return { text = hint, pulse = (hintPulse ~= "Mega" or not Hud.megaArmed) and hintPulse or nil }
+	end
+
 	-- first pop
 	if (d.pops or 0) == 0 then
 		local near = BalloonView.nearest(pos, 60)
@@ -117,8 +140,13 @@ local function compute(d: PData, pos: Vector3): Goal?
 		return { text = I.coin .. " Pop balloons for your first upgrade!", frac = coins / cost, label = Fmt.num(coins) .. " / " .. Fmt.num(cost) }
 	end
 
-	-- a full Balloon Pump (shown for a while every few minutes)
+	-- the zone meter is full: fight the boss
 	local zone = Econ.zoneAt(pos)
+	if Hud.meterIsFull() and Config.Zones[zone] then
+		return { text = I.boss .. " " .. string.upper(Config.Zones[zone].name) .. " 100% POPPED! " .. (UI.isMobile and "Tap" or "Click") .. " the meter to fight the BOSS" }
+	end
+
+	-- a full Balloon Pump (shown for a while every few minutes)
 	local spot = player:GetAttribute("Pump")
 	local rate = Econ.pumpRate(d)
 	if type(spot) == "number" and zone == 1 and (d.pump or 0) >= rate * 300 then
@@ -144,7 +172,12 @@ local function compute(d: PData, pos: Vector3): Goal?
 			end
 			return { text = z.glyph .. " You can unlock " .. z.name .. "!", pulse = "Zones" }
 		end
-		return { text = z.glyph .. " Next zone: " .. z.name, frac = coins / z.cost, label = I.coin .. " " .. Fmt.num(coins) .. " / " .. Fmt.num(z.cost) }
+		return { text = z.glyph .. " Next: " .. z.name .. "  (or beat the " .. I.boss .. " BOSS)", frac = coins / z.cost, label = I.coin .. " " .. Fmt.num(coins) .. " / " .. Fmt.num(z.cost) }
+	end
+
+	-- the secret ending: every zone boss beaten, the Balloon Factory behind Space is still running
+	if not d.factory and Econ.bossCount(d) >= #Config.Zones then
+		return { text = I.factory .. " Find the secret Balloon Factory and shut it down!", target = Config.Factory.pos + Vector3.new(0, 6, 16) }
 	end
 
 	-- rebirth
@@ -194,6 +227,20 @@ end
 function Guide.setRare(id: number)
 	rareId = id
 	rareUntil = os.clock() + 40
+end
+
+-- The player's zone boss is out: point at it until it pops or floats away (nil clears it).
+function Guide.setBoss(id: number?, zone: number?)
+	bossId = id
+	bossZone = zone or 0
+end
+
+-- Show a short line in the goal bar for a few seconds (after the FTUE steps that need it), optionally pulsing
+-- a HUD button.
+function Guide.hint(text: string, seconds: number?, pulse: string?)
+	hintText = text
+	hintUntil = os.clock() + (seconds or 8)
+	hintPulse = pulse
 end
 
 function Guide.sessionTime(): number
