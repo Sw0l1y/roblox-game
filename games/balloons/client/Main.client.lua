@@ -22,6 +22,7 @@ local Panels = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild(
 local MegaView = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("MegaView"))
 local BalloonView = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("BalloonView"))
 local Guide = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("Guide"))
+local LiveUI = require(ReplicatedStorage:WaitForChild("ClientLib"):WaitForChild("LiveUI"))
 
 local player = Players.LocalPlayer
 local I = Config.Icons
@@ -47,6 +48,7 @@ Panels.init()
 MegaView.init()
 BalloonView.init()
 Guide.init()
+LiveUI.init(Config.Live)
 
 Hud.onButton.Upgrades = function()
 	Panels.toggle("Upgrades")

@@ -506,6 +506,32 @@ Config.Products = {
 } :: { [string]: CatalogItem }
 
 ---------------------------------------------------------------------------------------------------------------
+-- Launch features (kit Live): codes, group gift, playtime gifts, daily quests, badges, invites, friend bonus.
+-- Rewards: coins = packs of that base size (scaled by zone like the coin products), megaDarts, luckMinutes.
+---------------------------------------------------------------------------------------------------------------
+
+Config.Live = {
+	codes = { LAUNCH = { reward = { coins = 1500, text = "1,500 coins" } } },
+	group = { id = 0, reward = { coins = 2500, megaDarts = 5, text = "coins + 5 Mega Darts" } },
+	playtime = {
+		{ minutes = 5, reward = { coins = 300, text = "Coins" } },
+		{ minutes = 10, reward = { megaDarts = 3, text = "3 Mega Darts" } },
+		{ minutes = 30, reward = { luckMinutes = 10, text = "10 min Luck" } },
+		{ minutes = 60, reward = { coins = 3000, megaDarts = 5, text = "Big coin bag" } },
+	},
+	quests = {
+		{ key = "pop", text = "Pop 100 balloons", goal = 100, reward = { coins = 800, text = "Coins" } },
+		{ key = "rare", text = "Pop 3 Rare+ balloons", goal = 3, reward = { megaDarts = 3, text = "3 Mega Darts" } },
+		{ key = "mega", text = "Hit the MEGA BALLOON", goal = 1, reward = { coins = 1200, text = "Coins" } },
+		{ key = "upgrade", text = "Buy 5 upgrades", goal = 5, reward = { luckMinutes = 10, text = "10 min Luck" } },
+		{ key = "friend", text = "Play with a friend", goal = 1, reward = { coins = 1500, text = "Coins" } },
+	},
+	badges = { Welcome = 0 },
+	invite = { reward = { coins = 2000, megaDarts = 5, text = "coins + 5 Mega Darts" } },
+	friendBonus = 0.1,
+}
+
+---------------------------------------------------------------------------------------------------------------
 -- Save data defaults
 ---------------------------------------------------------------------------------------------------------------
 

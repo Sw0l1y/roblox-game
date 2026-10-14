@@ -289,6 +289,7 @@ end
 P.m.IsInGroup = function()
 	return false
 end
+P.m.IsInGroupAsync = P.m.IsInGroup
 P.m.GetRankInGroup = function()
 	return 0
 end
@@ -300,6 +301,9 @@ P.m.IsFriendsWith = function()
 end
 P.m.HasAppearanceLoaded = function()
 	return true
+end
+P.m.IsFriendsWithAsync = function(...)
+	return P.m.IsFriendsWith(...)
 end
 P.m.GetJoinData = function()
 	return {}
@@ -1223,6 +1227,7 @@ MPS.m.GetProductInfo = function(self, id, infoType)
 	R.sleep(0.05)
 	return { Name = "Item " .. tostring(id), Description = "", PriceInRobux = 99, IconImageAssetId = 0, AssetId = id, ProductId = id, IsForSale = true }
 end
+MPS.m.GetProductInfoAsync = MPS.m.GetProductInfo
 MPS.m.GetDeveloperProductsAsync = function()
 	return R.create("Pages")
 end
@@ -1498,6 +1503,7 @@ end
 B("BadgeService").m.AwardBadge = function()
 	return true
 end
+B("BadgeService").m.AwardBadgeAsync = B("BadgeService").m.AwardBadge
 B("BadgeService").m.UserHasBadgeAsync = function()
 	return false
 end

@@ -18,6 +18,7 @@ local Balloons = require(script.Parent:WaitForChild("Lib"):WaitForChild("Balloon
 local Mega = require(script.Parent:WaitForChild("Lib"):WaitForChild("Mega"))
 local Pump = require(script.Parent:WaitForChild("Lib"):WaitForChild("Pump"))
 local Debug = require(script.Parent:WaitForChild("Lib"):WaitForChild("Debug"))
+local Live = require(script.Parent:WaitForChild("Lib"):WaitForChild("Live"))
 
 -- Create every remote up front so clients never wait on one that appears late.
 for _, name in ipairs({ "Balloon", "Throw", "Ui", "Action", "Notify", "Data", "Fx", "Buy" }) do
@@ -107,6 +108,22 @@ Shop.init({
 		Coins2 = packGrant("Coins2"),
 		Coins3 = packGrant("Coins3"),
 	},
+})
+
+Live.init({
+	config = Config.Live,
+	grant = function(player, d, reward, _source)
+		if reward.coins then
+			Progress.addCoins(player, d, Econ.packCoins(reward.coins, d))
+		end
+		if reward.megaDarts then
+			d.megaDarts = (d.megaDarts or 0) + reward.megaDarts
+		end
+		if reward.luckMinutes then
+			d.luckUntil = math.max(os.time(), tonumber(d.luckUntil) or 0) + reward.luckMinutes * 60
+		end
+		Progress.touch(player)
+	end,
 })
 
 Balloons.init()

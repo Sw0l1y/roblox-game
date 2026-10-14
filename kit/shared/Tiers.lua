@@ -39,8 +39,8 @@ function Tiers.gradient(key: string): ColorSequence
 	return ColorSequence.new(t.color, t.dark)
 end
 
--- Weighted pick from { {key=..., weight=...}, ... } using `rng`; luck > 1 shifts weight toward the end of the list.
-function Tiers.roll(entries: { any }, rng: Random, luck: number?): any
+-- Effective weights after luck: luck > 1 shifts weight toward the end of the list (rarer tiers).
+function Tiers.weights(entries: { any }, luck: number?): ({ number }, number)
 	local l = luck or 1
 	local total = 0
 	local weights = {}
@@ -49,6 +49,12 @@ function Tiers.roll(entries: { any }, rng: Random, luck: number?): any
 		weights[i] = w
 		total += w
 	end
+	return weights, total
+end
+
+-- Weighted pick from { {key=..., weight=...}, ... } using `rng`, with the same luck maths as Tiers.weights.
+function Tiers.roll(entries: { any }, rng: Random, luck: number?): any
+	local weights, total = Tiers.weights(entries, luck)
 	local r = rng:NextNumber() * total
 	for i, e in ipairs(entries) do
 		r -= weights[i]
@@ -59,17 +65,57 @@ function Tiers.roll(entries: { any }, rng: Random, luck: number?): any
 	return entries[#entries]
 end
 
--- "1 in 250" style odds text for a weight inside a list.
-function Tiers.odds(entries: { any }, entry: any): string
-	local total = 0
-	for _, e in ipairs(entries) do
-		total += e.weight
+-- Chance of every entry in percent, rounded to 0.001 with largest-remainder rounding so the shown numbers
+-- add up to exactly 100 (Roblox's paid random item rule). Pass the player's current luck to show live odds.
+function Tiers.percents(entries: { any }, luck: number?): { number }
+	local weights, total = Tiers.weights(entries, luck)
+	local units, used = 100000, 0
+	local floors: { number } = {}
+	local order: { { i: number, rem: number } } = {}
+	for i, w in ipairs(weights) do
+		local exact = w / total * units
+		floors[i] = math.floor(exact)
+		used += floors[i]
+		order[i] = { i = i, rem = exact - floors[i] }
 	end
-	local p = entry.weight / total
-	if p >= 0.1 then
-		return string.format("%d%%", math.floor(p * 100 + 0.5))
+	table.sort(order, function(a: { i: number, rem: number }, b: { i: number, rem: number }): boolean
+		return a.rem > b.rem
+	end)
+	for k = 1, units - used do
+		local o = order[(k - 1) % #order + 1]
+		floors[o.i] += 1
 	end
-	return "1 in " .. tostring(math.floor(1 / p + 0.5))
+	local out = {}
+	for i, f in ipairs(floors) do
+		out[i] = f / 1000
+	end
+	return out
+end
+
+-- "12.5%" / "0.03%" for a percent from Tiers.percents (up to 3 decimals, trailing zeros dropped).
+function Tiers.pct(p: number): string
+	local s = string.format("%.3f", p):gsub("0+$", ""):gsub("%.$", "")
+	return s .. "%"
+end
+
+-- Odds text for one entry of a list, as a percent ("1.25%"); luck shows the boosted chance.
+function Tiers.odds(entries: { any }, entry: any, luck: number?): string
+	local ps = Tiers.percents(entries, luck)
+	for i, e in ipairs(entries) do
+		if e == entry then
+			return Tiers.pct(ps[i])
+		end
+	end
+	return "0%"
+end
+
+-- "1.25%  →  2.6% 🍀" when luck changes the chance, else just "1.25%".
+function Tiers.oddsLive(entries: { any }, entry: any, luck: number?): string
+	local base = Tiers.odds(entries, entry)
+	if not luck or luck == 1 then
+		return base
+	end
+	return base .. "  \u{2192}  " .. Tiers.odds(entries, entry, luck) .. " \u{1F340}"
 end
 
 return Tiers
